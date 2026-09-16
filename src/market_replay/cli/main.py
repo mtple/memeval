@@ -45,14 +45,17 @@ def serve(host: str = "127.0.0.1", port: int = 8000, data_dir: Path = DEFAULT_DA
     """Start the HTTP service (control plane, agent plane and the web UI if built)."""
     import uvicorn
 
-    from ..service.app import create_app
+    from ..service.app import cors_origins_from_env, create_app
 
     token = resolve_admin_token(admin_token)
     mgr = _manager(data_dir)
     mgr.gateway_url = f"http://{host}:{port}"
+    origins = cors_origins_from_env()
     typer.echo(f"admin token: {token}")
     typer.echo(f"listening on http://{host}:{port}  (UI at / if apps/web is built)")
-    uvicorn.run(create_app(mgr, token), host=host, port=port, log_level="info")
+    if origins:
+        typer.echo(f"browser origins allowed (MARKET_REPLAY_CORS_ORIGINS): {', '.join(origins)}")
+    uvicorn.run(create_app(mgr, token, cors_origins=origins), host=host, port=port, log_level="info")
 
 
 # ---------------------------------------------------------------------- fixtures

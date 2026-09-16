@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { EXAMPLES, RUNTIMES, list, post, type Agent, type Pack, type Run, type Suite } from "../api";
+import { EXAMPLES, ISOLATIONS, MODES, RUNTIMES, list, post, type Agent, type Pack, type Run, type Suite } from "../api";
+import { buildCreateRunBody, validateCreateRun, type CreateRunForm } from "../forms";
 import { fmtDate, fmtRel, fmtRaw, shortHash } from "../format";
 import { Badge, Card, CopyButton, EmptyState, ErrorState, Loading, RunStateBadge, useLoad } from "../ui";
 
@@ -96,13 +97,14 @@ export default function Runs() {
 
 function CreateRun({ agents, packs, onCreated }: { agents: Agent[]; packs: Pack[]; onCreated: () => void }) {
   const runnable = packs.filter((p) => p.runnable);
-  const [f, setF] = useState({ agent_id: "", pack_id: "", mode: "practice", bankroll_raw: "", isolation: "practice", launchKind: "example", example: "cash_only", runtime: "python", agent_seed: "" });
+  const [f, setF] = useState<CreateRunForm>({ agent_id: "", pack_id: "", mode: "practice", bankroll_raw: "1000000", isolation: "trusted_external_client", launchKind: "example", example: "cash_only", runtime: "python", agent_seed: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
   const [created, setCreated] = useState<Run | null>(null);
   const pack = runnable.find((p) => p.pack_id === f.pack_id);
   const dec = pack?.summary?.numeraire_decimals;
-  const bankrollOk = /^\d+$/.test(f.bankroll_raw);
+  const problems = validateCreateRun(f);
+  const bankrollOk = !problems.some((m) => m.startsWith("bankroll"));
 
   return (
     <Card title="Create run">
@@ -123,11 +125,8 @@ function CreateRun({ agents, packs, onCreated }: { agents: Agent[]; packs: Pack[
           setBusy(true);
           setErr(null);
           setCreated(null);
-          const body: Record<string, unknown> = { agent_id: f.agent_id, pack_id: f.pack_id, mode: f.mode, bankroll_raw: f.bankroll_raw, isolation: f.isolation };
-          if (f.launchKind === "example") body.launch = { kind: "example", name: f.example, runtime: f.runtime };
-          if (f.agent_seed.trim()) body.agent_seed = Number(f.agent_seed);
           try {
-            setCreated(await post<Run>("/runs", body));
+            setCreated(await post<Run>("/runs", buildCreateRunBody(f)));
             onCreated();
           } catch (x) {
             setErr(x);
@@ -161,16 +160,21 @@ function CreateRun({ agents, packs, onCreated }: { agents: Agent[]; packs: Pack[
         <label className="field">
           Mode
           <select value={f.mode} onChange={(e) => setF({ ...f, mode: e.target.value })}>
-            <option value="practice">practice</option>
-            <option value="sealed">sealed</option>
+            {MODES.map((m) => (
+              <option key={m} value={m}>
+                {m === "practice" ? "practice (dates may be revealed after the run)" : "sealed (no dates, no trajectory disclosure)"}
+              </option>
+            ))}
           </select>
         </label>
         <label className="field">
           Isolation
           <select value={f.isolation} onChange={(e) => setF({ ...f, isolation: e.target.value })}>
-            <option value="practice">practice</option>
-            <option value="sealed">sealed</option>
-            <option value="none">none</option>
+            {ISOLATIONS.map((i) => (
+              <option key={i} value={i}>
+                {i === "trusted_external_client" ? "trusted external client (unenforced)" : "restricted local runner (env scrubbed)"}
+              </option>
+            ))}
           </select>
         </label>
         <label className="field">
@@ -179,8 +183,8 @@ function CreateRun({ agents, packs, onCreated }: { agents: Agent[]; packs: Pack[
           <span className="small">{bankrollOk && dec !== undefined ? `= ${fmtRaw(f.bankroll_raw, dec)} ${pack?.summary.numeraire_alias}` : f.bankroll_raw ? "digits only" : ""}</span>
         </label>
         <label className="field">
-          Agent seed (optional integer)
-          <input inputMode="numeric" value={f.agent_seed} onChange={(e) => setF({ ...f, agent_seed: e.target.value })} />
+          Agent seed (optional, stochastic participants only)
+          <input value={f.agent_seed} onChange={(e) => setF({ ...f, agent_seed: e.target.value })} />
         </label>
         <label className="field">
           Launch
@@ -212,7 +216,7 @@ function CreateRun({ agents, packs, onCreated }: { agents: Agent[]; packs: Pack[
           <p className="muted small">The run waits for your client to connect with the session token.</p>
         )}
         <div className="span2 row">
-          <button className="btn btn-primary" disabled={busy || !bankrollOk || !f.agent_id || !f.pack_id}>
+          <button className="btn btn-primary" disabled={busy || problems.length > 0} title={problems.join("; ")}>
             {busy ? "Creating…" : "Create run"}
           </button>
           {created && (
@@ -273,7 +277,7 @@ function RunSuite({ agents, suites, onCreated }: { agents: Agent[]; suites: Suit
           setErr(null);
           setRes(null);
           const body: Record<string, unknown> = { agent_id: f.agent_id, launch: { kind: "example", name: f.example, runtime: f.runtime }, wait: false };
-          if (f.agent_seed.trim()) body.agent_seed = Number(f.agent_seed);
+          if (f.agent_seed.trim()) body.agent_seed = f.agent_seed.trim();
           try {
             setRes(await post(`/suites/${encodeURIComponent(f.suite_id)}/runs`, body));
             onCreated();

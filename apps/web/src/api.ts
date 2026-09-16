@@ -1,46 +1,84 @@
-/** Control-plane client and shared types. All paths are under /api/v1; every list endpoint returns {items}. */
+/** Control-plane client and shared types. All paths are under <server>/api/v1; every list endpoint returns {items}. */
 
 export const TOKEN_KEY = "mr_admin_token";
+export const SERVER_KEY = "mr_server_url";
 
-export function getToken(): string {
+function storageGet(k: string): string {
   try {
-    return localStorage.getItem(TOKEN_KEY) ?? "";
+    return localStorage.getItem(k) ?? "";
   } catch {
     return "";
   }
 }
 
-export function setToken(t: string): void {
+function storageSet(k: string, v: string): void {
   try {
-    if (t) localStorage.setItem(TOKEN_KEY, t);
-    else localStorage.removeItem(TOKEN_KEY);
+    if (v) localStorage.setItem(k, v);
+    else localStorage.removeItem(k);
   } catch {
-    /* storage unavailable: token lives only in memory for this page */
+    /* storage unavailable: value lives only in memory for this page */
   }
+}
+
+let memoryToken = storageGet(TOKEN_KEY);
+let memoryServer = storageGet(SERVER_KEY);
+
+export function getToken(): string {
+  return memoryToken || storageGet(TOKEN_KEY);
+}
+
+export function setToken(t: string): void {
+  storageSet(TOKEN_KEY, t);
   memoryToken = t;
 }
 
-let memoryToken = getToken();
+/** Base URL of the Market Replay server ("" = same origin, e.g. when the FastAPI app serves this UI). */
+export function getServerUrl(): string {
+  const v = memoryServer || storageGet(SERVER_KEY) || (import.meta.env?.VITE_API_BASE as string | undefined) || "";
+  return v.replace(/\/+$/, "");
+}
+
+export function setServerUrl(url: string): void {
+  const v = url.trim().replace(/\/+$/, "");
+  storageSet(SERVER_KEY, v);
+  memoryServer = v;
+}
+
+export function resolveApiBase(): string {
+  return `${getServerUrl()}/api/v1`;
+}
+
+/** Why a request failed. The UI shows one message per kind instead of a raw status code. */
+export type FailureKind = "no_backend" | "unreachable" | "auth" | "api";
 
 export class ApiError extends Error {
   status: number;
   body: unknown;
-  constructor(status: number, message: string, body: unknown) {
+  kind: FailureKind;
+  constructor(status: number, message: string, body: unknown, kind: FailureKind) {
     super(message);
     this.status = status;
     this.body = body;
+    this.kind = kind;
   }
   get isAuth(): boolean {
-    return this.status === 401 || this.status === 403;
+    return this.kind === "auth";
   }
 }
+
+const NO_BACKEND_MSG = "No Market Replay server answered at this address. This page is only the interface; start the server (make serve) and enter its URL in the settings bar.";
 
 export async function api<T>(path: string, init: RequestInit = {}, auth = true): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (init.body) headers["Content-Type"] = "application/json";
-  const tok = memoryToken || getToken();
+  const tok = getToken();
   if (auth && tok) headers.Authorization = `Bearer ${tok}`;
-  const res = await fetch(`/api/v1${path}`, { ...init, headers: { ...headers, ...(init.headers as Record<string, string> | undefined) } });
+  let res: Response;
+  try {
+    res = await fetch(`${resolveApiBase()}${path}`, { ...init, headers: { ...headers, ...(init.headers as Record<string, string> | undefined) } });
+  } catch (e) {
+    throw new ApiError(0, `Could not reach ${getServerUrl() || "this origin"}: ${(e as Error).message}. Is the server running and is this origin allowed (MARKET_REPLAY_CORS_ORIGINS)?`, null, "unreachable");
+  }
   const text = await res.text();
   let body: unknown = null;
   try {
@@ -49,9 +87,20 @@ export async function api<T>(path: string, init: RequestInit = {}, auth = true):
     body = text;
   }
   if (!res.ok) {
-    const detail = body && typeof body === "object" && "detail" in body ? (body as { detail: unknown }).detail : body;
+    const isJson = body !== null && typeof body === "object";
+    if (res.status === 401 || res.status === 403) {
+      const detail = isJson && "detail" in (body as object) ? (body as { detail: unknown }).detail : body;
+      const msg = typeof detail === "string" ? detail : detail && typeof detail === "object" && "message" in detail ? String((detail as { message: unknown }).message) : "not authorised";
+      throw new ApiError(res.status, msg, body, "auth");
+    }
+    if (!isJson) {
+      // A static host (or a non-API server) answered: there is no backend behind this address.
+      throw new ApiError(res.status, NO_BACKEND_MSG, body, "no_backend");
+    }
+    const b = body as Record<string, unknown>;
+    const detail = "message" in b ? b.message : "detail" in b ? b.detail : body;
     const msg = typeof detail === "string" ? detail : detail ? JSON.stringify(detail) : `${res.status} ${res.statusText}`;
-    throw new ApiError(res.status, msg, body);
+    throw new ApiError(res.status, msg, body, "api");
   }
   return body as T;
 }
@@ -59,6 +108,9 @@ export async function api<T>(path: string, init: RequestInit = {}, auth = true):
 export const get = <T>(p: string) => api<T>(p);
 export const post = <T>(p: string, body?: unknown) => api<T>(p, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
 export const list = async <T>(p: string): Promise<T[]> => (await api<{ items: T[] }>(p)).items ?? [];
+
+export const ISOLATIONS = ["trusted_external_client", "restricted_local_runner"] as const;
+export const MODES = ["practice", "sealed"] as const;
 
 // ------------------------------------------------------------------ types
 

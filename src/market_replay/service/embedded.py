@@ -9,7 +9,7 @@ import time
 import httpx
 import uvicorn
 
-from .app import create_app
+from .app import cors_origins_from_env, create_app
 from .runs import RunManager
 
 
@@ -25,7 +25,7 @@ class EmbeddedServer:
         self.admin_token = admin_token
         self.host = host
         self.port = port or free_port()
-        self.app = create_app(manager, admin_token)
+        self.app = create_app(manager, admin_token, cors_origins=cors_origins_from_env())
         self.manager.gateway_url = f"http://{host}:{self.port}"
         cfg = uvicorn.Config(self.app, host=host, port=self.port, log_level="warning", access_log=False)
         self._server = uvicorn.Server(cfg)

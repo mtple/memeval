@@ -35,3 +35,19 @@ The server serves `apps/web/dist/index.html` at `/` (with SPA fallback for unkno
 - Raw quantities are decimal strings in atomic units; they are never parsed to `Number`. `fmtRaw(raw, decimals)` formats with `BigInt`. Prices are parsed to `Number` only to compute pixel positions in charts.
 - Charts render nothing at or beyond the run's virtual clock; the observed endpoint already enforces this.
 - No scores, percentiles, projections or recommendations are shown. Null valuations, gaps and unresolved inventory are shown explicitly.
+
+## Deploying the UI on a static host (Vercel, Netlify, S3)
+
+The UI is static; **the Market Replay server is not**. A static deployment shows every screen
+only after you connect it to a server you run:
+
+1. `MARKET_REPLAY_CORS_ORIGINS=https://<your-ui-host> make serve` on a machine you control
+   (or in `compose.yaml`). Without the allowlist the browser blocks cross-origin calls.
+2. Open the UI and enter the server URL and admin token in the settings bar (or use
+   `?server=https://host:8000&token=adm_...`). Both are stored in `localStorage`.
+3. `apps/web/vercel.json` rewrites client routes to `index.html` so deep links like `/agents`
+   load; `/api/*`, `/agent/*` and `/assets/*` are never rewritten. Set `VITE_API_BASE` at build
+   time to pre-fill the server URL.
+
+Never expose the server publicly without putting it behind your own authentication; the admin
+token alone is a single shared secret.

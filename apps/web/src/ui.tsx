@@ -98,19 +98,22 @@ export function ErrorState({ error, retry }: { error: unknown; retry?: () => voi
   const msg = error instanceof Error ? error.message : String(error);
   return (
     <div className="state state-error" role="alert">
-      {e?.isAuth ? (
+      {e?.kind === "auth" ? (
         <>
           <strong>Not authorised ({e.status}).</strong>
           <p>
-            The control plane requires an admin token. Paste it in the <a href="#settings">settings bar</a> at the top of the page (or open the app with{" "}
-            <code>?token=…</code>).
+            The control plane requires an admin token. Paste it in the <a href="#settings">settings bar</a> at the top of the page (or open the app with <code>?token=…</code>).
           </p>
+        </>
+      ) : e?.kind === "no_backend" || e?.kind === "unreachable" ? (
+        <>
+          <strong>Not connected to a Market Replay server.</strong>
+          <p>{msg}</p>
         </>
       ) : (
         <>
           <strong>Request failed{e ? ` (${e.status})` : ""}.</strong>
           <p>{msg}</p>
-          {!e && <p>Is the Market Replay server running on this origin (dev: proxied to 127.0.0.1:8000)?</p>}
         </>
       )}
       {retry && (
@@ -121,6 +124,7 @@ export function ErrorState({ error, retry }: { error: unknown; retry?: () => voi
     </div>
   );
 }
+
 
 export function Loading({ what = "" }: { what?: string }) {
   return (

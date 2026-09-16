@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -88,11 +89,20 @@ class CommandBody(BaseModel):
     session_id: str | None = None
 
 
-def create_app(manager: RunManager, admin_token: str | None = None) -> FastAPI:
+def cors_origins_from_env() -> list[str]:
+    """Browser origins allowed to call this server (a statically hosted UI, for example). Empty by default."""
+    raw = os.environ.get("MARKET_REPLAY_CORS_ORIGINS", "")
+    return [o.strip().rstrip("/") for o in raw.split(",") if o.strip()]
+
+
+def create_app(manager: RunManager, admin_token: str | None = None, cors_origins: list[str] | None = None) -> FastAPI:
     token = resolve_admin_token(admin_token)
     app = FastAPI(title="Market Replay", version="0.1.0", description="Strategy-agnostic trading-agent evaluator: control plane and agent plane.")
     app.state.manager = manager
     app.state.admin_token = token
+    if cors_origins:
+        # Explicit allowlist only; never "*". Credentials are bearer headers, so allow the Authorization header.
+        app.add_middleware(CORSMiddleware, allow_origins=list(cors_origins), allow_methods=["GET", "POST", "OPTIONS"], allow_headers=["Authorization", "Content-Type"], max_age=600)
 
     def require_admin(authorization: str | None = Header(default=None)) -> None:
         if not authorization or not authorization.startswith("Bearer "):
