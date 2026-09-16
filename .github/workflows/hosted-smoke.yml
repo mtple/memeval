@@ -1,9 +1,11 @@
 name: hosted-smoke
 
 # Probes a deployed Market Replay (UI + function) without any credentials.
-# Run it from the Actions tab (or the API) with the deployment's base URL.
+# Runs automatically when Vercel reports a deployment as successful (production and previews),
+# and on demand from the Actions tab with any base URL.
 
 on:
+  deployment_status:
   workflow_dispatch:
     inputs:
       base_url:
@@ -13,14 +15,16 @@ on:
 
 jobs:
   smoke:
+    if: github.event_name == 'workflow_dispatch' || github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Probe
         env:
-          BASE: ${{ inputs.base_url }}
+          BASE: ${{ inputs.base_url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
         run: |
           set -u
+          echo "Deployment: ${{ github.event.deployment.environment || 'manual' }} -> $BASE"
           fail=0
           probe() {  # name method path expected_status [body]
             local name=$1 method=$2 path=$3 want=$4 body=${5:-}
