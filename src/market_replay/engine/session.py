@@ -23,7 +23,6 @@ from ..domain.status import (
     AvailabilityBasis,
     Completeness,
     ErrorCode,
-    OrderState,
     PoolModel,
 )
 from ..observations.masking import LeakScanner
@@ -65,6 +64,7 @@ UNSUPPORTED_CAPABILITIES = [
     "best_opportunities_ranking",
 ]
 
+KNOWN_NAMESPACES = {"session", "markets", "market", "broker", "portfolio", "clock"}
 DATA_TOOLS = {"markets.list", "markets.get", "market.trades", "market.candles", "market.liquidity", "market.restrictions"}
 FREE_TOOLS = {"session.describe", "broker.order", "portfolio.get", "portfolio.history", "session.finish"}
 
@@ -293,9 +293,12 @@ class Session:
         before = self.now
         try:
             if tool not in TOOLS:
-                if tool in UNSUPPORTED_CAPABILITIES or tool.split(".")[-1] in UNSUPPORTED_CAPABILITIES:
-                    raise SessionError(ErrorCode.UNSUPPORTED_CAPABILITY, f"{tool} is not implemented in this environment")
-                raise SessionError(ErrorCode.INVALID_REQUEST, f"unknown tool {tool}", {"known_tools": sorted(TOOLS)})
+                # A malformed name inside a known namespace is an invalid request; anything else the
+                # environment does not provide is a typed capability error, never a fabricated answer.
+                namespace = tool.split(".")[0] if "." in tool else ""
+                if namespace in KNOWN_NAMESPACES and not any(c in tool for c in UNSUPPORTED_CAPABILITIES):
+                    raise SessionError(ErrorCode.INVALID_REQUEST, f"unknown tool {tool}", {"known_tools": sorted(TOOLS)})
+                raise SessionError(ErrorCode.UNSUPPORTED_CAPABILITY, f"{tool} is not implemented in this environment", {"unsupported_capabilities": UNSUPPORTED_CAPABILITIES})
             if not isinstance(args, dict):
                 raise SessionError(ErrorCode.INVALID_REQUEST, "arguments must be an object")
             if self.paused and tool not in ("session.describe",):

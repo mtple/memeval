@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 AGENT_AVAILABLE = "agent.available"
 AGENT_RESERVED = "agent.reserved"

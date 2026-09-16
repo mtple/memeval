@@ -1,0 +1,89 @@
+{
+  "fixture_version": 1,
+  "origin": "report_excerpt",
+  "source": "Historical market simulator: evidence report, 2026-09-16",
+  "complete_raw_response": false,
+  "integrity_note": "Any hash computed over this file is a hash of the excerpt fixture, not an integrity hash of a provider receipt. No raw-receipt hash was supplied.",
+  "examples": [
+    {
+      "kind": "recent_trade_excerpt",
+      "source_lines": "81-116",
+      "network": "base",
+      "pool_address": "0x95aae67e62bd6c97ede434baa57c53c110845f9c",
+      "reported_requested_at": "2026-09-16T06:44:26.171Z",
+      "reported_received_at": "2026-09-16T06:44:26.369Z",
+      "reported_http_status": 200,
+      "trade_fields_as_reported": {
+        "block_number": 51375840,
+        "block_timestamp": "2026-09-16T06:43:47Z",
+        "kind": "buy",
+        "from_token_amount": "190000.0",
+        "to_token_amount": "1895728259.05235",
+        "price_to_in_usd": "0.000100355769769519",
+        "volume_in_usd": "190247.268711028"
+      },
+      "reported_page_count": 25,
+      "reported_span": ["2026-09-16T06:38:15Z", "2026-09-16T06:43:47Z"],
+      "completeness": "not_established",
+      "note": "Other trade fields and rows were not supplied; do not invent missing identifiers or raw amounts."
+    },
+    {
+      "kind": "open_candle_excerpt",
+      "source_lines": "118-153",
+      "reported_requested_at": "2026-09-16T06:45:51.902Z",
+      "reported_received_at": "2026-09-16T06:45:52.105Z",
+      "currency": "usd",
+      "aggregate_minutes": 1,
+      "first_row_as_reported": [
+        1789541100,
+        0.00010045662753636,
+        0.000100528698750847,
+        0.00010045662753636,
+        0.000100528698750847,
+        761293.5348822372
+      ],
+      "reported_rows_returned": 7,
+      "reported_requested_limit": 20,
+      "reported_missing_bucket": "2026-09-16T06:39:00Z",
+      "note": "The first bucket starts at 06:45:00 and is open at receipt. Only one row is supplied."
+    },
+    {
+      "kind": "security_excerpt",
+      "source_lines": "155-190",
+      "reported_requested_at": "2026-09-16T06:44:26.642Z",
+      "reported_received_at": "2026-09-16T06:44:26.888Z",
+      "response_fields_as_reported": {
+        "code": 1,
+        "message": "OK",
+        "is_honeypot": "0",
+        "is_open_source": "1",
+        "is_in_dex": "0",
+        "buy_tax": "",
+        "sell_tax": ""
+      },
+      "market_provider_evidence": "a pool for this token was observed by a market provider at the same time",
+      "note": "Security fields were nested under the requested token in the original response. This is an excerpt, not the full response shape. Effective/update time is absent; empty taxes are unknown."
+    },
+    {
+      "kind": "quote_only_cli_excerpt",
+      "source_lines": "192-219",
+      "reported_invocation_at": "2026-09-07T16:32:45.238207Z",
+      "reported_tool_result_at": "2026-09-07T16:32:49.764995Z",
+      "reported_exit_code": 0,
+      "output_lines_as_reported": [
+        "You pay:  1 USDC ($1.00)",
+        "You receive:  ~0.000405 ETH ($1.00)",
+        "  Min received:       0.000384 ETH"
+      ],
+      "execution_evidence": "quote_only",
+      "note": "Tool-record times are not exact provider-server times. No fill is established."
+    },
+    {
+      "kind": "http_success_application_error",
+      "source_lines": "synthetic wrapper around report statement: a successful HTTP status may contain an application-level error",
+      "reported_http_status": 200,
+      "response_fields_as_reported": {"status": {"error_code": 10005, "error_message": "You've exceeded the Rate Limit."}},
+      "note": "Shape illustrates the rule that HTTP success plus provider application failure stays a failure. Field names follow common provider conventions and are not a verbatim receipt."
+    }
+  ]
+}

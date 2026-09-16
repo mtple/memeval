@@ -1,0 +1,320 @@
+import { useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { get, post, type Report, type ReplayResult } from "../api";
+import { fmtAmount, fmtDuration, fmtMs, fmtPct, fmtRaw, fmtReturn, humanize, shortHash } from "../format";
+import { Badge, Card, ErrorState, JsonView, KV, Loading, StrList, downloadJson, toneForStatus, useLoad } from "../ui";
+
+export default function Results() {
+  const { id = "" } = useParams();
+  const rep = useLoad(() => get<Report>(`/runs/${id}/report?role=admin`), [id]);
+  const [replay, setReplay] = useState<ReplayResult | null>(null);
+  const [replayErr, setReplayErr] = useState<unknown>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [exportErr, setExportErr] = useState<unknown>(null);
+
+  const R = rep.data;
+  const dec = R?.outcome.numeraire_decimals;
+  const unit = R?.outcome.numeraire;
+  const amt = (raw: string | null | undefined) => fmtAmount(raw, dec, unit);
+
+  const doExport = async (role: "admin" | "participant") => {
+    setBusy(role);
+    setExportErr(null);
+    try {
+      const bundle = await get<unknown>(`/runs/${id}/export?role=${role}&include_mappings=${role === "admin"}`);
+      downloadJson(`market-replay-${shortHash(id, 12).replace("…", "")}-${role}.json`, bundle);
+    } catch (x) {
+      setExportErr(x);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <main className="stack">
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <h1 style={{ margin: 0 }}>
+          Results for run <span className="mono">{shortHash(id, 16)}</span>
+        </h1>
+        <Link to={`/runs/${id}`} className="btn btn-small">
+          Back to run
+        </Link>
+      </div>
+      {rep.error && (
+        <>
+          <ErrorState error={rep.error} retry={rep.reload} />
+          <p className="muted">
+            A report exists only for runs that reached a terminal state. Check the run's state on <Link to={`/runs/${id}`}>its run page</Link>.
+          </p>
+        </>
+      )}
+      {rep.loading && !R && <Loading what="report" />}
+      {R && (
+        <>
+          <Card title="Status dimensions">
+            <div className="dims">
+              {(
+                [
+                  ["data_origin", "Data origin"],
+                  ["availability_basis", "Availability basis"],
+                  ["execution_model", "Execution model"],
+                  ["token_behavior", "Token behaviour"],
+                  ["isolation", "Isolation"],
+                  ["use_status", "Use status"],
+                  ["predictive_validity", "Predictive validity"],
+                ] as [string, string][]
+              ).map(([k, label]) => (
+                <span key={k} className="dim">
+                  <span>{label}</span>
+                  <Badge tone={k === "predictive_validity" ? "muted" : toneForStatus(R.status_dimensions?.[k])}>{humanize(R.status_dimensions?.[k] ?? "unknown")}</Badge>
+                </span>
+              ))}
+            </div>
+          </Card>
+
+          <Card title="Outcome">
+            <div className="metrics">
+              <M label="Initial equity" value={fmtRaw(R.outcome.initial_equity_raw, dec)} sub={unit} />
+              <M
+                label="Terminal model equity"
+                value={R.outcome.terminal_model_equity_raw === null ? "null" : fmtRaw(R.outcome.terminal_model_equity_raw, dec)}
+                sub={R.outcome.terminal_model_equity_raw === null ? "valuation incomplete" : unit}
+                warn={R.outcome.terminal_model_equity_raw === null}
+              />
+              <M label="Headline return" value={R.outcome.headline_return === null ? "null — valuation incomplete" : fmtReturn(R.outcome.headline_return)} sub={R.outcome.return_definition} warn={R.outcome.headline_return === null} />
+              <M label="Valuation" value={R.outcome.valuation_complete ? "complete" : "incomplete"} warn={!R.outcome.valuation_complete} sub={R.outcome.valuation_policy} />
+            </div>
+            <KV
+              rows={[
+                ["Terminal cash", amt(R.outcome.terminal_cash_raw)],
+                ["Terminal priced inventory", amt(R.outcome.terminal_priced_inventory_raw)],
+                ["Terminal liquidation gas", amt(R.outcome.terminal_liquidation_gas_raw)],
+                ["Return definition", R.outcome.return_definition],
+                ["Valuation policy", R.outcome.valuation_policy],
+              ]}
+            />
+            {R.outcome.valuation_warnings?.length > 0 && (
+              <div className="notice">
+                <strong>Valuation warnings</strong>
+                <StrList items={R.outcome.valuation_warnings} />
+              </div>
+            )}
+          </Card>
+
+          <div className="grid-2">
+            <Card title="Risk">
+              <div className="metrics">
+                <M label="Max drawdown" value={R.risk.max_drawdown === null ? "not supportable" : fmtPct(R.risk.max_drawdown)} sub={R.risk.drawdown_basis} warn={R.risk.max_drawdown === null} />
+                <M label="Equity points complete / total" value={`${R.risk.equity_points_complete} / ${R.risk.equity_points_total}`} sub={`${R.risk.gap_count} gaps`} warn={R.risk.gap_count > 0} />
+                <M label="Exposure share of grid" value={fmtPct(R.risk.exposure_share_of_grid)} />
+                <M label="Largest position" value={R.risk.largest_position ? fmtPct(R.risk.largest_position.share) : "—"} sub={R.risk.largest_position?.asset_id} />
+              </div>
+              {R.risk.gaps?.length > 0 && <JsonView value={R.risk.gaps} />}
+            </Card>
+            <Card title="Costs">
+              <KV
+                rows={[
+                  ["Gas total", `${amt(R.costs.gas_total_raw)} (${humanize(R.costs.gas_basis)})`],
+                  ["Turnover (numeraire)", amt(R.costs.turnover_numeraire_raw)],
+                  ["Implicit pool fee (numeraire)", amt(R.costs.implicit_pool_fee_numeraire_raw)],
+                  ["Implicit pool fee (other, raw)", typeof R.costs.implicit_pool_fee_other_raw === "string" ? R.costs.implicit_pool_fee_other_raw : <code>{JSON.stringify(R.costs.implicit_pool_fee_other_raw)}</code>],
+                  ["Fee note", R.costs.fee_note],
+                ]}
+              />
+            </Card>
+          </div>
+
+          <div className="grid-2">
+            <Card title="Activity">
+              <KV
+                rows={[
+                  ["Orders total", R.activity.orders_total],
+                  ["Orders by state", Object.entries(R.activity.orders_by_state ?? {}).map(([k, v]) => `${k}: ${v}`).join(", ") || "none"],
+                  ["Confirmed / reverted / expired", `${R.activity.confirmed_fills} / ${R.activity.reverted} / ${R.activity.expired}`],
+                  ["Model capacity rejected", R.activity.model_capacity_rejected],
+                  ["Requests / decisions", `${R.activity.requests_total} / ${R.activity.decisions_total}`],
+                  ["Budget exhausted", R.activity.budget_exhausted ? <Badge tone="bad">yes</Badge> : "no"],
+                  ["Invalid calls / rate limited", `${R.activity.quality_exposure?.invalid_calls ?? 0} / ${R.activity.quality_exposure?.rate_limited ?? 0}`],
+                  ["Errors by code", Object.entries(R.activity.quality_exposure?.errors_by_code ?? {}).map(([k, v]) => `${k}: ${v}`).join(", ") || "none"],
+                ]}
+              />
+              <h3>Tool calls</h3>
+              <KV rows={Object.entries(R.activity.tool_calls ?? {}).map(([k, v]) => [<code key={k}>{k}</code>, v])} />
+            </Card>
+            <Card title="Unresolved">
+              <h3>Unresolved orders ({R.unresolved.orders?.length ?? 0})</h3>
+              {R.unresolved.orders?.length ? <JsonView value={R.unresolved.orders} open /> : <p className="muted">None.</p>}
+              <h3>No-route inventory ({R.unresolved.no_route_inventory?.length ?? 0})</h3>
+              <InvTable rows={R.unresolved.no_route_inventory} />
+              <h3>Unpriced inventory ({R.unresolved.unpriced_inventory?.length ?? 0})</h3>
+              <InvTable rows={R.unresolved.unpriced_inventory} />
+              <h3>Environment fidelity flags</h3>
+              <StrList items={R.unresolved.environment_fidelity_flags} empty="None raised." />
+            </Card>
+          </div>
+
+          <Card title="Coverage and assumptions">
+            <div className="grid-2">
+              <div>
+                <KV
+                  rows={[
+                    ["Episode duration", fmtDuration(R.coverage_and_assumptions.episode_duration_ms, R.coverage_and_assumptions.is_full_week)],
+                    ["Universe", R.coverage_and_assumptions.universe?.description],
+                    [
+                      "Universe counts",
+                      `candidates ${R.coverage_and_assumptions.universe?.candidate_count}, selected ${R.coverage_and_assumptions.universe?.selected_count}, unsupported ${R.coverage_and_assumptions.universe?.unsupported_count}, missing ${R.coverage_and_assumptions.universe?.missing_count}`,
+                    ],
+                    ["Availability model", typeof R.coverage_and_assumptions.availability_model === "string" ? humanize(R.coverage_and_assumptions.availability_model) : <code>{JSON.stringify(R.coverage_and_assumptions.availability_model)}</code>],
+                    ["Reconciliation mismatches in run", R.coverage_and_assumptions.reconciliation_mismatches_in_run],
+                  ]}
+                />
+                <h3>Limitations</h3>
+                <StrList items={R.coverage_and_assumptions.limitations} empty="No limitations listed." />
+              </div>
+              <div>
+                <h3>
+                  Latency assumptions{" "}
+                  <Badge tone={R.coverage_and_assumptions.latency_assumptions?.is_measured ? "ok" : "warn"}>{R.coverage_and_assumptions.latency_assumptions?.is_measured ? "measured" : "assumed"}</Badge>
+                </h3>
+                {R.coverage_and_assumptions.latency_assumptions && (
+                  <KV
+                    rows={[
+                      ["Profile", `${R.coverage_and_assumptions.latency_assumptions.label} (${R.coverage_and_assumptions.latency_assumptions.profile_name})`],
+                      ["Block interval", fmtMs(R.coverage_and_assumptions.latency_assumptions.block_interval_ms)],
+                      ["Data / quote / submit latency", `${fmtMs(R.coverage_and_assumptions.latency_assumptions.data_latency_ms)} / ${fmtMs(R.coverage_and_assumptions.latency_assumptions.quote_latency_ms)} / ${fmtMs(R.coverage_and_assumptions.latency_assumptions.submit_latency_ms)}`],
+                      ["Confirm blocks / settlement tail", `${R.coverage_and_assumptions.latency_assumptions.confirm_blocks} / ${R.coverage_and_assumptions.latency_assumptions.settlement_tail_blocks}`],
+                      ["Quote TTL / availability delay", `${fmtMs(R.coverage_and_assumptions.latency_assumptions.quote_ttl_ms)} / ${fmtMs(R.coverage_and_assumptions.latency_assumptions.availability_delay_ms)}`],
+                      ["Gas cost (raw) / basis", `${R.coverage_and_assumptions.latency_assumptions.gas_cost_raw} / ${humanize(R.coverage_and_assumptions.latency_assumptions.gas_basis)}`],
+                    ]}
+                  />
+                )}
+                <h3>Capacity profile</h3>
+                {R.coverage_and_assumptions.capacity_profile ? (
+                  <KV
+                    rows={[
+                      ["Version", R.coverage_and_assumptions.capacity_profile.version],
+                      ["Max input (bps of reserve)", R.coverage_and_assumptions.capacity_profile.max_input_bps_of_reserve],
+                      ["Max cumulative displacement (bps)", R.coverage_and_assumptions.capacity_profile.max_cumulative_displacement_bps],
+                      ["Note", R.coverage_and_assumptions.capacity_profile.note],
+                    ]}
+                  />
+                ) : (
+                  <p className="muted">None.</p>
+                )}
+              </div>
+            </div>
+          </Card>
+
+          <div className="grid-2">
+            <Card title="Versions">
+              <KV rows={Object.entries(R.versions ?? {}).map(([k, v]) => [humanize(k), <span key={k} className="mono">{v}</span>])} />
+              <KV rows={[["Report version", R.report_version]]} />
+            </Card>
+            <Card
+              title="Reproducibility"
+              actions={
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  disabled={busy === "replay"}
+                  onClick={async () => {
+                    setBusy("replay");
+                    setReplayErr(null);
+                    try {
+                      setReplay(await post<ReplayResult>(`/runs/${id}/replay`));
+                    } catch (x) {
+                      setReplayErr(x);
+                    } finally {
+                      setBusy(null);
+                    }
+                  }}
+                >
+                  {busy === "replay" ? "Replaying…" : "Replay actions"}
+                </button>
+              }
+            >
+              <KV
+                rows={[
+                  ["Ledger hash", <span className="mono">{R.reproducibility.ledger_hash}</span>],
+                  ["State hash", <span className="mono">{R.reproducibility.state_hash}</span>],
+                  ["Trace hash", <span className="mono">{R.reproducibility.trace_hash}</span>],
+                  ["Result hash", <span className="mono">{R.reproducibility.result_hash}</span>],
+                  ["Trace length", R.reproducibility.trace_length],
+                ]}
+              />
+              {replayErr !== null && <ErrorState error={replayErr} />}
+              {replay && (
+                <div className="row" style={{ marginTop: 8 }}>
+                  <Badge tone={replay.ledger_matches ? "ok" : "bad"}>ledger matches: {String(replay.ledger_matches)}</Badge>
+                  <Badge tone={replay.state_matches ? "ok" : "bad"}>state matches: {String(replay.state_matches)}</Badge>
+                  <span className="small muted">replayed {replay.trace_length} trace entries</span>
+                  <JsonView value={replay} />
+                </div>
+              )}
+            </Card>
+          </div>
+
+          <Card
+            title="Export"
+            actions={
+              <>
+                <button type="button" className="btn btn-small" disabled={busy === "admin"} onClick={() => doExport("admin")}>
+                  Download admin bundle
+                </button>
+                <button type="button" className="btn btn-small" disabled={busy === "participant"} onClick={() => doExport("participant")}>
+                  Download participant bundle
+                </button>
+              </>
+            }
+          >
+            <p className="muted small">The admin bundle includes mappings; the participant bundle is blinded. Both are JSON.</p>
+            {exportErr !== null && <ErrorState error={exportErr} />}
+          </Card>
+
+          <Card title="Statement">
+            <p className="statement">{R.statement}</p>
+          </Card>
+          <JsonView value={R} />
+        </>
+      )}
+    </main>
+  );
+}
+
+function M({ label, value, sub, warn }: { label: string; value: string; sub?: string | null; warn?: boolean }) {
+  return (
+    <div className="metric">
+      <span className="lbl">{label}</span>
+      <span className="val" style={warn ? { color: "var(--warn-fg)" } : undefined}>
+        {value}
+      </span>
+      {sub && <span className="lbl">{sub}</span>}
+    </div>
+  );
+}
+
+function InvTable({ rows }: { rows: { asset_id: string; quantity_raw: string; reason?: string }[] | undefined }) {
+  if (!rows?.length) return <p className="muted">None.</p>;
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Asset</th>
+            <th className="num">Quantity (raw)</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              <td className="mono small">{r.asset_id}</td>
+              <td className="num">{r.quantity_raw}</td>
+              <td className="small">{r.reason ?? ""}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

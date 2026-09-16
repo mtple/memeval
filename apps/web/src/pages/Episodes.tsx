@@ -1,0 +1,347 @@
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { list, post, get, type Pack, type Validation } from "../api";
+import { fmtDuration, fmtMs, fmtDate, humanize } from "../format";
+import { Badge, Card, EmptyState, ErrorState, GateList, GateSummary, JsonView, KV, Loading, StrList, toneForStatus, useLoad } from "../ui";
+
+const uniq = (xs: string[]) => Array.from(new Set(xs)).sort();
+
+export default function Episodes() {
+  const { data: packs, error, loading, reload } = useLoad(() => list<Pack>("/packs"), []);
+  const [chain, setChain] = useState("");
+  const [origin, setOrigin] = useState("");
+  const [use, setUse] = useState("");
+  const [kind, setKind] = useState("");
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const filtered = useMemo(
+    () =>
+      (packs ?? []).filter(
+        (p) =>
+          (!chain || p.chain === chain) &&
+          (!origin || p.origin === origin) &&
+          (!use || p.use_status === use) &&
+          (!kind ||
+            (kind === "runnable" && p.runnable) ||
+            (kind === "diagnostic" && p.diagnostic_only) ||
+            (kind === "incomplete" && (!p.runnable || (p.summary?.executable_failure ?? null) !== null || p.summary?.pools_executable < p.summary?.pools_total))),
+      ),
+    [packs, chain, origin, use, kind],
+  );
+  const sel = packs?.find((p) => p.pack_id === selected) ?? null;
+
+  return (
+    <main>
+      <h1>Episodes</h1>
+      {error && <ErrorState error={error} retry={reload} />}
+      {loading && !packs && <Loading what="packs" />}
+      {packs && (
+        <>
+          <div className="filters" role="group" aria-label="Filters">
+            <Sel label="Chain" value={chain} onChange={setChain} options={uniq(packs.map((p) => p.chain))} />
+            <Sel label="Origin" value={origin} onChange={setOrigin} options={uniq(packs.map((p) => p.origin))} />
+            <Sel label="Use status" value={use} onChange={setUse} options={uniq(packs.map((p) => p.use_status))} />
+            <Sel label="Kind" value={kind} onChange={setKind} options={["runnable", "diagnostic", "incomplete"]} />
+            <span className="muted small" style={{ alignSelf: "end" }}>
+              {filtered.length} of {packs.length} packs
+            </span>
+          </div>
+          {packs.length === 0 ? (
+            <EmptyState title="No packs imported.">
+              Generate development fixtures with <code>make demo</code> or <code>market-replay fixtures generate</code>, then import the resulting pack below. Generated fixtures are synthetic: they are not historical
+              performance and their predictive validity is not established.
+            </EmptyState>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Origin</th>
+                    <th>Chain</th>
+                    <th>Duration</th>
+                    <th>Use status</th>
+                    <th className="num">Exec. pools</th>
+                    <th>Gates</th>
+                    <th>Period</th>
+                    <th>Predictive validity</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((p) => (
+                    <tr key={p.pack_id} className={`clickable ${selected === p.pack_id ? "selected" : ""}`} onClick={() => setSelected(p.pack_id)}>
+                      <td>
+                        <button type="button" className="rowbtn" onClick={() => setSelected(p.pack_id)} aria-expanded={selected === p.pack_id}>
+                          {p.name}
+                        </button>
+                        <div className="muted small mono">{p.pack_id}</div>
+                        <div className="row">
+                          {p.runnable ? <Badge tone="ok">runnable</Badge> : <Badge tone="bad">not runnable</Badge>}
+                          {p.diagnostic_only && <Badge tone="muted">diagnostic only</Badge>}
+                        </div>
+                      </td>
+                      <td>
+                        <Badge tone={p.origin === "generated_fixture" ? "warn" : "neutral"}>{humanize(p.origin)}</Badge>
+                      </td>
+                      <td>{p.chain}</td>
+                      <td>{fmtDuration(p.duration_ms, p.is_full_week)}</td>
+                      <td>
+                        <Badge tone={toneForStatus(p.use_status)}>{humanize(p.use_status)}</Badge>
+                      </td>
+                      <td className="num">
+                        {p.summary?.pools_executable ?? "?"}/{p.summary?.pools_total ?? "?"}
+                      </td>
+                      <td>
+                        <GateSummary gates={p.summary?.gates} />
+                      </td>
+                      <td className="small">
+                        {p.period_dev_mode ? (
+                          <>
+                            <Badge tone="warn">development mode</Badge>
+                            <div className="mono">
+                              {p.period_dev_mode.start_utc} → {p.period_dev_mode.end_utc}
+                            </div>
+                            <div className="muted">{p.period_dev_mode.note}</div>
+                          </>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <Badge tone="muted">{humanize(p.predictive_validity || "not_established")}</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+      {sel && <PackDetail pack={sel} onClose={() => setSelected(null)} />}
+      <ImportForm onImported={reload} />
+    </main>
+  );
+}
+
+function Sel({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
+  return (
+    <label className="field">
+      {label}
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">all</option>
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {humanize(o)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function PackDetail({ pack: p, onClose }: { pack: Pack; onClose: () => void }) {
+  const { data: val, error } = useLoad(() => get<Validation>(`/packs/${p.pack_id}/validation`), [p.pack_id]);
+  const s = p.summary;
+  const la = s?.latency_assumptions;
+  const u = s?.universe;
+  const r = s?.rights;
+  return (
+    <Card
+      title={`Pack: ${p.name}`}
+      className="stack"
+      actions={
+        <>
+          <Link className="btn btn-small" to={`/data-health/${p.pack_id}`}>
+            Data health
+          </Link>
+          <Link className="btn btn-small" to={`/runs?pack_id=${p.pack_id}`}>
+            Runs
+          </Link>
+          <button type="button" className="btn btn-small" onClick={onClose}>
+            Close
+          </button>
+        </>
+      }
+    >
+      <div className="grid">
+        <div>
+          <h3>Scope</h3>
+          <KV
+            rows={[
+              ["Scope", p.scope_label],
+              ["Episode", <span className="mono">{p.episode_id}</span>],
+              ["Chain", p.chain],
+              ["Origin", humanize(p.origin)],
+              ["Duration", fmtDuration(p.duration_ms, p.is_full_week)],
+              ["Prehistory", fmtMs(s?.prehistory_ms)],
+              ["Execution model", humanize(p.execution_model)],
+              ["Availability basis", humanize(s?.availability_basis)],
+              ["Token behaviour basis", humanize(s?.token_behavior_basis)],
+              ["Numeraire", `${s?.numeraire_alias ?? "?"} (${s?.numeraire_decimals ?? "?"} decimals)`],
+              ["Imported", fmtDate(p.imported_at)],
+              ["Scenario", s?.scenario ?? "—"],
+              ["Supported actions", p.supported_actions?.join(", ") || "—"],
+              ["Unsupported capabilities", p.unsupported_capabilities?.join(", ") || "none"],
+              ["Executable failure", s?.executable_failure ?? "none"],
+              ["Predictive validity", humanize(p.predictive_validity || "not_established")],
+            ]}
+          />
+        </div>
+        <div>
+          <h3>Universe</h3>
+          {u ? (
+            <KV
+              rows={[
+                ["Description", u.description],
+                ["Factories", u.factories?.join(", ")],
+                ["Pool models", u.pool_models?.join(", ")],
+                ["Quote asset", u.quote_asset],
+                ["Selection rule", u.selection_rule_version],
+                ["Candidates", u.candidate_count],
+                ["Selected", u.selected_count],
+                ["Unsupported", u.unsupported_count],
+                ["Missing", u.missing_count],
+                ["Pools executable / total", `${s.pools_executable} / ${s.pools_total}`],
+                ["Assets", s.assets_total],
+                ["Tape events", s.tape_events],
+                ["Coverage states", Object.entries(s.coverage_states ?? {}).map(([k, v]) => `${k}: ${v}`).join(", ") || "—"],
+              ]}
+            />
+          ) : (
+            <p className="muted">No universe summary.</p>
+          )}
+        </div>
+        <div>
+          <h3>Latency assumptions {la && <Badge tone={la.is_measured ? "ok" : "warn"}>{la.is_measured ? "measured" : "assumed"}</Badge>}</h3>
+          {la ? (
+            <KV
+              rows={[
+                ["Profile", `${la.label} (${la.profile_name})`],
+                ["Block interval", fmtMs(la.block_interval_ms)],
+                ["Data latency", fmtMs(la.data_latency_ms)],
+                ["Quote latency", fmtMs(la.quote_latency_ms)],
+                ["Submit latency", fmtMs(la.submit_latency_ms)],
+                ["Confirm blocks", la.confirm_blocks],
+                ["Quote TTL", fmtMs(la.quote_ttl_ms)],
+                ["Availability delay", fmtMs(la.availability_delay_ms)],
+                ["Gas cost (raw)", <span className="mono">{la.gas_cost_raw}</span>],
+                ["Gas basis", humanize(la.gas_basis)],
+                ["Settlement tail blocks", la.settlement_tail_blocks],
+                ["Capacity profile", `${la.capacity_profile?.version}: max input ${la.capacity_profile?.max_input_bps_of_reserve} bps of reserve, max cumulative displacement ${la.capacity_profile?.max_cumulative_displacement_bps} bps`],
+                ["Capacity note", la.capacity_profile?.note],
+              ]}
+            />
+          ) : (
+            <p className="muted">No latency profile.</p>
+          )}
+        </div>
+        <div>
+          <h3>Rights</h3>
+          {r ? (
+            <KV
+              rows={[
+                ["Storage", humanize(r.storage_basis)],
+                ["Local processing", humanize(r.local_processing_basis)],
+                ["Redistribution", humanize(r.redistribution)],
+                ["Simulator serving", humanize(r.simulator_serving)],
+                ["Notes", Array.isArray(r.notes) ? r.notes.join("; ") : r.notes],
+              ]}
+            />
+          ) : (
+            <p className="muted">No rights record.</p>
+          )}
+          <h3>Provenance notes</h3>
+          <StrList items={s?.provenance_notes} empty="No provenance notes." />
+          <h3>Unsupported inventory</h3>
+          {s?.unsupported_inventory?.length ? (
+            <ul className="plain">
+              {s.unsupported_inventory.map((x, i) => (
+                <li key={i}>
+                  <span className="mono">{x.pool}</span> — {x.reason}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">None.</p>
+          )}
+        </div>
+      </div>
+      <h3>Validation gates</h3>
+      {error && <ErrorState error={error} />}
+      {val ? (
+        <>
+          <KV
+            rows={[
+              ["Validator", val.validator_version],
+              ["Requested qualification", humanize(val.requested_qualification)],
+              ["Resulting qualification", <Badge tone={toneForStatus(val.resulting_qualification)}>{humanize(val.resulting_qualification)}</Badge>],
+              ["Executable failure", val.executable_failure ?? "none"],
+              ["Predictive validity", humanize(val.predictive_validity)],
+            ]}
+          />
+          <GateList gates={val.gates} />
+          <StrList items={val.notes} empty="" />
+        </>
+      ) : (
+        <GateList gates={s?.gates} />
+      )}
+      <JsonView value={p} />
+    </Card>
+  );
+}
+
+function ImportForm({ onImported }: { onImported: () => void }) {
+  const [path, setPath] = useState("");
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<unknown>(null);
+  const [ok, setOk] = useState<Pack | null>(null);
+  return (
+    <Card title="Import pack">
+      <form
+        className="form cols"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setErr(null);
+          setOk(null);
+          try {
+            const p = await post<Pack>("/packs/import", name ? { path, name } : { path });
+            setOk(p);
+            setPath("");
+            setName("");
+            onImported();
+          } catch (x) {
+            setErr(x);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <label className="field">
+          Path (server-local directory or archive)
+          <input required value={path} onChange={(e) => setPath(e.target.value)} placeholder="data/packs/generated-dev-v1/…" />
+        </label>
+        <label className="field">
+          Name (optional)
+          <input value={name} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <div className="span2 row">
+          <button className="btn btn-primary" disabled={busy || !path}>
+            {busy ? "Importing…" : "Import"}
+          </button>
+          {ok && (
+            <span>
+              Imported <strong>{ok.name}</strong> <Badge tone={toneForStatus(ok.use_status)}>{humanize(ok.use_status)}</Badge>
+            </span>
+          )}
+        </div>
+      </form>
+      {err !== null && <ErrorState error={err} />}
+      <p className="muted small">
+        No packs yet? Run <code>make demo</code> or <code>market-replay fixtures generate</code> to create development fixtures, then import the generated directory here.
+      </p>
+    </Card>
+  );
+}

@@ -161,7 +161,8 @@ def generate_pack(cfg: GeneratorConfig, out_dir: Path) -> Pack:
     seq = 0
     coverage_intervals: list[dict[str, Any]] = []
     inventory: dict[str, Any] = {"unsupported": [], "missing": [], "candidate_count": len(specs), "selected_count": 0}
-    token_symbols = ["MOON", "PEPE", "DOGE", "WIF", "BRETT", "TOSHI", "MOON", "FROG", "KEK", "NORMIE", "BASED", "DEGEN"]
+    # Deliberate symbol collisions (MOON at index 0 and 3) prove that symbols are metadata, not identity.
+    token_symbols = ["MOON", "PEPE", "DOGE", "MOON", "WIF", "BRETT", "TOSHI", "FROG", "KEK", "NORMIE", "BASED", "DEGEN"]
 
     def rel_to_utc(ms: int) -> int:
         return start_utc + ms

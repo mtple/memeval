@@ -1,0 +1,17 @@
+# Versioned deployment references. Addresses are taken from the official Uniswap deployment
+# documentation (https://developers.uniswap.org/docs/protocols/v2/deployments) and MUST be
+# re-verified against that page before any authorized collection. The collector also checks
+# the chain id and the factory interface at runtime and refuses to proceed if either fails.
+uniswap_v2:
+  base:
+    chain_id: 8453
+    factory: "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6"
+    router02: "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"
+    wrapped_native: "0x4200000000000000000000000000000000000006"
+    fee_numerator: 997
+    fee_denominator: 1000
+    source_url: "https://developers.uniswap.org/docs/protocols/v2/deployments"
+    verification_status: "runtime_interface_check_required"
+    notes:
+      - "Router is informational; the simulator never routes through it."
+      - "Base L2 block interval is nominally 2000 ms; the collector verifies it with sampled headers."

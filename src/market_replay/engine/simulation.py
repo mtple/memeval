@@ -734,7 +734,7 @@ class Simulation:
             qty = holdings[asset]
             pk = self._liquidation_pool_for(asset)
             meta_pool = None
-            for key, m in self.pool_meta.items():
+            for _key, m in self.pool_meta.items():
                 if asset in (m.asset0, m.asset1):
                     meta_pool = m
                     break
@@ -850,7 +850,7 @@ class Simulation:
         limit = min(after_ms + horizon_ms, self.end_ms)
         best: int | None = None
         discovered = set(self.discovered_pools(after_ms))
-        for k, d in self.pool_discovery_ms.items():
+        for d in self.pool_discovery_ms.values():
             if after_ms < d <= limit:
                 best = d if best is None else min(best, d)
         for o in self.orders.values():

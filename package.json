@@ -1,0 +1,8 @@
+{
+  "name": "memeval-workspace",
+  "private": true,
+  "scripts": {
+    "web:dev": "pnpm --filter web dev",
+    "web:build": "pnpm --filter web build"
+  }
+}
