@@ -1,0 +1,229 @@
+{
+  "agents": {
+    "a": {
+      "agent_id": "agent_68efc67063a3158c",
+      "capabilities": [
+        "broker",
+        "clock",
+        "markets"
+      ],
+      "compatibility": {
+        "compatible": true,
+        "unsupported_requested": []
+      },
+      "config": {
+        "example": "scheduled_basket_python",
+        "runtime": "python"
+      },
+      "created_at": "2026-09-16T08:14:35.315721Z",
+      "fingerprint": "68efc67063a3158c8281cf5716ae56d00c9a4eb40f8df36a9d3b559b1a2f892f",
+      "name": "scheduled_basket_python",
+      "runtime": "python",
+      "version": "1"
+    },
+    "b": {
+      "agent_id": "agent_01a810d12483f03f",
+      "capabilities": [
+        "broker",
+        "clock",
+        "markets"
+      ],
+      "compatibility": {
+        "compatible": true,
+        "unsupported_requested": []
+      },
+      "config": {
+        "example": "cash_only_python",
+        "runtime": "python"
+      },
+      "created_at": "2026-09-16T08:14:25.131761Z",
+      "fingerprint": "01a810d12483f03f42d8657016316345398e211b1ff1b13de0f0310419dea363",
+      "name": "cash_only_python",
+      "runtime": "python",
+      "version": "1"
+    }
+  },
+  "comparison_id": "cmp_07140a3f2cc5",
+  "comparison_version": "paired_comparison_v1",
+  "created_at": "2026-09-16T08:21:28.574581Z",
+  "evidence_counts": {
+    "chains": 1,
+    "stochastic_trials_a": 0,
+    "stochastic_trials_b": 0,
+    "unique_calendar_periods": 4
+  },
+  "per_episode": [
+    {
+      "drawdown_diff_a_minus_b": "0.545759",
+      "episode_label": "gen_week_reversal",
+      "gas_diff_a_minus_b_raw": "2100",
+      "paired": true,
+      "return_diff_a_minus_b": "-0.15604500",
+      "runs_a": [
+        {
+          "confirmed_fills": 42,
+          "error": null,
+          "gas_total_raw": "2100",
+          "headline_return": "-0.15604500",
+          "max_drawdown": "0.545759",
+          "run_id": "run_956bb79c5ac02988",
+          "state": "completed",
+          "unpriced_inventory": 0,
+          "unresolved_orders": 0,
+          "valuation_complete": true
+        }
+      ],
+      "runs_b": [
+        {
+          "confirmed_fills": 0,
+          "error": null,
+          "gas_total_raw": "0",
+          "headline_return": "0.00000000",
+          "max_drawdown": "0.000000",
+          "run_id": "run_d0a0bda3ecfef0ba",
+          "state": "completed",
+          "unpriced_inventory": 0,
+          "unresolved_orders": 0,
+          "valuation_complete": true
+        }
+      ]
+    },
+    {
+      "drawdown_diff_a_minus_b": "0.038750",
+      "episode_label": "gen_week_trending",
+      "gas_diff_a_minus_b_raw": "2150",
+      "paired": true,
+      "return_diff_a_minus_b": "0.16387000",
+      "runs_a": [
+        {
+          "confirmed_fills": 43,
+          "error": null,
+          "gas_total_raw": "2150",
+          "headline_return": "0.16387000",
+          "max_drawdown": "0.038750",
+          "run_id": "run_23aa395e5a0cbb52",
+          "state": "completed",
+          "unpriced_inventory": 0,
+          "unresolved_orders": 0,
+          "valuation_complete": true
+        }
+      ],
+      "runs_b": [
+        {
+          "confirmed_fills": 0,
+          "error": null,
+          "gas_total_raw": "0",
+          "headline_return": "0.00000000",
+          "max_drawdown": "0.000000",
+          "run_id": "run_de97ace0daf82c2c",
+          "state": "completed",
+          "unpriced_inventory": 0,
+          "unresolved_orders": 0,
+          "valuation_complete": true
+        }
+      ]
+    },
+    {
+      "drawdown_diff_a_minus_b": "0.358028",
+      "episode_label": "gen_week_liquidity_shift",
+      "gas_diff_a_minus_b_raw": "1500",
+      "paired": true,
+      "return_diff_a_minus_b": "-0.19578100",
+      "runs_a": [
+        {
+          "confirmed_fills": 30,
+          "error": null,
+          "gas_total_raw": "1500",
+          "headline_return": "-0.19578100",
+          "max_drawdown": "0.358028",
+          "run_id": "run_537ea8822fc4ca65",
+          "state": "completed",
+          "unpriced_inventory": 0,
+          "unresolved_orders": 0,
+          "valuation_complete": true
+        }
+      ],
+      "runs_b": [
+        {
+          "confirmed_fills": 0,
+          "error": null,
+          "gas_total_raw": "0",
+          "headline_return": "0.00000000",
+          "max_drawdown": "0.000000",
+          "run_id": "run_afe293bde936a890",
+          "state": "completed",
+          "unpriced_inventory": 0,
+          "unresolved_orders": 0,
+          "valuation_complete": true
+        }
+      ]
+    },
+    {
+      "drawdown_diff_a_minus_b": "0.023165",
+      "episode_label": "gen_week_sparse_missing",
+      "gas_diff_a_minus_b_raw": "1550",
+      "paired": true,
+      "return_diff_a_minus_b": "-0.00280900",
+      "runs_a": [
+        {
+          "confirmed_fills": 31,
+          "error": null,
+          "gas_total_raw": "1550",
+          "headline_return": "-0.00280900",
+          "max_drawdown": "0.023165",
+          "run_id": "run_aeab94146e539ebc",
+          "state": "completed",
+          "unpriced_inventory": 0,
+          "unresolved_orders": 0,
+          "valuation_complete": true
+        }
+      ],
+      "runs_b": [
+        {
+          "confirmed_fills": 0,
+          "error": null,
+          "gas_total_raw": "0",
+          "headline_return": "0.00000000",
+          "max_drawdown": "0.000000",
+          "run_id": "run_e9bfffa09011fe94",
+          "state": "completed",
+          "unpriced_inventory": 0,
+          "unresolved_orders": 0,
+          "valuation_complete": true
+        }
+      ]
+    }
+  ],
+  "statement": "One version did better in these episodes or it did not; the sample and execution assumptions do not establish future improvement. No significance test or promotion verdict is computed.",
+  "suite_fingerprint": "16c614356aec42ffaba25474",
+  "suite_id": "generated-practice-v1",
+  "summary": {
+    "drawdown_diff": {
+      "max": "0.545759",
+      "median": "0.198389",
+      "min": "0.023165"
+    },
+    "episodes_paired": 4,
+    "episodes_total": 4,
+    "gas_diff_raw": {
+      "max": "2150",
+      "median": "1825",
+      "min": "1500"
+    },
+    "return_diff": {
+      "a_better_count": 1,
+      "b_better_count": 3,
+      "max": "0.16387000",
+      "mean": "-0.04769125",
+      "median": "-0.07942700",
+      "min": "-0.19578100"
+    },
+    "runs_attempted_a": 4,
+    "runs_attempted_b": 4,
+    "runs_not_completed_a": 0,
+    "runs_not_completed_b": 0
+  },
+  "warnings": [
+    "FEW_DISTINCT_PERIODS_DESCRIPTIVE_ONLY"
+  ]
+}

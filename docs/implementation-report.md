@@ -37,7 +37,7 @@ pnpm install && pnpm --filter web build                                # tsc --n
 .venv/bin/market-replay demo --quick                                   # 2-hour fixture, 3 participants, ~2 s wall
 .venv/bin/market-replay fixtures generate --no-dev                     # 4 full weeks, 19.8 s wall total
 .venv/bin/market-replay run-agent --agent cash_only --suite generated-practice-v1   # 4 weeks, 16.5 s wall
-.venv/bin/market-replay demo                                           # full suite; see §4
+.venv/bin/market-replay demo                                           # full suite, 12 runs, 423.8 s wall; see §4
 .venv/bin/market-replay verify                                         # environment validation + 6 sensitivity runs, 6.0 s
 .venv/bin/market-replay import-report-fixtures                         # diagnostic_only pack from report excerpts
 .venv/bin/python scripts/export_schemas.py                             # 12 schema files
@@ -177,5 +177,20 @@ mechanics checks on a 30-minute research slice, not performance evidence.
 
 ### Generated suite demo (`make demo`, four full weeks)
 
-(filled below)
+Wall time 423.8 s for 12 runs (cash_only ~10 s, scheduled_basket 55 s, random_actions TypeScript 358 s). All 12 runs completed; every valuation complete. Returns are in CASH (an artificial numeraire) on artificial episodes.
+
+| Week (generated) | cash_only | scheduled_basket (fills, max dd, gas raw) | random_actions ts seed demo-7 (fills, max dd) |
+|---|---|---|---|
+| gen_week_trending | 0.00000000 | +0.16387000 (43, 0.0388, 2150) | +0.03105500 (71, 0.0184) |
+| gen_week_reversal | 0.00000000 | −0.15604500 (42, 0.5458, 2100) | −0.08486600 (71, 0.2966) |
+| gen_week_sparse_missing | 0.00000000 | −0.00280900 (31, 0.0232, 1550) | +0.00142500 (70, 0.0094) |
+| gen_week_liquidity_shift | 0.00000000 | −0.19578100 (30, 0.3580, 1500) | −0.02863900 (56, 0.1639) |
+
+Paired comparison `scheduled_basket_python` (A) vs `cash_only_python` (B), 4 of 4 episodes paired:
+return difference median −0.07942700, mean −0.04769125, range [−0.19578100, +0.16387000]; A better in 1
+episode, B better in 3; gas difference median 1,825 raw CASH; drawdown difference median 0.198.
+Warning: `FEW_DISTINCT_PERIODS_DESCRIPTIVE_ONLY`. Statement: one version did better in these
+episodes or it did not; the sample and execution assumptions do not establish future improvement.
+The liquidity-shift week's basket loss reflects the fixture's sell-blocked token and drained pool
+(known fixture rules), which the valuation classifies as no-route inventory rather than hiding.
 

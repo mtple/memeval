@@ -1,0 +1,85 @@
+{
+  "agents": {
+    "cash_only": "agent_01a810d12483f03f",
+    "random_actions": "agent_aa5c90b7f50246b8",
+    "scheduled_basket": "agent_68efc67063a3158c"
+  },
+  "comparison_id": "cmp_07140a3f2cc5",
+  "runs": [
+    {
+      "agent_id": "agent_01a810d12483f03f",
+      "pack": "gen_week_trending",
+      "run_id": "run_de97ace0daf82c2c",
+      "state": "completed"
+    },
+    {
+      "agent_id": "agent_01a810d12483f03f",
+      "pack": "gen_week_reversal",
+      "run_id": "run_d0a0bda3ecfef0ba",
+      "state": "completed"
+    },
+    {
+      "agent_id": "agent_01a810d12483f03f",
+      "pack": "gen_week_sparse_missing",
+      "run_id": "run_e9bfffa09011fe94",
+      "state": "completed"
+    },
+    {
+      "agent_id": "agent_01a810d12483f03f",
+      "pack": "gen_week_liquidity_shift",
+      "run_id": "run_afe293bde936a890",
+      "state": "completed"
+    },
+    {
+      "agent_id": "agent_68efc67063a3158c",
+      "pack": "gen_week_trending",
+      "run_id": "run_23aa395e5a0cbb52",
+      "state": "completed"
+    },
+    {
+      "agent_id": "agent_68efc67063a3158c",
+      "pack": "gen_week_reversal",
+      "run_id": "run_956bb79c5ac02988",
+      "state": "completed"
+    },
+    {
+      "agent_id": "agent_68efc67063a3158c",
+      "pack": "gen_week_sparse_missing",
+      "run_id": "run_aeab94146e539ebc",
+      "state": "completed"
+    },
+    {
+      "agent_id": "agent_68efc67063a3158c",
+      "pack": "gen_week_liquidity_shift",
+      "run_id": "run_537ea8822fc4ca65",
+      "state": "completed"
+    },
+    {
+      "agent_id": "agent_aa5c90b7f50246b8",
+      "pack": "gen_week_trending",
+      "run_id": "run_ec0fb2d2b45be507",
+      "state": "completed"
+    },
+    {
+      "agent_id": "agent_aa5c90b7f50246b8",
+      "pack": "gen_week_reversal",
+      "run_id": "run_27abb5c5494bfda5",
+      "state": "completed"
+    },
+    {
+      "agent_id": "agent_aa5c90b7f50246b8",
+      "pack": "gen_week_sparse_missing",
+      "run_id": "run_685a70a2e2952373",
+      "state": "completed"
+    },
+    {
+      "agent_id": "agent_aa5c90b7f50246b8",
+      "pack": "gen_week_liquidity_shift",
+      "run_id": "run_40fd5dd3c8385d22",
+      "state": "completed"
+    }
+  ],
+  "statement": "GENERATED FIXTURES ONLY. Results describe behavior in artificial episodes; they are not historical performance.",
+  "suite": "generated-practice-v1",
+  "wall_seconds": 423.8
+}
