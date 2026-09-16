@@ -169,7 +169,12 @@ def validate_pack(pack: Pack) -> dict[str, Any]:
     if m.execution.model == "diagnostic_no_execution":
         gates.append(_gate("execution_state", GateStatus.NOT_APPLICABLE, "diagnostic pack: no execution model claimed", reconciliation=recon))
     else:
-        gates.append(_gate("execution_state", GateStatus.PASSED if exec_ok else GateStatus.FAILED, f"executable pools={len(exec_pools)} missing_initial_state={len(missing_state)} sync_checkpoints={recon['checkpoints']} mismatches={recon['mismatch_count']} fidelity_flags={recon['fidelity_flag_count']}", reconciliation={k: v for k, v in recon.items() if k != "final_reserves"}, pools_missing_initial_state=missing_state))
+        status = GateStatus.PASSED if exec_ok else GateStatus.FAILED
+        detail = f"executable pools={len(exec_pools)} missing_initial_state={len(missing_state)} sync_checkpoints={recon['checkpoints']} mismatches={recon['mismatch_count']} fidelity_flags={recon['fidelity_flag_count']}"
+        if exec_ok and recon["checkpoints"] == 0:
+            status = GateStatus.WARNING
+            detail += "; no checkpoints were reconciled (reconciliation untested for this pack: no external flow in the window)"
+        gates.append(_gate("execution_state", status, detail, reconciliation={k: v for k, v in recon.items() if k != "final_reserves"}, pools_missing_initial_state=missing_state, reconciliation_untested=recon["checkpoints"] == 0))
         executable_failure |= not exec_ok
 
     # 6. Mechanics

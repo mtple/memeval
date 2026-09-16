@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ApiError, get, post, type Observed, type Pack, type Run } from "../api";
+import { ApiError, get, post, type Holding, type Observed, type Pack, type Run } from "../api";
 import { CandleChart, EquitySparkline } from "../charts";
 import { fmtDate, fmtRaw, fmtRel, humanize, shortHash } from "../format";
 import { Badge, Card, ErrorState, JsonView, KV, Loading, RunStateBadge, useLoad } from "../ui";
@@ -218,7 +218,7 @@ const CLASS_LABEL: Record<string, [string, "ok" | "warn" | "bad"]> = {
   unpriced_missing_data: ["unpriced (missing data)", "bad"],
 };
 
-function HoldingsTable({ holdings, dec }: { holdings: Run extends { live?: infer L } ? (L extends { holdings: infer H } ? H : never) : never; dec: number | undefined }) {
+function HoldingsTable({ holdings, dec }: { holdings: Holding[]; dec: number | undefined }) {
   if (!holdings?.length) return <p className="muted">No holdings (cash only).</p>;
   return (
     <div className="table-wrap">

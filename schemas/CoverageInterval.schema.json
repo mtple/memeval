@@ -1,0 +1,71 @@
+{
+  "$defs": {
+    "CoverageState": {
+      "enum": [
+        "pending",
+        "completed_and_checked",
+        "partial",
+        "missing",
+        "failed"
+      ],
+      "title": "CoverageState",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "checked_scope": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Checked Scope"
+    },
+    "end_utc_ms": {
+      "title": "End Utc Ms",
+      "type": "integer"
+    },
+    "evidence": {
+      "title": "Evidence",
+      "type": "string"
+    },
+    "field": {
+      "title": "Field",
+      "type": "string"
+    },
+    "gaps": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Gaps",
+      "type": "array"
+    },
+    "object_ref": {
+      "title": "Object Ref",
+      "type": "string"
+    },
+    "start_utc_ms": {
+      "title": "Start Utc Ms",
+      "type": "integer"
+    },
+    "state": {
+      "$ref": "#/$defs/CoverageState"
+    }
+  },
+  "required": [
+    "object_ref",
+    "field",
+    "start_utc_ms",
+    "end_utc_ms",
+    "state",
+    "evidence"
+  ],
+  "title": "CoverageInterval",
+  "type": "object"
+}

@@ -1,0 +1,36 @@
+availability_delay_ms: 1500
+block_interval_ms: 2000
+budgets:
+  inference_spend_limit_usd: '0'
+  max_decisions: 20000
+  max_page_size: 500
+  max_requests: 200000
+  max_response_items: 5000
+  wall_clock_deadline_s: null
+candle_intervals_ms:
+- 60000
+- 300000
+- 3600000
+capacity:
+  max_cumulative_displacement_bps: 500
+  max_input_bps_of_reserve: 100
+  note: Unvalidated modeling guardrails, not trading rules or fidelity guarantees.
+  version: capacity_v1
+confirm_blocks: 1
+data_latency_ms: 100
+gas_basis: artificial_sensitivity_profile
+gas_cost_raw: '50'
+is_measured: false
+label: Artificial test settings for generated fixtures; not measured Base latencies.
+model: cpmm_fixed_flow_v1
+notes:
+- All values are fixture test settings.
+profile_name: fixture_default_v1
+quote_latency_ms: 100
+quote_ttl_ms: 5000
+rate_limit:
+  simulated_requests_per_minute: 600
+reporting_grid_ms: 60000
+settlement_tail_blocks: 2
+submit_latency_ms: 500
+valuation_policy: liquidate_all_holdings_via_direct_pool_v1

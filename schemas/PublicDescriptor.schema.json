@@ -1,0 +1,177 @@
+{
+  "$defs": {
+    "AvailabilityBasis": {
+      "enum": [
+        "recorded_receipt",
+        "reconstructed_with_delay_model",
+        "fixture_delay_model",
+        "unknown"
+      ],
+      "title": "AvailabilityBasis",
+      "type": "string"
+    },
+    "DataOrigin": {
+      "enum": [
+        "generated_fixture",
+        "captured_observations",
+        "historical_reconstruction",
+        "report_excerpt",
+        "mixed"
+      ],
+      "title": "DataOrigin",
+      "type": "string"
+    },
+    "ExecutionModel": {
+      "enum": [
+        "cpmm_fixed_flow_v1",
+        "diagnostic_no_execution"
+      ],
+      "title": "ExecutionModel",
+      "type": "string"
+    },
+    "Isolation": {
+      "enum": [
+        "trusted_external_client",
+        "restricted_local_runner"
+      ],
+      "title": "Isolation",
+      "type": "string"
+    },
+    "PredictiveValidity": {
+      "enum": [
+        "not_established"
+      ],
+      "title": "PredictiveValidity",
+      "type": "string"
+    },
+    "TokenBehavior": {
+      "enum": [
+        "known_fixture_rules",
+        "historically_supported",
+        "assumed_standard_transfer",
+        "unknown"
+      ],
+      "title": "TokenBehavior",
+      "type": "string"
+    },
+    "UseStatus": {
+      "enum": [
+        "demo",
+        "research",
+        "qualified_for_named_suite",
+        "diagnostic_only",
+        "rejected"
+      ],
+      "title": "UseStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Allowlisted view of a pack for agents and sealed-suite participants.",
+  "properties": {
+    "availability_basis": {
+      "$ref": "#/$defs/AvailabilityBasis"
+    },
+    "capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Capabilities",
+      "type": "array"
+    },
+    "chain": {
+      "title": "Chain",
+      "type": "string"
+    },
+    "duration_ms": {
+      "title": "Duration Ms",
+      "type": "integer"
+    },
+    "episode_id": {
+      "title": "Episode Id",
+      "type": "string"
+    },
+    "execution_model": {
+      "$ref": "#/$defs/ExecutionModel"
+    },
+    "is_full_week": {
+      "title": "Is Full Week",
+      "type": "boolean"
+    },
+    "isolation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Isolation"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "latency_assumptions": {
+      "additionalProperties": true,
+      "title": "Latency Assumptions",
+      "type": "object"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    },
+    "numeraire_alias": {
+      "title": "Numeraire Alias",
+      "type": "string"
+    },
+    "numeraire_decimals": {
+      "title": "Numeraire Decimals",
+      "type": "integer"
+    },
+    "origin": {
+      "$ref": "#/$defs/DataOrigin"
+    },
+    "predictive_validity": {
+      "$ref": "#/$defs/PredictiveValidity",
+      "default": "not_established"
+    },
+    "prehistory_ms": {
+      "title": "Prehistory Ms",
+      "type": "integer"
+    },
+    "token_behavior_basis": {
+      "$ref": "#/$defs/TokenBehavior"
+    },
+    "unsupported_capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unsupported Capabilities",
+      "type": "array"
+    },
+    "use_status": {
+      "$ref": "#/$defs/UseStatus"
+    }
+  },
+  "required": [
+    "episode_id",
+    "origin",
+    "chain",
+    "duration_ms",
+    "is_full_week",
+    "prehistory_ms",
+    "numeraire_alias",
+    "numeraire_decimals",
+    "execution_model",
+    "token_behavior_basis",
+    "availability_basis",
+    "latency_assumptions",
+    "capabilities",
+    "unsupported_capabilities",
+    "limitations",
+    "use_status"
+  ],
+  "title": "PublicDescriptor",
+  "type": "object"
+}

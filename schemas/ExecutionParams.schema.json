@@ -1,0 +1,211 @@
+{
+  "$defs": {
+    "Budgets": {
+      "additionalProperties": false,
+      "properties": {
+        "inference_spend_limit_usd": {
+          "default": "0",
+          "title": "Inference Spend Limit Usd",
+          "type": "string"
+        },
+        "max_decisions": {
+          "default": 20000,
+          "title": "Max Decisions",
+          "type": "integer"
+        },
+        "max_page_size": {
+          "default": 500,
+          "title": "Max Page Size",
+          "type": "integer"
+        },
+        "max_requests": {
+          "default": 200000,
+          "title": "Max Requests",
+          "type": "integer"
+        },
+        "max_response_items": {
+          "default": 5000,
+          "title": "Max Response Items",
+          "type": "integer"
+        },
+        "wall_clock_deadline_s": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wall Clock Deadline S"
+        }
+      },
+      "title": "Budgets",
+      "type": "object"
+    },
+    "CapacityProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "max_cumulative_displacement_bps": {
+          "default": 50,
+          "title": "Max Cumulative Displacement Bps",
+          "type": "integer"
+        },
+        "max_input_bps_of_reserve": {
+          "default": 10,
+          "title": "Max Input Bps Of Reserve",
+          "type": "integer"
+        },
+        "note": {
+          "default": "Unvalidated modeling guardrails, not trading rules or fidelity guarantees.",
+          "title": "Note",
+          "type": "string"
+        },
+        "version": {
+          "default": "capacity_v1",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "title": "CapacityProfile",
+      "type": "object"
+    },
+    "ExecutionModel": {
+      "enum": [
+        "cpmm_fixed_flow_v1",
+        "diagnostic_no_execution"
+      ],
+      "title": "ExecutionModel",
+      "type": "string"
+    },
+    "RateLimit": {
+      "additionalProperties": false,
+      "properties": {
+        "simulated_requests_per_minute": {
+          "default": 600,
+          "title": "Simulated Requests Per Minute",
+          "type": "integer"
+        }
+      },
+      "title": "RateLimit",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "availability_delay_ms": {
+      "default": 1500,
+      "title": "Availability Delay Ms",
+      "type": "integer"
+    },
+    "block_interval_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Block Interval Ms"
+    },
+    "budgets": {
+      "$ref": "#/$defs/Budgets"
+    },
+    "candle_intervals_ms": {
+      "items": {
+        "type": "integer"
+      },
+      "title": "Candle Intervals Ms",
+      "type": "array"
+    },
+    "capacity": {
+      "$ref": "#/$defs/CapacityProfile"
+    },
+    "confirm_blocks": {
+      "default": 1,
+      "title": "Confirm Blocks",
+      "type": "integer"
+    },
+    "data_latency_ms": {
+      "default": 100,
+      "title": "Data Latency Ms",
+      "type": "integer"
+    },
+    "gas_basis": {
+      "default": "artificial_sensitivity_profile",
+      "title": "Gas Basis",
+      "type": "string"
+    },
+    "gas_cost_raw": {
+      "default": "0",
+      "title": "Gas Cost Raw",
+      "type": "string"
+    },
+    "is_measured": {
+      "default": false,
+      "title": "Is Measured",
+      "type": "boolean"
+    },
+    "label": {
+      "title": "Label",
+      "type": "string"
+    },
+    "model": {
+      "$ref": "#/$defs/ExecutionModel",
+      "default": "cpmm_fixed_flow_v1"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    },
+    "profile_name": {
+      "title": "Profile Name",
+      "type": "string"
+    },
+    "quote_latency_ms": {
+      "default": 100,
+      "title": "Quote Latency Ms",
+      "type": "integer"
+    },
+    "quote_ttl_ms": {
+      "default": 5000,
+      "title": "Quote Ttl Ms",
+      "type": "integer"
+    },
+    "rate_limit": {
+      "$ref": "#/$defs/RateLimit"
+    },
+    "reporting_grid_ms": {
+      "default": 3600000,
+      "title": "Reporting Grid Ms",
+      "type": "integer"
+    },
+    "settlement_tail_blocks": {
+      "default": 2,
+      "title": "Settlement Tail Blocks",
+      "type": "integer"
+    },
+    "submit_latency_ms": {
+      "default": 500,
+      "title": "Submit Latency Ms",
+      "type": "integer"
+    },
+    "valuation_policy": {
+      "default": "liquidate_all_holdings_via_direct_pool_v1",
+      "title": "Valuation Policy",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profile_name",
+    "label"
+  ],
+  "title": "ExecutionParams",
+  "type": "object"
+}

@@ -1,0 +1,180 @@
+{
+  "$defs": {
+    "PoolModel": {
+      "enum": [
+        "uniswap_v2_plain",
+        "fixture_cpmm",
+        "uniswap_v3",
+        "uniswap_v4_hooked",
+        "bonding_curve",
+        "unknown"
+      ],
+      "title": "PoolModel",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "address": {
+      "title": "Address",
+      "type": "string"
+    },
+    "asset0": {
+      "title": "Asset0",
+      "type": "string"
+    },
+    "asset1": {
+      "title": "Asset1",
+      "type": "string"
+    },
+    "chain_id": {
+      "title": "Chain Id",
+      "type": "integer"
+    },
+    "created_block": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Created Block"
+    },
+    "created_time_utc_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Created Time Utc Ms"
+    },
+    "discovery_available_utc_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Discovery Available Utc Ms"
+    },
+    "factory": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Factory"
+    },
+    "fee_denominator": {
+      "default": 1000,
+      "title": "Fee Denominator",
+      "type": "integer"
+    },
+    "fee_numerator": {
+      "default": 997,
+      "title": "Fee Numerator",
+      "type": "integer"
+    },
+    "initial_reserve0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Initial Reserve0"
+    },
+    "initial_reserve1": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Initial Reserve1"
+    },
+    "initial_state_basis": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Initial State Basis"
+    },
+    "initial_state_block": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Initial State Block"
+    },
+    "key": {
+      "title": "Key",
+      "type": "string"
+    },
+    "model": {
+      "$ref": "#/$defs/PoolModel"
+    },
+    "protocol": {
+      "title": "Protocol",
+      "type": "string"
+    },
+    "supported_by_cpmm": {
+      "default": true,
+      "title": "Supported By Cpmm",
+      "type": "boolean"
+    },
+    "unsupported_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Unsupported Reason"
+    }
+  },
+  "required": [
+    "key",
+    "chain_id",
+    "protocol",
+    "address",
+    "model",
+    "asset0",
+    "asset1"
+  ],
+  "title": "Pool",
+  "type": "object"
+}

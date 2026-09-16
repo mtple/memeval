@@ -241,11 +241,41 @@ def run_collection(config_path: Path, data_dir: Path, *, transport: httpx.BaseTr
         in_scope = [(a, m) for a, m in candidates if wn in (m["token0"], m["token1"])]
         excluded = [{"pool": a, "reason": "no wrapped-native leg"} for a, m in candidates if wn not in (m["token0"], m["token1"])]
         max_pairs = int(cfg.get("max_pairs", 3))
+        rule = str(cfg.get("selection_rule", "earliest_created_wrapped_native_pairs_v1"))
+        inactive_out: list[dict[str, Any]] = []
+        if rule == "active_before_window_earliest_created_v1":
+            # Activity strictly before the prehistory window is a fact known at the window start; it never
+            # depends on what happens during the period. One address-list Swap scan over the discovery range.
+            act_key = "active_before_window"
+            active = ck.get(act_key)
+            if active is None:
+                found: set[str] = set()
+                addrs = [a for a, _ in in_scope]
+                cur_a = blocks["discovery_start"]
+                achunk = chunk
+                while cur_a < blocks["prehistory_start"] and addrs:
+                    to_a = min(cur_a + achunk - 1, blocks["prehistory_start"] - 1)
+                    try:
+                        logs = rpc.get_logs(address=addrs, topics=[TOPIC_SWAP], from_block=cur_a, to_block=to_a)
+                    except ProviderError:
+                        if achunk > 100:
+                            achunk //= 2
+                            continue
+                        raise
+                    for lg in logs:
+                        found.add(lg["address"].lower())
+                    cur_a = to_a + 1
+                active = sorted(found)
+                ck.set(act_key, active)
+                note(f"activity scan before the window: {len(active)} of {len(in_scope)} in-scope pairs had at least one swap before prehistory start")
+            active_set = set(active)
+            inactive_out = [{"pool": a, "reason": "no swap observed before the window start under the frozen activity rule"} for a, _ in in_scope if a not in active_set]
+            in_scope = [(a, m) for a, m in in_scope if a in active_set]
         selected = in_scope[:max_pairs]
-        sampled_out = [{"pool": a, "reason": "beyond max_pairs under frozen earliest-created rule"} for a, _ in in_scope[max_pairs:]]
+        sampled_out = [{"pool": a, "reason": f"beyond max_pairs under frozen rule {rule}"} for a, _ in in_scope[max_pairs:]] + inactive_out
         if ck.get("selection") is None:
-            ck.set("selection", {"candidates": len(candidates), "in_scope": len(in_scope), "selected": [a for a, _ in selected], "rule": "earliest_created_wrapped_native_pairs_v1"})
-            note(f"universe frozen: {len(candidates)} candidates, {len(in_scope)} in scope, {len(selected)} selected by earliest-created rule")
+            ck.set("selection", {"candidates": len(candidates), "in_scope": len(in_scope), "selected": [a for a, _ in selected], "rule": rule})
+            note(f"universe frozen: {len(candidates)} candidates, {len(in_scope)} in scope after rule {rule}, {len(selected)} selected")
         # 6. Events and initial state per selected pair
         assets: dict[str, dict[str, Any]] = ck.get("assets", {})
         pools_out: list[dict[str, Any]] = []
@@ -286,24 +316,70 @@ def run_collection(config_path: Path, data_dir: Path, *, transport: httpx.BaseTr
                 cur = to_b + 1
                 ck.set(pk + ":cursor", cur)
                 ck.set(pk + ":logs", pair_logs)
-            rows, unsup = normalize_pair_logs(pair_logs, pool_key=pool_key, token0=f"{dep['chain_id']}:{meta['token0']}", token1=f"{dep['chain_id']}:{meta['token1']}", block_time_ms=block_time_ms)
-            unsupported_events.extend(unsup)
-            # Initial state: last Sync strictly before the prehistory window start; otherwise getReserves at that block
+            # Initial state at the block before the prehistory window (pairs created inside the window start empty).
             init = None
             init_basis = None
-            pre_rows = [r for r in rows if r["block"] < blocks["prehistory_start"]]
-            syncs_before = [r for r in pre_rows if r["kind"] == "sync"]
-            if syncs_before:
-                s = syncs_before[-1]
-                init, init_basis = (s["reserve0"], s["reserve1"]), "last_sync_before_prehistory"
-            else:
-                try:
-                    res = rpc.eth_call(addr, SEL_GET_RESERVES, blocks["prehistory_start"] - 1)
-                    init, init_basis = (str(word(res, 0)), str(word(res, 1))), "getReserves_at_block_before_prehistory"
-                except ProviderError as e:
-                    missing.append({"pool": pool_key, "reason": f"initial state unavailable: {e}"})
+            state_block = blocks["prehistory_start"] - 1
             if meta["created_block"] >= blocks["prehistory_start"]:
                 init, init_basis = ("0", "0"), "pair_created_inside_window"
+            else:
+                cached = ck.get(pk + ":init")
+                if cached:
+                    init, init_basis = tuple(cached["reserves"]), cached["basis"]
+                else:
+                    try:
+                        res = rpc.eth_call(addr, SEL_GET_RESERVES, state_block)
+                        init, init_basis = (str(word(res, 0)), str(word(res, 1))), "getReserves_at_block_before_prehistory"
+                        note(f"{addr}: initial state from getReserves at block {state_block}")
+                    except ProviderError as e:
+                        # No archive state: scan backwards for the last Sync checkpoint before the window.
+                        note(f"{addr}: getReserves at {state_block} unavailable ({str(e)[:80]}); scanning back for the last Sync")
+                        lookback = int(cfg.get("initial_state_lookback_blocks", 20_000))
+                        lo = max(meta["created_block"], state_block - lookback)
+                        hi = state_block
+                        found = None
+                        lchunk = chunk
+                        while hi >= lo and found is None:
+                            fb = max(lo, hi - lchunk + 1)
+                            try:
+                                syncs = rpc.get_logs(address=addr, topics=[TOPIC_SYNC], from_block=fb, to_block=hi)
+                            except ProviderError as e2:
+                                if lchunk > 100:
+                                    lchunk //= 2
+                                    continue
+                                raise e2
+                            if syncs:
+                                last = max(syncs, key=lambda l: (hex_to_int(l["blockNumber"]), hex_to_int(l["logIndex"])))
+                                found = (str(word(last["data"], 0)), str(word(last["data"], 1)), hex_to_int(last["blockNumber"]))
+                            hi = fb - 1
+                        if found is not None:
+                            init, init_basis = (found[0], found[1]), f"last_sync_before_prehistory_at_block_{found[2]}"
+                            # Events between that Sync and the window start must also be replayed: extend the tape backwards.
+                            extra_from, extra_to = found[2] + 1, state_block
+                            if extra_to >= extra_from:
+                                extra_logs: list[dict[str, Any]] = []
+                                c2 = extra_from
+                                echunk = chunk
+                                while c2 <= extra_to:
+                                    tb2 = min(c2 + echunk - 1, extra_to)
+                                    try:
+                                        extra_logs.extend(rpc.get_logs(address=addr, topics=[[TOPIC_SWAP, TOPIC_MINT, TOPIC_BURN, TOPIC_SYNC]], from_block=c2, to_block=tb2))
+                                    except ProviderError:
+                                        if echunk > 100:
+                                            echunk //= 2
+                                            continue
+                                        raise
+                                    c2 = tb2 + 1
+                                pair_logs = extra_logs + pair_logs
+                                pack_start_override = found[2] + 1
+                                blocks["prehistory_start"] = min(blocks["prehistory_start"], pack_start_override)
+                                note(f"{addr}: prehistory extended back to block {pack_start_override} to replay from the Sync checkpoint")
+                        else:
+                            missing.append({"pool": pool_key, "reason": f"initial state unavailable: no archive state and no Sync within {lookback} blocks before the window"})
+                    if init is not None:
+                        ck.set(pk + ":init", {"reserves": list(init), "basis": init_basis})
+            rows, unsup = normalize_pair_logs(pair_logs, pool_key=pool_key, token0=f"{dep['chain_id']}:{meta['token0']}", token1=f"{dep['chain_id']}:{meta['token1']}", block_time_ms=block_time_ms)
+            unsupported_events.extend(unsup)
             rows = [r for r in rows if r["block"] >= blocks["prehistory_start"]]
             for r in rows:
                 if r["kind"] != "sync":
@@ -362,14 +438,14 @@ def run_collection(config_path: Path, data_dir: Path, *, transport: httpx.BaseTr
                 factories=[dep["factory"].lower()],
                 pool_models=[PoolModel.UNISWAP_V2_PLAIN],
                 quote_asset=f"{dep['chain_id']}:{wn}",
-                selection_rule_version="earliest_created_wrapped_native_pairs_v1",
+                selection_rule_version=rule,
                 indexed_block_ranges=[[blocks["discovery_start"], blocks["period_end"] - 1]],
                 excluded_or_unsupported_counts={"no_wrapped_native_leg": len(excluded), "beyond_max_pairs": len(sampled_out), "missing_state": len(missing)},
                 candidate_count=len(candidates),
                 selected_count=len(selected),
                 unsupported_count=len(excluded),
                 missing_count=len(missing),
-                description="PairCreated cohort from the declared discovery window; wrapped-native pairs only; earliest-created sampling rule frozen before flows were read.",
+                description=f"PairCreated cohort from the declared discovery window; wrapped-native pairs only; sampling rule {rule} frozen before period flows were read.",
             ),
             assets=assets_rows,
             pools=pools_out,
@@ -383,7 +459,7 @@ def run_collection(config_path: Path, data_dir: Path, *, transport: httpx.BaseTr
             availability_model={"kind": "constant_delay_from_block_time", "delay_ms": int(cfg.get("availability_delay_ms", 4000)), "acquisition_utc_ms": now_ms(), "note": "acquired later than the events; original provider availability not established"},
             rights=Rights(storage_basis="public_chain_data_via_configured_rpc; endpoint terms not reviewed here", local_processing_basis="research", redistribution="not_cleared", simulator_serving="local_only", notes=cfg["authorization_note"]),
             qualification=UseStatus.RESEARCH,
-            inventory={"unsupported": excluded + sampled_out, "missing": missing, "candidate_count": len(candidates), "selected_count": len(selected)},
+            inventory={"unsupported": excluded, "excluded_by_sampling": sampled_out, "missing": missing, "candidate_count": len(candidates), "selected_count": len(selected)},
             provenance_notes=["HISTORICAL RECONSTRUCTION from eth_getLogs. Token sellability/restrictions unknown (assumed standard transfer). Not a full week unless the period says so."],
             decision_log=log,
         )

@@ -1,0 +1,163 @@
+{
+  "$defs": {
+    "AvailabilityBasis": {
+      "enum": [
+        "recorded_receipt",
+        "reconstructed_with_delay_model",
+        "fixture_delay_model",
+        "unknown"
+      ],
+      "title": "AvailabilityBasis",
+      "type": "string"
+    },
+    "Completeness": {
+      "enum": [
+        "complete",
+        "partial",
+        "unknown",
+        "empty_verified"
+      ],
+      "title": "Completeness",
+      "type": "string"
+    },
+    "EnvelopeError": {
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "EnvelopeError",
+      "type": "object"
+    },
+    "ErrorCode": {
+      "enum": [
+        "NOT_YET_DISCOVERED",
+        "OUTSIDE_COVERAGE",
+        "UNSUPPORTED_CAPABILITY",
+        "MISSING_DATA",
+        "STALE_DATA",
+        "NO_ROUTE",
+        "INSUFFICIENT_FUNDS",
+        "QUOTE_EXPIRED",
+        "SLIPPAGE_LIMIT",
+        "RATE_LIMITED",
+        "INVALID_ORDER",
+        "INVALID_REQUEST",
+        "EPISODE_ENDED",
+        "ENVIRONMENT_FIDELITY_LIMIT",
+        "MODEL_CAPACITY_LIMIT",
+        "IDEMPOTENCY_CONFLICT",
+        "BUDGET_EXHAUSTED",
+        "RUN_PAUSED",
+        "UNAUTHORIZED",
+        "SESSION_FINISHED"
+      ],
+      "title": "ErrorCode",
+      "type": "string"
+    },
+    "Quality": {
+      "properties": {
+        "availability_basis": {
+          "$ref": "#/$defs/AvailabilityBasis",
+          "default": "unknown"
+        },
+        "completeness": {
+          "$ref": "#/$defs/Completeness",
+          "default": "unknown"
+        },
+        "observed_through_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Through Ms"
+        },
+        "stale": {
+          "default": false,
+          "title": "Stale",
+          "type": "boolean"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "title": "Quality",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "clock_ms": {
+      "title": "Clock Ms",
+      "type": "integer"
+    },
+    "data": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Data"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EnvelopeError"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "quality": {
+      "$ref": "#/$defs/Quality"
+    },
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "session_id": {
+      "title": "Session Id",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "session_id",
+    "clock_ms",
+    "status"
+  ],
+  "title": "Envelope",
+  "type": "object"
+}

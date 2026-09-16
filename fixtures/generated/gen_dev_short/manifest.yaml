@@ -1,0 +1,99 @@
+schema_version: 1
+pack_id: pack_2e054b4eb158fb4d4f4c6a4abe2c7676
+origin: generated_fixture
+chain: fixture
+chain_id: 0
+scope_label: generated_dev_short_v1
+title_private: 'Generated fixture: gen_dev_short (seed mr-gen-dev-short)'
+period:
+  start_utc: '2026-03-16T00:00:00Z'
+  end_utc: '2026-03-16T02:00:00Z'
+  prehistory_start_utc: '2026-03-15T23:30:00Z'
+  start_utc_ms: 1773619200000
+  end_utc_ms: 1773626400000
+  prehistory_start_utc_ms: 1773617400000
+  duration_ms: 7200000
+  is_full_week: false
+universe:
+  factories:
+  - fixture_factory
+  pool_models:
+  - fixture_cpmm
+  quote_asset: 0:cash
+  selection_rule_version: fixture_all_generated_pools_v1
+  indexed_block_ranges:
+  - - 1000000
+    - 1004503
+  excluded_or_unsupported_counts:
+    unsupported_mechanics: 0
+  candidate_count: 4
+  selected_count: 4
+  unsupported_count: 0
+  missing_count: 0
+  description: All pools were constructed by the fixture generator; this is not a
+    market taxonomy.
+data:
+  objects:
+  - filename: assets.jsonl
+    schema_id: assets_v1
+    size_bytes: 1519
+    sha256: b34312d6f5b815053f6b723387c9e4c4bd7c7c8e3662abbc00c4156bf114d606
+  - filename: pools.jsonl
+    schema_id: pools_v1
+    size_bytes: 2136
+    sha256: d0b4893d21677373935484f30532b3d1d3f5423749da3f3d7e2a2d9755cd23e4
+  - filename: tape.jsonl
+    schema_id: tape_v1
+    size_bytes: 598649
+    sha256: 77d54229d1c4e7dc83ba7c68b4b81fc65c48bde6680957701409bd4f4129be10
+  - filename: inventory.json
+    schema_id: inventory_v1
+    size_bytes: 87
+    sha256: ea5e3b401a59daf37f68907a75330f3dc20980606ec7297b19291fe99caf3b4f
+  - filename: coverage.json
+    schema_id: coverage_v1
+    size_bytes: 2884
+    sha256: bf365a0a732515ece18ea53cf24546d4877d2d73799589649b4351a12577544a
+  coverage_report: coverage.json
+  availability_model:
+    kind: fixture_constant_delay
+    delay_ms: 1500
+    note: Artificial publication delay; unpublished observations exist in dropout
+      windows.
+  token_behavior_basis: known_fixture_rules
+execution:
+  model: cpmm_fixed_flow_v1
+  parameters_file: execution_params.yaml
+  parameters_hash: 2800664efd05d0fdbcf2a39f64567c5d05eac8a8a790d3825d8c9978ff6f8458
+rights:
+  storage_basis: generated_locally
+  local_processing_basis: generated_locally
+  redistribution: permitted_generated_fixture
+  simulator_serving: permitted_generated_fixture
+  notes: No third-party data.
+validation:
+  report_path: validation.json
+  qualification: demo
+  predictive_validity: not_established
+  validator_version: pack_validator_v1
+numeraire: 0:cash
+numeraire_alias: CASH
+numeraire_decimals: 6
+generator:
+  generator_version: fixture_generator_v1
+  config:
+    name: gen_dev_short
+    seed: mr-gen-dev-short
+    scenario: dev_short
+    n_pools: 4
+    duration_ms: 7200000
+    prehistory_ms: 1800000
+    week_index: 10
+    dropout_windows:
+    - - 3000000
+      - 3300000
+  scenario_description: Two-hour development fixture with mixed conditions.
+provenance_notes:
+- GENERATED FIXTURE. No historical market data. Not evidence of historical performance.
+decision_log:
+- Fixture uses an artificial CASH numeraire and 2000 ms blocks; values are test settings.

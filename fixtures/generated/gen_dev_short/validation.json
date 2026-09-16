@@ -1,0 +1,82 @@
+{
+  "executable_failure": false,
+  "gates": [
+    {
+      "detail": "canonical ids, decimals and denominations present",
+      "gate": "identity",
+      "note": "symbol collisions are allowed and never merge assets",
+      "status": "passed",
+      "symbol_collisions": [
+        "MOON"
+      ]
+    },
+    {
+      "detail": "selection rule fixture_all_generated_pools_v1; candidates=4 selected=4 unsupported=0 missing=0",
+      "gate": "universe",
+      "pools_without_discovery_time": [],
+      "status": "passed"
+    },
+    {
+      "detail": "event/available/received times distinguished and ordered",
+      "gate": "temporal_ordering",
+      "status": "passed"
+    },
+    {
+      "detail": "coverage intervals by state: {'completed_and_checked': 7, 'partial': 3}",
+      "gate": "trade_coverage",
+      "status": "passed"
+    },
+    {
+      "detail": "executable pools=4 missing_initial_state=0 sync_checkpoints=34 mismatches=0 fidelity_flags=0",
+      "gate": "execution_state",
+      "pools_missing_initial_state": [],
+      "reconciliation": {
+        "checkpoints": 34,
+        "fidelity_flag_count": 0,
+        "fidelity_flags": [],
+        "mismatch_count": 0,
+        "mismatches": [],
+        "recorded_output_below_model_max": 0,
+        "rounding_rule": "floor division per Uniswap v2 getAmountOut; exact integers"
+      },
+      "status": "passed"
+    },
+    {
+      "detail": "unsupported pool models are excluded from the CPMM adapter",
+      "gate": "mechanics",
+      "status": "passed",
+      "token_behavior_basis": "known_fixture_rules",
+      "unsupported_pools_kept": 0
+    },
+    {
+      "detail": "declared policy liquidate_all_holdings_via_direct_pool_v1; unresolved states remain visible in reports",
+      "gate": "valuation",
+      "status": "passed"
+    },
+    {
+      "detail": "public descriptor is allowlisted; aliases keyed per run; runtime scanner enforced in service",
+      "gate": "anonymization",
+      "status": "passed"
+    },
+    {
+      "detail": "storage=generated_locally processing=generated_locally redistribution=permitted_generated_fixture serving=permitted_generated_fixture",
+      "gate": "provenance_rights",
+      "redistribution_enabled": true,
+      "status": "passed"
+    },
+    {
+      "detail": "pack_id pack_2e054b4eb158fb4d4f4c6a4abe2c7676 content-addressed; params hash 2800664efd05...; validator pack_validator_v1",
+      "gate": "reproducibility",
+      "status": "passed"
+    }
+  ],
+  "notes": [
+    "Passing gates means the pack meets declared mechanical/data requirements. It does not mean the simulator predicts live profitability."
+  ],
+  "origin": "generated_fixture",
+  "pack_id": "pack_2e054b4eb158fb4d4f4c6a4abe2c7676",
+  "predictive_validity": "not_established",
+  "requested_qualification": "demo",
+  "resulting_qualification": "demo",
+  "validator_version": "pack_validator_v1"
+}

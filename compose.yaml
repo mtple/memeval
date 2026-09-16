@@ -1,0 +1,39 @@
+# Local-only composition. The service is published on 127.0.0.1 only. The optional
+# restricted-runner service has no network route except the internal network to the gateway.
+services:
+  service:
+    build: .
+    image: market-replay:local
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      MARKET_REPLAY_ADMIN_TOKEN: ${MARKET_REPLAY_ADMIN_TOKEN:-adm_change_me}
+      MARKET_REPLAY_DEV_MODE: "1"
+    volumes:
+      - mr_data:/data
+    networks: [internal, egress]
+
+  # Example restricted participant runner: internal network only (no internet), empty working
+  # directory, scrubbed environment. Start with: docker compose run --rm restricted-runner
+  restricted-runner:
+    image: market-replay:local
+    profiles: ["restricted"]
+    working_dir: /tmp/participant
+    environment:
+      MARKET_REPLAY_URL: http://service:8000
+      MARKET_REPLAY_TOKEN: ${MARKET_REPLAY_SESSION_TOKEN:-agt_set_me}
+      PYTHONPATH: /app/sdk/python
+    command: ["python", "/app/agents/examples/python/scheduled_basket.py"]
+    networks: [internal]
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+networks:
+  internal:
+    internal: true
+  egress: {}
+
+volumes:
+  mr_data: {}

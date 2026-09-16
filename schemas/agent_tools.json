@@ -1,0 +1,104 @@
+{
+  "command_request_example": {
+    "arguments": {
+      "amount_in_raw": "1000000",
+      "asset_in": "CASH",
+      "asset_out": "asset_p2dxyz12",
+      "deadline_ms": 180000,
+      "idempotency_key": "agent_intent_42",
+      "min_amount_out_raw": "950000000",
+      "pool_id": "pool_n7q2abcd"
+    },
+    "note": "Illustrative protocol values, not recommended sizes; decimals come from session.describe.",
+    "request_id": "client_unique_001",
+    "tool": "broker.submit"
+  },
+  "envelope_example": {
+    "clock_ms": 123400,
+    "data": {},
+    "error": null,
+    "quality": {
+      "availability_basis": "fixture_delay_model",
+      "completeness": "partial",
+      "observed_through_ms": 123000,
+      "stale": false,
+      "warnings": [
+        "GENERATED_FIXTURE"
+      ]
+    },
+    "request_id": "req_opaque",
+    "session_id": "ses_opaque",
+    "status": "ok"
+  },
+  "error_codes": [
+    "NOT_YET_DISCOVERED",
+    "OUTSIDE_COVERAGE",
+    "UNSUPPORTED_CAPABILITY",
+    "MISSING_DATA",
+    "STALE_DATA",
+    "NO_ROUTE",
+    "INSUFFICIENT_FUNDS",
+    "QUOTE_EXPIRED",
+    "SLIPPAGE_LIMIT",
+    "RATE_LIMITED",
+    "INVALID_ORDER",
+    "INVALID_REQUEST",
+    "EPISODE_ENDED",
+    "ENVIRONMENT_FIDELITY_LIMIT",
+    "MODEL_CAPACITY_LIMIT",
+    "IDEMPOTENCY_CONFLICT",
+    "BUDGET_EXHAUSTED",
+    "RUN_PAUSED",
+    "UNAUTHORIZED",
+    "SESSION_FINISHED"
+  ],
+  "mcp_tool_names": {
+    "broker_order": "broker.order",
+    "broker_quote": "broker.quote",
+    "broker_submit": "broker.submit",
+    "clock_advance": "clock.advance",
+    "market_candles": "market.candles",
+    "market_liquidity": "market.liquidity",
+    "market_restrictions": "market.restrictions",
+    "market_trades": "market.trades",
+    "markets_get": "markets.get",
+    "markets_list": "markets.list",
+    "portfolio_get": "portfolio.get",
+    "portfolio_history": "portfolio.history",
+    "session_describe": "session.describe",
+    "session_finish": "session.finish"
+  },
+  "tools": {
+    "broker.order": "Own order lifecycle and confirmed simulated fill records.",
+    "broker.quote": "Exact-input simulated quote against the current model state.",
+    "broker.submit": "Submit an exact-input simulated swap with min-output, deadline and idempotency key.",
+    "clock.advance": "Advance virtual time to a relative time or the next observable event (bounded).",
+    "market.candles": "Generic OHLCV over visible trades with explicit completeness handling.",
+    "market.liquidity": "Current modeled reserve facts for a supported pool (model-labelled).",
+    "market.restrictions": "Available individual restriction observations or explicit unknown/unsupported.",
+    "market.trades": "Bounded visible trade history ending at or before virtual now.",
+    "markets.get": "Time-qualified metadata and available current observations for one pool.",
+    "markets.list": "Paginated currently discoverable pools with point-in-time filters.",
+    "portfolio.get": "Available/reserved/pending balances, holdings and valuation status.",
+    "portfolio.history": "Own immutable ledger history, paginated.",
+    "session.describe": "Capabilities, limits, relative horizon, numeraire, assumptions and virtual clock.",
+    "session.finish": "Stop agent decisions and apply the fixed terminal reporting procedure."
+  },
+  "unsupported_capabilities": [
+    "holder_graph",
+    "wallet_history",
+    "social_data",
+    "web_search",
+    "exact_output_swap",
+    "limit_order",
+    "stop_order",
+    "bracket_order",
+    "partial_fill",
+    "cross_chain",
+    "short",
+    "leverage",
+    "lp_provision",
+    "prediction_markets",
+    "best_opportunities_ranking"
+  ]
+}

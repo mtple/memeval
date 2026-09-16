@@ -1,0 +1,215 @@
+{
+  "$defs": {
+    "AvailabilityBasis": {
+      "enum": [
+        "recorded_receipt",
+        "reconstructed_with_delay_model",
+        "fixture_delay_model",
+        "unknown"
+      ],
+      "title": "AvailabilityBasis",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One ordered external primitive action on the tape (private side, absolute times).",
+  "properties": {
+    "amount0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Amount0"
+    },
+    "amount1": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Amount1"
+    },
+    "amount_in": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Amount In"
+    },
+    "amount_out_recorded": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Amount Out Recorded"
+    },
+    "asset_in": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Asset In"
+    },
+    "availability_basis": {
+      "$ref": "#/$defs/AvailabilityBasis",
+      "default": "unknown"
+    },
+    "available_utc_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Available Utc Ms"
+    },
+    "block": {
+      "title": "Block",
+      "type": "integer"
+    },
+    "kind": {
+      "enum": [
+        "swap",
+        "mint",
+        "burn",
+        "sync",
+        "restriction",
+        "halt",
+        "unhalt",
+        "discovery"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "log_index": {
+      "title": "Log Index",
+      "type": "integer"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    },
+    "pool": {
+      "title": "Pool",
+      "type": "string"
+    },
+    "publication_utc_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publication Utc Ms"
+    },
+    "received_utc_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Received Utc Ms"
+    },
+    "reserve0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reserve0"
+    },
+    "reserve1": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reserve1"
+    },
+    "seq": {
+      "title": "Seq",
+      "type": "integer"
+    },
+    "time_utc_ms": {
+      "title": "Time Utc Ms",
+      "type": "integer"
+    },
+    "tx": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tx"
+    },
+    "wallet": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Wallet"
+    }
+  },
+  "required": [
+    "seq",
+    "block",
+    "log_index",
+    "time_utc_ms",
+    "kind",
+    "pool"
+  ],
+  "title": "TapeEvent",
+  "type": "object"
+}

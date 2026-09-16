@@ -141,8 +141,9 @@ export function LinkBtn({ to, children }: { to: string; children: ReactNode }) {
 /** Data loader with manual refresh and optional polling. */
 export function useLoad<T>(fn: () => Promise<T>, deps: unknown[], pollMs?: number | null) {
   const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<unknown>(null);
+  const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
+  const toErr = (e: unknown): Error => (e instanceof Error ? e : new Error(String(e)));
   const fnRef = useRef(fn);
   fnRef.current = fn;
   const [tick, setTick] = useState(0);
@@ -158,7 +159,7 @@ export function useLoad<T>(fn: () => Promise<T>, deps: unknown[], pollMs?: numbe
           setError(null);
         }
       })
-      .catch((e) => alive && setError(e))
+      .catch((e: unknown) => alive && setError(toErr(e)))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;

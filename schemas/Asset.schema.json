@@ -1,0 +1,99 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "address": {
+      "title": "Address",
+      "type": "string"
+    },
+    "chain_id": {
+      "title": "Chain Id",
+      "type": "integer"
+    },
+    "created_block": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Created Block"
+    },
+    "created_time_utc_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Created Time Utc Ms"
+    },
+    "decimals": {
+      "title": "Decimals",
+      "type": "integer"
+    },
+    "discovery_available_utc_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Discovery Available Utc Ms"
+    },
+    "fixture_rules": {
+      "additionalProperties": true,
+      "title": "Fixture Rules",
+      "type": "object"
+    },
+    "is_numeraire": {
+      "default": false,
+      "title": "Is Numeraire",
+      "type": "boolean"
+    },
+    "key": {
+      "title": "Key",
+      "type": "string"
+    },
+    "name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Name"
+    },
+    "symbol": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Symbol"
+    }
+  },
+  "required": [
+    "key",
+    "chain_id",
+    "address",
+    "decimals"
+  ],
+  "title": "Asset",
+  "type": "object"
+}

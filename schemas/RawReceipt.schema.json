@@ -1,0 +1,119 @@
+{
+  "$defs": {
+    "DataOrigin": {
+      "enum": [
+        "generated_fixture",
+        "captured_observations",
+        "historical_reconstruction",
+        "report_excerpt",
+        "mixed"
+      ],
+      "title": "DataOrigin",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "application_error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Application Error"
+    },
+    "body_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Body Path"
+    },
+    "body_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Body Sha256"
+    },
+    "http_status": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Http Status"
+    },
+    "integrity_hash_basis": {
+      "default": "sha256_of_stored_bytes",
+      "title": "Integrity Hash Basis",
+      "type": "string"
+    },
+    "origin": {
+      "$ref": "#/$defs/DataOrigin",
+      "default": "captured_observations"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "receipt_id": {
+      "title": "Receipt Id",
+      "type": "string"
+    },
+    "received_utc_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Received Utc Ms"
+    },
+    "request": {
+      "additionalProperties": true,
+      "title": "Request",
+      "type": "object"
+    },
+    "requested_utc_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Requested Utc Ms"
+    }
+  },
+  "required": [
+    "receipt_id",
+    "provider",
+    "request",
+    "http_status",
+    "application_error",
+    "body_sha256",
+    "requested_utc_ms",
+    "received_utc_ms"
+  ],
+  "title": "RawReceipt",
+  "type": "object"
+}

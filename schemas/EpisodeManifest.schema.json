@@ -1,0 +1,443 @@
+{
+  "$defs": {
+    "DataObject": {
+      "additionalProperties": false,
+      "properties": {
+        "filename": {
+          "title": "Filename",
+          "type": "string"
+        },
+        "schema_id": {
+          "title": "Schema Id",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "filename",
+        "schema_id",
+        "size_bytes",
+        "sha256"
+      ],
+      "title": "DataObject",
+      "type": "object"
+    },
+    "DataOrigin": {
+      "enum": [
+        "generated_fixture",
+        "captured_observations",
+        "historical_reconstruction",
+        "report_excerpt",
+        "mixed"
+      ],
+      "title": "DataOrigin",
+      "type": "string"
+    },
+    "ExecutionModel": {
+      "enum": [
+        "cpmm_fixed_flow_v1",
+        "diagnostic_no_execution"
+      ],
+      "title": "ExecutionModel",
+      "type": "string"
+    },
+    "ExecutionSection": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/ExecutionModel"
+        },
+        "parameters_file": {
+          "title": "Parameters File",
+          "type": "string"
+        },
+        "parameters_hash": {
+          "title": "Parameters Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "parameters_file",
+        "parameters_hash"
+      ],
+      "title": "ExecutionSection",
+      "type": "object"
+    },
+    "PackData": {
+      "additionalProperties": false,
+      "properties": {
+        "availability_model": {
+          "additionalProperties": true,
+          "title": "Availability Model",
+          "type": "object"
+        },
+        "coverage_report": {
+          "title": "Coverage Report",
+          "type": "string"
+        },
+        "objects": {
+          "items": {
+            "$ref": "#/$defs/DataObject"
+          },
+          "title": "Objects",
+          "type": "array"
+        },
+        "token_behavior_basis": {
+          "$ref": "#/$defs/TokenBehavior"
+        }
+      },
+      "required": [
+        "objects",
+        "coverage_report",
+        "availability_model",
+        "token_behavior_basis"
+      ],
+      "title": "PackData",
+      "type": "object"
+    },
+    "Period": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "end_utc": {
+          "title": "End Utc",
+          "type": "string"
+        },
+        "end_utc_ms": {
+          "title": "End Utc Ms",
+          "type": "integer"
+        },
+        "is_full_week": {
+          "title": "Is Full Week",
+          "type": "boolean"
+        },
+        "prehistory_start_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Prehistory Start Utc"
+        },
+        "prehistory_start_utc_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Prehistory Start Utc Ms"
+        },
+        "start_utc": {
+          "title": "Start Utc",
+          "type": "string"
+        },
+        "start_utc_ms": {
+          "title": "Start Utc Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start_utc",
+        "end_utc",
+        "prehistory_start_utc",
+        "start_utc_ms",
+        "end_utc_ms",
+        "prehistory_start_utc_ms",
+        "duration_ms",
+        "is_full_week"
+      ],
+      "title": "Period",
+      "type": "object"
+    },
+    "PoolModel": {
+      "enum": [
+        "uniswap_v2_plain",
+        "fixture_cpmm",
+        "uniswap_v3",
+        "uniswap_v4_hooked",
+        "bonding_curve",
+        "unknown"
+      ],
+      "title": "PoolModel",
+      "type": "string"
+    },
+    "PredictiveValidity": {
+      "enum": [
+        "not_established"
+      ],
+      "title": "PredictiveValidity",
+      "type": "string"
+    },
+    "Rights": {
+      "additionalProperties": false,
+      "properties": {
+        "local_processing_basis": {
+          "default": "unverified",
+          "title": "Local Processing Basis",
+          "type": "string"
+        },
+        "notes": {
+          "default": "",
+          "title": "Notes",
+          "type": "string"
+        },
+        "redistribution": {
+          "default": "not_cleared",
+          "title": "Redistribution",
+          "type": "string"
+        },
+        "simulator_serving": {
+          "default": "local_only",
+          "title": "Simulator Serving",
+          "type": "string"
+        },
+        "storage_basis": {
+          "default": "unverified",
+          "title": "Storage Basis",
+          "type": "string"
+        }
+      },
+      "title": "Rights",
+      "type": "object"
+    },
+    "TokenBehavior": {
+      "enum": [
+        "known_fixture_rules",
+        "historically_supported",
+        "assumed_standard_transfer",
+        "unknown"
+      ],
+      "title": "TokenBehavior",
+      "type": "string"
+    },
+    "Universe": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_count": {
+          "default": 0,
+          "title": "Candidate Count",
+          "type": "integer"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "excluded_or_unsupported_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Excluded Or Unsupported Counts",
+          "type": "object"
+        },
+        "factories": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Factories",
+          "type": "array"
+        },
+        "indexed_block_ranges": {
+          "items": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "title": "Indexed Block Ranges",
+          "type": "array"
+        },
+        "missing_count": {
+          "default": 0,
+          "title": "Missing Count",
+          "type": "integer"
+        },
+        "pool_models": {
+          "items": {
+            "$ref": "#/$defs/PoolModel"
+          },
+          "title": "Pool Models",
+          "type": "array"
+        },
+        "quote_asset": {
+          "title": "Quote Asset",
+          "type": "string"
+        },
+        "selected_count": {
+          "default": 0,
+          "title": "Selected Count",
+          "type": "integer"
+        },
+        "selection_rule_version": {
+          "title": "Selection Rule Version",
+          "type": "string"
+        },
+        "unsupported_count": {
+          "default": 0,
+          "title": "Unsupported Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "quote_asset",
+        "selection_rule_version"
+      ],
+      "title": "Universe",
+      "type": "object"
+    },
+    "UseStatus": {
+      "enum": [
+        "demo",
+        "research",
+        "qualified_for_named_suite",
+        "diagnostic_only",
+        "rejected"
+      ],
+      "title": "UseStatus",
+      "type": "string"
+    },
+    "ValidationSection": {
+      "additionalProperties": false,
+      "properties": {
+        "predictive_validity": {
+          "$ref": "#/$defs/PredictiveValidity",
+          "default": "not_established"
+        },
+        "qualification": {
+          "$ref": "#/$defs/UseStatus"
+        },
+        "report_path": {
+          "title": "Report Path",
+          "type": "string"
+        },
+        "validator_version": {
+          "title": "Validator Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "report_path",
+        "qualification",
+        "validator_version"
+      ],
+      "title": "ValidationSection",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "chain": {
+      "title": "Chain",
+      "type": "string"
+    },
+    "chain_id": {
+      "title": "Chain Id",
+      "type": "integer"
+    },
+    "data": {
+      "$ref": "#/$defs/PackData"
+    },
+    "decision_log": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Decision Log",
+      "type": "array"
+    },
+    "execution": {
+      "$ref": "#/$defs/ExecutionSection"
+    },
+    "generator": {
+      "additionalProperties": true,
+      "title": "Generator",
+      "type": "object"
+    },
+    "numeraire": {
+      "title": "Numeraire",
+      "type": "string"
+    },
+    "numeraire_alias": {
+      "title": "Numeraire Alias",
+      "type": "string"
+    },
+    "numeraire_decimals": {
+      "title": "Numeraire Decimals",
+      "type": "integer"
+    },
+    "origin": {
+      "$ref": "#/$defs/DataOrigin"
+    },
+    "pack_id": {
+      "title": "Pack Id",
+      "type": "string"
+    },
+    "period": {
+      "$ref": "#/$defs/Period"
+    },
+    "provenance_notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Provenance Notes",
+      "type": "array"
+    },
+    "rights": {
+      "$ref": "#/$defs/Rights"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "scope_label": {
+      "title": "Scope Label",
+      "type": "string"
+    },
+    "title_private": {
+      "title": "Title Private",
+      "type": "string"
+    },
+    "universe": {
+      "$ref": "#/$defs/Universe"
+    },
+    "validation": {
+      "$ref": "#/$defs/ValidationSection"
+    }
+  },
+  "required": [
+    "pack_id",
+    "origin",
+    "chain",
+    "chain_id",
+    "scope_label",
+    "title_private",
+    "period",
+    "universe",
+    "data",
+    "execution",
+    "rights",
+    "validation",
+    "numeraire",
+    "numeraire_alias",
+    "numeraire_decimals"
+  ],
+  "title": "EpisodeManifest",
+  "type": "object"
+}

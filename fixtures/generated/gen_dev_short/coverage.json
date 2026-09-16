@@ -1,0 +1,111 @@
+{
+  "basis": "generated_by_construction",
+  "intervals": [
+    {
+      "end_utc_ms": 1773622200000,
+      "evidence": "generated_by_construction",
+      "field": "swaps",
+      "object_ref": "0:fixture_cpmm:pool_00",
+      "start_utc_ms": 1773617400000,
+      "state": "completed_and_checked"
+    },
+    {
+      "end_utc_ms": 1773622500000,
+      "evidence": "fixture_publication_dropout",
+      "field": "swaps",
+      "gaps": [
+        {
+          "reason": "unpublished_observations"
+        }
+      ],
+      "object_ref": "0:fixture_cpmm:pool_00",
+      "start_utc_ms": 1773622200000,
+      "state": "partial"
+    },
+    {
+      "end_utc_ms": 1773626404000,
+      "evidence": "generated_by_construction",
+      "field": "swaps",
+      "object_ref": "0:fixture_cpmm:pool_00",
+      "start_utc_ms": 1773622500000,
+      "state": "completed_and_checked"
+    },
+    {
+      "end_utc_ms": 1773622200000,
+      "evidence": "generated_by_construction",
+      "field": "swaps",
+      "object_ref": "0:fixture_cpmm:pool_01",
+      "start_utc_ms": 1773617400000,
+      "state": "completed_and_checked"
+    },
+    {
+      "end_utc_ms": 1773622500000,
+      "evidence": "fixture_publication_dropout",
+      "field": "swaps",
+      "gaps": [
+        {
+          "reason": "unpublished_observations"
+        }
+      ],
+      "object_ref": "0:fixture_cpmm:pool_01",
+      "start_utc_ms": 1773622200000,
+      "state": "partial"
+    },
+    {
+      "end_utc_ms": 1773626404000,
+      "evidence": "generated_by_construction",
+      "field": "swaps",
+      "object_ref": "0:fixture_cpmm:pool_01",
+      "start_utc_ms": 1773622500000,
+      "state": "completed_and_checked"
+    },
+    {
+      "end_utc_ms": 1773622200000,
+      "evidence": "generated_by_construction",
+      "field": "swaps",
+      "object_ref": "0:fixture_cpmm:pool_02",
+      "start_utc_ms": 1773621882000,
+      "state": "completed_and_checked"
+    },
+    {
+      "end_utc_ms": 1773622500000,
+      "evidence": "fixture_publication_dropout",
+      "field": "swaps",
+      "gaps": [
+        {
+          "reason": "unpublished_observations"
+        }
+      ],
+      "object_ref": "0:fixture_cpmm:pool_02",
+      "start_utc_ms": 1773622200000,
+      "state": "partial"
+    },
+    {
+      "end_utc_ms": 1773626404000,
+      "evidence": "generated_by_construction",
+      "field": "swaps",
+      "object_ref": "0:fixture_cpmm:pool_02",
+      "start_utc_ms": 1773622500000,
+      "state": "completed_and_checked"
+    },
+    {
+      "end_utc_ms": 1773626404000,
+      "evidence": "generated_by_construction",
+      "field": "swaps",
+      "object_ref": "0:fixture_cpmm:pool_03",
+      "start_utc_ms": 1773623848000,
+      "state": "completed_and_checked"
+    }
+  ],
+  "schema": "coverage_v1",
+  "summary": {
+    "dropout_windows_ms": [
+      [
+        3000000,
+        3300000
+      ]
+    ],
+    "pools": 4,
+    "tape_events": 1803
+  }
+}

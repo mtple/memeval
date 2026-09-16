@@ -1,0 +1,108 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "asset": {
+      "title": "Asset",
+      "type": "string"
+    },
+    "available_utc_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Available Utc Ms"
+    },
+    "buy_tax_bps": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Buy Tax Bps"
+    },
+    "conflicts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Conflicts",
+      "type": "array"
+    },
+    "is_honeypot": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Is Honeypot"
+    },
+    "is_in_dex": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Is In Dex"
+    },
+    "observed_utc_ms": {
+      "title": "Observed Utc Ms",
+      "type": "integer"
+    },
+    "raw_fields": {
+      "additionalProperties": true,
+      "title": "Raw Fields",
+      "type": "object"
+    },
+    "sell_blocked": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sell Blocked"
+    },
+    "sell_tax_bps": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sell Tax Bps"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "asset",
+    "observed_utc_ms",
+    "available_utc_ms",
+    "source"
+  ],
+  "title": "RestrictionObservation",
+  "type": "object"
+}

@@ -58,7 +58,9 @@ def test_ui_smoke(ui_server):
         page.wait_for_selector("text=completed", timeout=20_000)
         page.screenshot(path=str(OUT / "run.png"))
         page.goto(f"{srv.url}/runs/{run_id}/results")
-        page.wait_for_selector("text=not_established", timeout=20_000)
+        page.wait_for_selector("text=Predictive validity", timeout=20_000)
+        page.wait_for_selector("text=not established", timeout=20_000)
+        assert "does not establish an edge" in page.inner_text("body")
         body = page.inner_text("body")
         assert "score" not in body.lower().replace("scored", "") or "0-100" not in body
         page.screenshot(path=str(OUT / "results.png"))
