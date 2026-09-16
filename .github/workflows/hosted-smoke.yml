@@ -45,7 +45,11 @@ jobs:
           probe "function: import gate"   POST /api/v1/packs/import    401 '{"path":"/nowhere"}'
 
           probe "agent plane: http gate"  POST /agent/v1/commands      401 '{"request_id":"smoke","tool":"session.describe","arguments":{}}'
-          probe "agent plane: mcp gate"   POST /agent/mcp              401 '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+          # MCP is open (enroll needs no credential); a session tool without a token gets a typed error, never data
+          mcp=$(curl -sS -m 60 -X POST "$BASE/agent/mcp" -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+                -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"portfolio_get","arguments":{"arguments":{}}}}')
+          printf '%-32s %s %-28s -> %s\n' "agent plane: mcp token gate" POST /agent/mcp "$(echo "$mcp" | head -c 300)"
+          echo "$mcp" | grep -q '"UNAUTHORIZED"' || fail=1
           probe "skill: served"           GET  /skill.md               200
           probe "skill: script"           GET  /skill/market_replay_agent.py 200
           probe "ui: index"               GET  /                       200
