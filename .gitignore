@@ -28,3 +28,6 @@ data/
 tests/browser/output/
 playwright-report/
 test-results/
+
+# Vercel local build output
+.vercel/

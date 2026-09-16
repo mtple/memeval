@@ -4,7 +4,7 @@
     MARKET_REPLAY_ADMIN_TOKEN              control-plane token (required in production; generated + logged otherwise)
     MARKET_REPLAY_PUBLIC_URL               public base URL handed to agents (defaults to Vercel's production URL)
     MARKET_REPLAY_DATA_DIR                 scratch dir for regenerated packs (ephemeral on serverless; /tmp default)
-    MARKET_REPLAY_BOOTSTRAP                "dev" | "all" | "" : fixture packs registered on first start
+    MARKET_REPLAY_BOOTSTRAP                "all" | "dev" | "none": fixture packs registered on first start (hosted default: all)
     MARKET_REPLAY_MAX_RUNS_PER_DAY, MARKET_REPLAY_MAX_CPU_SECONDS_PER_MONTH   cost caps (raise when you buy usage)
     MARKET_REPLAY_CORS_ORIGINS             comma-separated browser origins (same-origin needs none)
 """
@@ -37,8 +37,8 @@ def build_hosted_app() -> tuple[FastAPI, RunManager]:
         public = "https://" + os.environ["VERCEL_PROJECT_PRODUCTION_URL"]
     if public:
         mgr.gateway_url = public.rstrip("/")
-    boot = os.environ.get("MARKET_REPLAY_BOOTSTRAP", "")
-    if boot:
+    boot = os.environ.get("MARKET_REPLAY_BOOTSTRAP") or ("all" if mgr.hosted else "")
+    if boot and boot != "none":
         names = ["gen_dev_short"] if boot == "dev" else ["gen_dev_short", "gen_week_trending", "gen_week_reversal", "gen_week_sparse_missing", "gen_week_liquidity_shift"]
         for n in names:
             try:

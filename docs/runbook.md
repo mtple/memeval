@@ -68,9 +68,11 @@ One-time project settings (Vercel dashboard → project → Settings):
    injects `DATABASE_URL`/`POSTGRES_URL`. Free tier: 0.5 GB, plenty for traces and reports.
 3. **Environment Variables** (Production):
    - `MARKET_REPLAY_ADMIN_TOKEN` — a long random string; the only control-plane credential.
-   - `MARKET_REPLAY_PUBLIC_URL` — `https://<your-domain>` (handed to agents as the gateway URL).
-   - `MARKET_REPLAY_BOOTSTRAP` — `all` (registers the four generated weeks and the 2-hour fixture
-     on first start; regenerated deterministically on cold starts) or `dev`.
+   - `MARKET_REPLAY_PUBLIC_URL` — optional; defaults to the project's production URL on Vercel. Set
+     it only for a custom domain.
+   - `MARKET_REPLAY_BOOTSTRAP` — optional; hosted default `all` (registers the four generated weeks
+     and the 2-hour fixture on first start; regenerated deterministically on cold starts). `dev`
+     registers only the 2-hour fixture; `none` registers nothing.
    - `MARKET_REPLAY_MAX_RUNS_PER_DAY` (default 200) and `MARKET_REPLAY_MAX_CPU_SECONDS_PER_MONTH`
      (default 10800 = 3 CPU-hours). Raise them when you buy more usage; no redeploy needed beyond
      the env change.

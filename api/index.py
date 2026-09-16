@@ -1,4 +1,8 @@
-"""Vercel Python Function entrypoint: the whole Market Replay control plane and agent plane as one FastAPI app."""
+"""Vercel Python Function entrypoint: the whole Market Replay control plane and agent plane as one FastAPI app.
+
+Vercel's build step parses this file and only treats it as a function when it finds a plain
+top-level ``app = ...`` assignment, so the app must not be bound by tuple unpacking.
+"""
 
 import sys
 from pathlib import Path
@@ -10,4 +14,6 @@ for p in (ROOT / "src", ROOT / "sdk" / "python"):
 
 from market_replay.service.hosted import build_hosted_app  # noqa: E402
 
-app, _manager = build_hosted_app()
+_built = build_hosted_app()
+app = _built[0]
+_manager = _built[1]

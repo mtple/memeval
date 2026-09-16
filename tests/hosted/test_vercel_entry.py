@@ -62,3 +62,41 @@ def test_vercel_config_routes_api_and_agent_to_the_function():
     assert "excludeFiles" in fn
     assert (REPO / "api" / "index.py").exists()
     assert "duckdb" not in (REPO / "requirements.txt").read_text()
+
+
+def test_hosted_default_bootstrap_is_all_when_unset(monkeypatch, tmp_path):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("MARKET_REPLAY_BOOTSTRAP", raising=False)
+    monkeypatch.setenv("MARKET_REPLAY_HOSTED", "1")
+    monkeypatch.setenv("MARKET_REPLAY_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKET_REPLAY_ADMIN_TOKEN", "adm_env")
+    from market_replay.service.hosted import build_hosted_app
+
+    app, mgr = build_hosted_app()
+    c = TestClient(app)
+    names = {p["name"] for p in c.get("/api/v1/packs", headers={"Authorization": "Bearer adm_env"}).json()["items"]}
+    assert {"gen_dev_short", "gen_week_trending", "gen_week_reversal", "gen_week_sparse_missing", "gen_week_liquidity_shift"} <= names
+    mgr.close()
+
+
+def test_hosted_bootstrap_none_registers_nothing(monkeypatch, tmp_path):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("MARKET_REPLAY_BOOTSTRAP", "none")
+    monkeypatch.setenv("MARKET_REPLAY_HOSTED", "1")
+    monkeypatch.setenv("MARKET_REPLAY_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKET_REPLAY_ADMIN_TOKEN", "adm_env")
+    from market_replay.service.hosted import build_hosted_app
+
+    app, mgr = build_hosted_app()
+    c = TestClient(app)
+    assert c.get("/api/v1/packs", headers={"Authorization": "Bearer adm_env"}).json()["items"] == []
+    mgr.close()
+
+
+def test_vercel_entrypoint_binds_app_with_a_plain_assignment():
+    """Vercel's Python detector only registers api/*.py files that assign `app` (or `handler`) at top level."""
+    import ast
+
+    tree = ast.parse((REPO / "api" / "index.py").read_text())
+    plain = [n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "app" for t in n.targets)]
+    assert plain, "api/index.py must contain a top-level `app = ...` assignment (no tuple unpacking)"
