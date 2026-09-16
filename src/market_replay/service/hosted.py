@@ -7,6 +7,9 @@
     MARKET_REPLAY_BOOTSTRAP                "all" | "dev" | "none": fixture packs registered on first start (hosted default: all)
     MARKET_REPLAY_MAX_RUNS_PER_DAY, MARKET_REPLAY_MAX_CPU_SECONDS_PER_MONTH   cost caps (raise when you buy usage)
     MARKET_REPLAY_CORS_ORIGINS             comma-separated browser origins (same-origin needs none)
+    BASE_RPC_URL / RPC_URL                 read-only EVM RPC endpoint; when set, anyone can request a real past week
+    MARKET_REPLAY_MAX_WEEKS_PER_DAY, MARKET_REPLAY_WEEK_MAX_REQUESTS, MARKET_REPLAY_WEEK_MAX_PAIRS,
+    MARKET_REPLAY_WEEK_LOG_CHUNK, MARKET_REPLAY_WEEK_SLICE_SECONDS   collection caps and slice length
 """
 
 from __future__ import annotations
@@ -39,6 +42,18 @@ def build_hosted_app() -> tuple[FastAPI, RunManager]:
         public = "https://" + os.environ["VERCEL_PROJECT_PRODUCTION_URL"]
     if public:
         mgr.gateway_url = public.rstrip("/")
+    rpc = os.environ.get("BASE_RPC_URL") or os.environ.get("RPC_URL") or None
+    from .weeks import WeekJobs
+
+    mgr.weeks = WeekJobs(
+        mgr,
+        rpc_url=rpc,
+        slice_seconds=float(os.environ.get("MARKET_REPLAY_WEEK_SLICE_SECONDS", "240")),
+        max_requests=int(os.environ.get("MARKET_REPLAY_WEEK_MAX_REQUESTS", "20000")),
+        log_chunk_blocks=int(os.environ.get("MARKET_REPLAY_WEEK_LOG_CHUNK", "10000")),
+        max_pairs=int(os.environ.get("MARKET_REPLAY_WEEK_MAX_PAIRS", "16")),
+        max_jobs_per_day=int(os.environ.get("MARKET_REPLAY_MAX_WEEKS_PER_DAY", "3")),
+    )
     boot = os.environ.get("MARKET_REPLAY_BOOTSTRAP") or ("all" if mgr.hosted else "")
     names = [] if boot in ("", "none") else (["gen_dev_short"] if boot == "dev" else list(FIXTURE_NAMES))
     app = create_app(mgr, admin, cors_origins=cors_origins_from_env())

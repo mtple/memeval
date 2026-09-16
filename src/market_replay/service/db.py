@@ -118,6 +118,24 @@ CREATE TABLE IF NOT EXISTS pack_archives (
   archive BYTEA NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS week_jobs (
+  job_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  chain TEXT NOT NULL,
+  period_start_utc TEXT NOT NULL,
+  period_end_utc TEXT NOT NULL,
+  status TEXT NOT NULL,
+  config_json TEXT NOT NULL,
+  requests_used INTEGER NOT NULL DEFAULT 0,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  note TEXT,
+  error TEXT,
+  pack_id TEXT,
+  requested_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  work_archive BYTEA
+);
 CREATE TABLE IF NOT EXISTS rate_events (
   kind TEXT NOT NULL,
   key TEXT NOT NULL,
@@ -126,7 +144,7 @@ CREATE TABLE IF NOT EXISTS rate_events (
 CREATE INDEX IF NOT EXISTS rate_events_kind_key_ts ON rate_events (kind, key, ts);
 """
 
-TABLES = ("packs", "agents", "runs", "traces", "docs", "usage", "comparisons", "studies", "suite_runs", "attempts", "rate_events", "pack_archives")
+TABLES = ("packs", "agents", "runs", "traces", "docs", "usage", "comparisons", "studies", "suite_runs", "attempts", "rate_events", "pack_archives", "week_jobs")
 
 
 def today_key() -> str:
@@ -274,6 +292,36 @@ class BaseStore:
 
     def pack_archive_meta(self, pack_id: str) -> dict[str, Any] | None:
         return self.one("SELECT pack_id, name, sha256, size, created_at FROM pack_archives WHERE pack_id=?", (pack_id,))
+
+    # ------------------------------------------------------------------ week collection jobs
+    WEEK_JOB_COLS = "job_id, name, chain, period_start_utc, period_end_utc, status, config_json, requests_used, attempts, note, error, pack_id, requested_by, created_at, updated_at"
+
+    def insert_week_job(self, row: dict[str, Any]) -> None:
+        cols = self.WEEK_JOB_COLS.split(", ")
+        self.execute(f"INSERT INTO week_jobs ({self.WEEK_JOB_COLS}) VALUES ({', '.join('?' for _ in cols)})", tuple(row.get(c) for c in cols))
+
+    def week_job(self, job_id: str) -> dict[str, Any] | None:
+        return self.one(f"SELECT {self.WEEK_JOB_COLS} FROM week_jobs WHERE job_id=?", (job_id,))
+
+    def week_jobs(self) -> list[dict[str, Any]]:
+        return self.query(f"SELECT {self.WEEK_JOB_COLS} FROM week_jobs ORDER BY period_start_utc DESC")
+
+    def update_week_job(self, job_id: str, **fields: Any) -> None:
+        if not fields:
+            return
+        sets = ", ".join(f"{k}=?" for k in fields)
+        self.execute(f"UPDATE week_jobs SET {sets} WHERE job_id=?", (*fields.values(), job_id))
+
+    def week_job_archive(self, job_id: str) -> bytes | None:
+        row = self.one("SELECT work_archive FROM week_jobs WHERE job_id=?", (job_id,))
+        return bytes(row["work_archive"]) if row and row["work_archive"] is not None else None
+
+    def set_week_job_archive(self, job_id: str, archive: bytes) -> None:
+        self.execute("UPDATE week_jobs SET work_archive=? WHERE job_id=?", (archive, job_id))
+
+    def week_jobs_created_since(self, iso: str) -> int:
+        row = self.one("SELECT COUNT(*) AS n FROM week_jobs WHERE created_at>=?", (iso,))
+        return int(row["n"]) if row else 0
 
     # ------------------------------------------------------------------ per-key rate limiting (shared across instances)
     def count_rate_events(self, kind: str, key: str, since_ts: float) -> int:

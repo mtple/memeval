@@ -98,6 +98,7 @@ class RunManager:
         self.max_runs_per_hour_per_ip = int(max_runs_per_hour_per_ip if max_runs_per_hour_per_ip is not None else os.environ.get("MARKET_REPLAY_MAX_RUNS_PER_HOUR_PER_IP", "20"))
         self._packs: dict[str, Pack] = {}
         self._contexts: dict[str, RunContext] = {}
+        self.weeks: Any = None  # WeekJobs, attached by the host when an RPC endpoint is configured
         self._global = threading.RLock()
         self.gateway_url = "http://127.0.0.1:8000"
         if suites_path is None:

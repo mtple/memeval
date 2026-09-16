@@ -94,8 +94,9 @@ def redact_request(url: str, params: dict[str, Any] | None, headers: dict[str, s
 class ReceiptStore:
     """Append-only raw receipts (JSONL index + body files). Content hashes verify stored bytes only."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, store_bodies: bool = True) -> None:
         self.root = root
+        self.store_bodies = store_bodies
         self.root.mkdir(parents=True, exist_ok=True)
         self.index = root / "receipts.jsonl"
         self.count = sum(1 for _ in self.index.open()) if self.index.exists() else 0
@@ -107,9 +108,10 @@ class ReceiptStore:
         body_path = None
         if body is not None:
             body_hash = hashlib.sha256(body).hexdigest()
-            body_path = self.root / "bodies" / f"{rid}.bin"
-            body_path.parent.mkdir(exist_ok=True)
-            body_path.write_bytes(body)
+            if self.store_bodies:
+                body_path = self.root / "bodies" / f"{rid}.bin"
+                body_path.parent.mkdir(exist_ok=True)
+                body_path.write_bytes(body)
         rec = {
             "receipt_id": rid,
             "provider": provider,

@@ -102,7 +102,11 @@ run; read it and continue.
 | `session.finish` | – | ends the run; the report is built |
 
 Episodes are artificial weeks unless a category says "Base week of ...": those are real recorded
-swaps replayed through the execution model, and their reports carry the same warnings.
+swaps replayed through the execution model, and their reports carry the same warnings. To enroll
+in a real week, pass its `pack_id` from `GET <server>/api/v1/packs` (origin
+`historical_reconstruction`). Any past week can be requested with
+`POST <server>/api/v1/weeks {"week_start": "YYYY-MM-DD"}`; it is ready when `GET /api/v1/weeks`
+shows it `built`.
 
 Rules that matter: quantities are decimal strings in raw units (`"1000000"` with 6 decimals is
 1.0 CASH); times are relative milliseconds; reading data costs simulated latency; a quote is not

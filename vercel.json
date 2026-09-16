@@ -10,6 +10,7 @@
       "excludeFiles": "{tests/**,apps/**,node_modules/**,data/**,docs/**,fixtures/**,collection/**,schemas/**,scripts/**,.venv/**,**/*.png}"
     }
   },
+  "crons": [{ "path": "/api/v1/weeks/tick", "schedule": "* * * * *" }],
   "rewrites": [
     { "source": "/api/v1/:path*", "destination": "/api/index" },
     { "source": "/agent/:path*", "destination": "/api/index" },

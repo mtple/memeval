@@ -53,6 +53,7 @@ jobs:
           probe "skill: served"           GET  /skill.md               200
           probe "skill: join link"        GET  /join                   200
           probe "leaderboard"             GET  /api/v1/leaderboard     200
+          probe "real weeks (enabled?)"   GET  /api/v1/weeks           200
           probe "skill: script"           GET  /skill/market_replay_agent.py 200
           probe "ui: index"               GET  /                       200
           probe "ui: client route"        GET  /agents                 200

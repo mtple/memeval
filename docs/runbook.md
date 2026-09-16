@@ -114,22 +114,28 @@ Not available in hosted mode: TypeScript reference participants (no Node in the 
 function; run them locally against the hosted URL instead), the restricted local runner, and
 historical collection (run `make collect` locally and import the pack into a local server).
 
-## Real weeks on the hosted server (collect → upload → leaderboard category)
+## Real weeks (anyone picks a past week in the app)
 
-The hosted function cannot run a multi-hour collection, so a real week is collected in GitHub
-Actions and uploaded as an archive the server keeps in its database:
+Set `BASE_RPC_URL` (or `RPC_URL`) on the server to a read-only EVM RPC endpoint for Base. Then
+the Episodes page offers "Add this week" to everyone:
 
-1. Repository secrets: `BASE_RPC_URL` (an RPC endpoint, for example the value of your shared
-   Vercel variable) and `MARKET_REPLAY_ADMIN_TOKEN`. Optional variable `MARKET_REPLAY_URL`.
-2. Actions → `collect-week` → Run workflow. Leave the date empty for the most recent complete
-   week, or give a Monday. Defaults: 16 pools, 20,000 requests, 10,000-block log chunks.
-   The same job also runs every Monday and collects the previous week.
-3. On `pack_built` the job posts the pack to `POST /api/v1/packs/upload` (operator token). The
-   server validates it, stores the archive, and it appears as "Base week of YYYY-MM-DD" on the
-   leaderboard. Every instance materializes the files from the archive on demand.
-4. Any other outcome fails the job with the collector's reason (`budget_exhausted_resumable`:
-   raise the budget; `provider_error_resumable`: the endpoint limits log ranges, lower the chunk
-   size; `blocked`: read the reason).
+1. `POST /api/v1/weeks {week_start}` queues the week (idempotent per period; at most
+   `MARKET_REPLAY_MAX_WEEKS_PER_DAY` new weeks a day, default 3).
+2. The server collects it in time slices (`MARKET_REPLAY_WEEK_SLICE_SECONDS`, default 240) so it
+   fits a serverless invocation. After each slice the collector's checkpoints are archived in
+   the database; the next slice can run on any instance. Slices are triggered by a Vercel cron
+   every minute (`/api/v1/weeks/tick`) and by any open Episodes page.
+3. The frozen universe is `MARKET_REPLAY_WEEK_MAX_PAIRS` pools (default 16) that were already
+   trading before the week; the request budget is `MARKET_REPLAY_WEEK_MAX_REQUESTS` (default
+   20,000); log ranges start at `MARKET_REPLAY_WEEK_LOG_CHUNK` blocks (default 10,000) and
+   halve on provider errors.
+4. When the collector finishes, the pack is validated (every on-chain reserve checkpoint must
+   reconcile), imported, archived in the database, and appears on the leaderboard as
+   "Base week of YYYY-MM-DD". Failures show their reason on the Episodes page.
+
+Cost: collection is I/O-bound (Fluid compute bills active CPU), so a week costs mostly RPC
+requests on your provider plan. `collect-week` (GitHub Actions) remains as an alternative for
+operators who prefer to collect outside Vercel and upload with `POST /api/v1/packs/upload`.
 
 What a real week does not model: gas (assumed zero), token transfer taxes (assumed standard),
 MEV and routing. Reports say so; results are research grade, never historical performance.

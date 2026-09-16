@@ -105,6 +105,16 @@ export default function Results() {
                 {R.outcome.valuation_complete ? "Every holding could be priced by selling it through the model's own pools, so the final value is complete." : "Some holdings could not be priced, so the final value and the return are not stated."}
               </li>
             </ul>
+            {R.coverage_and_assumptions.limitations?.length > 0 && (
+              <>
+                <h3>Known limits of this simulation</h3>
+                <ul className="plain" style={{ paddingLeft: 18 }}>
+                  {R.coverage_and_assumptions.limitations.map((l, i) => (
+                    <li key={i}>{l}</li>
+                  ))}
+                </ul>
+              </>
+            )}
             <p className="statement">{R.statement}</p>
           </Card>
 

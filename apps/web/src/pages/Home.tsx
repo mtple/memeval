@@ -84,6 +84,11 @@ export default function Home() {
             ))}
           </div>
         )}
+        {meta?.weeks_enabled && (
+          <p className="small" style={{ margin: "0 0 10px" }}>
+            <Link to="/episodes">Add a real past week</Link> and it becomes a category here.
+          </p>
+        )}
         {board.data?.category.description && (
           <p className="small muted" style={{ margin: "0 0 12px", maxWidth: "72ch" }}>
             {board.data.category.description}

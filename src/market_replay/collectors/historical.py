@@ -135,8 +135,26 @@ def normalize_pair_logs(logs: list[dict[str, Any]], *, pool_key: str, token0: st
 
 
 # ---------------------------------------------------------------------- pipeline
-def run_collection(config_path: Path, data_dir: Path, *, transport: httpx.BaseTransport | None = None, rpc_url_override: str | None = None, sleep=None) -> dict[str, Any]:
+class TimeSliceExpired(RuntimeError):
+    """The wall-clock slice given to this invocation is over; everything so far is checkpointed."""
+
+
+def run_collection(
+    config_path: Path,
+    data_dir: Path,
+    *,
+    transport: httpx.BaseTransport | None = None,
+    rpc_url_override: str | None = None,
+    sleep=None,
+    deadline: float | None = None,
+    store_bodies: bool = True,
+    budget_used: int = 0,
+) -> dict[str, Any]:
+    """Collect one interval. Resumable: every chunk is checkpointed, so a run that stops on budget,
+    provider error or an expired time slice (`deadline`, a time.monotonic() value) continues where
+    it left off on the next call. `budget_used` carries requests spent in earlier slices."""
     import os
+    import time as _time
 
     cfg = load_config(config_path)
     out_dir = Path(cfg["out_dir"]) if Path(cfg["out_dir"]).is_absolute() else data_dir / cfg["out_dir"]
@@ -144,8 +162,15 @@ def run_collection(config_path: Path, data_dir: Path, *, transport: httpx.BaseTr
     work.mkdir(parents=True, exist_ok=True)
     rpc_url = rpc_url_override or os.environ.get(cfg["rpc_url_env"])
     dep = DEPLOYMENTS.get(cfg["protocol"], {}).get(cfg["chain"])
-    budget = Budget(max_requests=int(cfg["max_requests"]))
-    receipts = ReceiptStore(work / "receipts")
+    budget = Budget(max_requests=int(cfg["max_requests"]), requests=int(budget_used))
+    receipts = ReceiptStore(work / "receipts", store_bodies=store_bodies)
+
+    progress = {"chunks": 0}
+
+    def slice_check() -> None:
+        # A slice always completes at least one chunk, so short slices still make progress.
+        if deadline is not None and progress["chunks"] > 0 and _time.monotonic() >= deadline:
+            raise TimeSliceExpired("time slice expired; checkpoints saved")
     http = HttpCollector(provider="evm_rpc", budget=budget, receipts=receipts, errors_path=work / "errors.jsonl", transport=transport)
     if sleep is not None:
         http.sleep = sleep
@@ -216,6 +241,7 @@ def run_collection(config_path: Path, data_dir: Path, *, transport: httpx.BaseTr
         cursor = ck.get("pair_cursor", blocks["discovery_start"])
         pairs: dict[str, dict[str, Any]] = ck.get("pairs", {})
         while cursor < blocks["period_end"]:
+            slice_check()
             to_b = min(cursor + chunk - 1, blocks["period_end"] - 1)
             ledger.set("factory", "pair_created", cursor, to_b, CoverageState.PENDING, "requested")
             try:
@@ -235,6 +261,7 @@ def run_collection(config_path: Path, data_dir: Path, *, transport: httpx.BaseTr
             cursor = to_b + 1
             ck.set("pair_cursor", cursor)
             ck.set("pairs", pairs)
+            progress["chunks"] += 1
         # 5. Scope selection: wrapped-native pairs, earliest created first, frozen before any flow is read
         wn = dep["wrapped_native"].lower()
         candidates = sorted(pairs.items(), key=lambda kv: (kv[1]["created_block"], kv[0]))
@@ -249,12 +276,14 @@ def run_collection(config_path: Path, data_dir: Path, *, transport: httpx.BaseTr
             act_key = "active_before_window"
             active = ck.get(act_key)
             if active is None:
-                found: set[str] = set()
+                found: set[str] = set(ck.get(act_key + ":found", []))
                 addrs = [a for a, _ in in_scope]
                 lookback = int(cfg.get("activity_lookback_blocks", 0))
-                cur_a = blocks["discovery_start"] if lookback <= 0 else max(blocks["discovery_start"], blocks["prehistory_start"] - lookback)
+                first = blocks["discovery_start"] if lookback <= 0 else max(blocks["discovery_start"], blocks["prehistory_start"] - lookback)
+                cur_a = int(ck.get(act_key + ":cursor", first))
                 achunk = chunk
                 while cur_a < blocks["prehistory_start"] and addrs:
+                    slice_check()
                     to_a = min(cur_a + achunk - 1, blocks["prehistory_start"] - 1)
                     try:
                         logs = rpc.get_logs(address=addrs, topics=[TOPIC_SWAP], from_block=cur_a, to_block=to_a)
@@ -266,6 +295,9 @@ def run_collection(config_path: Path, data_dir: Path, *, transport: httpx.BaseTr
                     for lg in logs:
                         found.add(lg["address"].lower())
                     cur_a = to_a + 1
+                    ck.set(act_key + ":found", sorted(found))
+                    ck.set(act_key + ":cursor", cur_a)
+                    progress["chunks"] += 1
                 active = sorted(found)
                 ck.set(act_key, active)
                 note(f"activity scan before the window (lookback_blocks={lookback or 'full discovery range'}): {len(active)} of {len(in_scope)} in-scope pairs had at least one swap before prehistory start")
@@ -302,6 +334,7 @@ def run_collection(config_path: Path, data_dir: Path, *, transport: httpx.BaseTr
             pair_logs: list[dict[str, Any]] = ck.get(pk + ":logs", [])
             pchunk = chunk
             while cur < blocks["period_end"]:
+                slice_check()
                 to_b = min(cur + pchunk - 1, blocks["period_end"] - 1)
                 ledger.set(pool_key, "events", cur, to_b, CoverageState.PENDING, "requested")
                 try:
@@ -317,6 +350,7 @@ def run_collection(config_path: Path, data_dir: Path, *, transport: httpx.BaseTr
                 cur = to_b + 1
                 ck.set(pk + ":cursor", cur)
                 ck.set(pk + ":logs", pair_logs)
+                progress["chunks"] += 1
             # Initial state at the block before the prehistory window (pairs created inside the window start empty).
             init = None
             init_basis = None
@@ -465,6 +499,9 @@ def run_collection(config_path: Path, data_dir: Path, *, transport: httpx.BaseTr
             decision_log=log,
         )
         result.update({"status": "pack_built", "pack_id": pack.pack_id, "pack_dir": str(out_dir), "qualification": pack.validation["resulting_qualification"], "tape_events": len(tape), "pools": len(pools_out), "missing": missing, "unsupported_events": len(unsupported_events), "budget": budget.as_dict(), "decision_log": log})
+        return result
+    except TimeSliceExpired as e:
+        result.update({"status": "in_progress_resumable", "reason": str(e), "budget": budget.as_dict(), "checkpoints": ck.data.get("blocks"), "decision_log": log})
         return result
     except BudgetExhausted as e:
         result.update({"status": "budget_exhausted_resumable", "reason": str(e), "budget": budget.as_dict(), "checkpoints": ck.data.get("blocks"), "decision_log": log})

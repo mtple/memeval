@@ -82,6 +82,11 @@ class EnrollBody(BaseModel):
     pack_id: str | None = None
 
 
+class WeekBody(BaseModel):
+    week_start: str = Field(min_length=10, max_length=25)
+    period_end: str | None = None
+
+
 class SuiteRunBody(BaseModel):
     agent_id: str
     launch: LaunchBody
@@ -228,6 +233,7 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
             "hosted": manager.hosted,
             "runtimes_available": list(manager.runtimes_available),
             "store_backend": manager.store.backend,
+            "weeks_enabled": bool(manager.weeks and manager.weeks.enabled),
         }
 
     @app.get("/api/v1/usage", dependencies=[Depends(public_read)])
@@ -275,6 +281,33 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     def enroll(body: EnrollBody) -> dict[str, Any]:
         """Bring-your-own-agent onboarding in one call: register by name, get a session token per episode."""
         return manager.enroll(agent=body.agent.model_dump(), suite_id=body.suite_id, pack_id=body.pack_id)
+
+    # ------------------------------------------------------------------ real weeks on demand
+    def weeks_or_503():
+        if manager.weeks is None or not manager.weeks.enabled:
+            raise ApiError(503, "no RPC endpoint is configured on this server (BASE_RPC_URL); real weeks cannot be collected", "WEEKS_DISABLED")
+        return manager.weeks
+
+    @app.get("/api/v1/weeks", dependencies=[Depends(public_read)])
+    def list_weeks() -> dict[str, Any]:
+        return {"enabled": bool(manager.weeks and manager.weeks.enabled), "items": manager.weeks.jobs() if manager.weeks else []}
+
+    @app.post("/api/v1/weeks", dependencies=[Depends(public_write("weeks"))], status_code=201)
+    def request_week(body: WeekBody, request: Request) -> dict[str, Any]:
+        """Ask for a real past week. Idempotent per period; collected in slices by ticks."""
+        return weeks_or_503().request(body.week_start, body.period_end, requested_by=client_ip(request))
+
+    @app.get("/api/v1/weeks/tick", dependencies=[Depends(public_read)])
+    @app.post("/api/v1/weeks/tick", dependencies=[Depends(public_read)])
+    async def tick_weeks(slice: float | None = None) -> dict[str, Any]:
+        """Advance the oldest unfinished collection by one time slice (cron and open pages call this)."""
+        w = weeks_or_503()
+        s = None if slice is None else max(5.0, min(float(slice), w.slice_seconds))
+        return await run_in_threadpool(w.tick, s)
+
+    @app.get("/api/v1/weeks/{job_id}", dependencies=[Depends(public_read)])
+    def get_week(job_id: str) -> dict[str, Any]:
+        return weeks_or_503().job(job_id)
 
     @app.get("/api/v1/leaderboard", dependencies=[Depends(public_read)])
     def leaderboard(suite_id: str | None = None, pack_id: str | None = None, all: bool = False) -> dict[str, Any]:

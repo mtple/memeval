@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { list, post, get, type Pack, type Validation } from "../api";
+import { useEffect, useRef } from "react";
+import { list, post, get, type Pack, type Validation, type WeekJob } from "../api";
 import { fmtDuration, fmtMs, fmtDate, humanize } from "../format";
 import { useRole } from "../role";
 import { Badge, Card, EmptyState, ErrorState, GateList, GateSummary, JsonView, KV, Loading, StrList, toneForStatus, useLoad } from "../ui";
@@ -33,8 +34,9 @@ export default function Episodes() {
   const sel = packs?.find((p) => p.pack_id === selected) ?? null;
 
   return (
-    <main>
+    <main className="stack">
       <h1>Episodes</h1>
+      <RealWeeks onBuilt={reload} />
       {error && <ErrorState error={error} retry={reload} />}
       {loading && !packs && <Loading what="packs" />}
       {packs && (
@@ -346,6 +348,123 @@ function ImportForm({ onImported }: { onImported: () => void }) {
       {err !== null && <ErrorState error={err} />}
       <p className="muted small">
         No packs yet? Run <code>make demo</code> or <code>market-replay fixtures generate</code> to create development fixtures, then import the generated directory here.
+      </p>
+    </Card>
+  );
+}
+
+
+function lastMonday(minAgeDays = 8): string {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() - minAgeDays);
+  while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Anyone can ask for a real past week. The server collects it in slices; this panel shows progress. */
+function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
+  const { role, meta } = useRole();
+  const enabled = meta?.weeks_enabled === true;
+  const weeks = useLoad(() => get<{ enabled: boolean; items: WeekJob[] }>("/weeks"), [], 6000);
+  const [date, setDate] = useState(lastMonday());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<unknown>(null);
+  const items = weeks.data?.items ?? [];
+  const active = items.some((j) => j.status === "queued" || j.status === "collecting");
+  const builtCount = useRef(0);
+  useEffect(() => {
+    const n = items.filter((j) => j.status === "built").length;
+    if (n > builtCount.current) onBuilt();
+    builtCount.current = n;
+  }, [items, onBuilt]);
+  // While a page is open and a week is in progress, keep the collection moving without waiting for the cron.
+  useEffect(() => {
+    if (!active) return;
+    let stop = false;
+    const kick = () => post("/weeks/tick?slice=50").catch(() => undefined).finally(() => !stop && setTimeout(kick, 2000));
+    kick();
+    return () => {
+      stop = true;
+    };
+  }, [active]);
+  if (!enabled && items.length === 0) {
+    return role === "admin" ? <p className="muted small">Real weeks are off: set BASE_RPC_URL on the server to let anyone add a past week.</p> : null;
+  }
+  return (
+    <Card title="Real weeks">
+      <p>
+        Pick a past week and the server records what actually happened on Base (Uniswap v2 pools, read straight from chain logs) so agents can replay it. Collection takes a while; the week appears on the leaderboard when it is built.
+      </p>
+      {enabled && (
+        <form
+          className="row"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setBusy(true);
+            setErr(null);
+            try {
+              await post<WeekJob>("/weeks", { week_start: date });
+              weeks.reload();
+            } catch (x) {
+              setErr(x);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <label className="field">
+            Week starting (UTC, a Monday)
+            <input id="week-start" type="date" value={date} max={lastMonday()} onChange={(e) => setDate(e.target.value)} />
+          </label>
+          <button id="week-add" className="btn btn-primary" disabled={busy || !date} style={{ alignSelf: "end" }}>
+            {busy ? "Adding…" : "Add this week"}
+          </button>
+        </form>
+      )}
+      {err !== null && <ErrorState error={err} />}
+      {weeks.error && <ErrorState error={weeks.error} retry={weeks.reload} />}
+      {items.length > 0 && (
+        <div className="table-wrap" style={{ marginTop: 8 }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Week</th>
+                <th>Status</th>
+                <th className="num">Requests</th>
+                <th>Progress</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((j) => (
+                <tr key={j.job_id}>
+                  <td>
+                    {j.chain} {j.period_start_utc.slice(0, 10)}
+                    <div className="muted small">to {j.period_end_utc.slice(0, 10)}</div>
+                  </td>
+                  <td>
+                    <Badge tone={j.status === "built" ? "ok" : j.status === "failed" ? "bad" : "info"}>{j.status}</Badge>
+                  </td>
+                  <td className="num">
+                    {j.requests_used}/{j.request_budget}
+                  </td>
+                  <td className="small">
+                    {j.status === "failed" ? <span className="muted">{j.error}</span> : j.note}
+                    {j.status === "built" && j.pack_id && (
+                      <>
+                        {" "}
+                        <Link to="/new">Run it</Link>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="muted small" style={{ marginBottom: 0 }}>
+        What a real week does not model: gas (assumed zero), token transfer taxes (assumed standard), MEV and routing. Provider completeness is not independently verified. Every report on it says so.
       </p>
     </Card>
   );
