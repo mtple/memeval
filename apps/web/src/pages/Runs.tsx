@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { EXAMPLES, ISOLATIONS, MODES, RUNTIMES, list, post, type Agent, type Pack, type Run, type Suite } from "../api";
+import { EXAMPLES, ISOLATIONS, MODES, RUNTIMES, get, list, post, type Agent, type Meta, type Pack, type Run, type Suite, type Usage } from "../api";
 import { buildCreateRunBody, validateCreateRun, type CreateRunForm } from "../forms";
 import { fmtDate, fmtRel, fmtRaw, shortHash } from "../format";
 import { Badge, Card, CopyButton, EmptyState, ErrorState, Loading, RunStateBadge, useLoad } from "../ui";
@@ -16,14 +16,34 @@ export default function Runs() {
   const agents = useLoad(() => list<Agent>("/agents"), []);
   const packs = useLoad(() => list<Pack>("/packs"), []);
   const suites = useLoad(() => list<Suite>("/suites"), []);
+  const meta = useLoad(() => get<Meta>("/meta"), []);
+  const usage = useLoad(() => get<Usage>("/usage"), [], 10000);
   const packById = new Map((packs.data ?? []).map((p) => [p.pack_id, p]));
+  const runtimes = (meta.data?.runtimes_available ?? [...RUNTIMES]) as string[];
+  const hosted = Boolean(meta.data?.hosted);
+  const [executing, setExecuting] = useState<string | null>(null);
+  const execute = async (runId: string) => {
+    setExecuting(runId);
+    try {
+      await post(`/runs/${encodeURIComponent(runId)}/execute`);
+    } finally {
+      setExecuting(null);
+      runs.reload();
+    }
+  };
 
   return (
     <main className="stack">
       <h1>Run</h1>
+      {usage.data && (
+        <p className="muted small">
+          Compute used today: {usage.data.today.runs} runs · {usage.data.today.cpu_seconds.toFixed(0)} CPU-s (cap {usage.data.caps.max_runs_per_day}/day). This month: {usage.data.month.cpu_seconds.toFixed(0)} of {usage.data.caps.max_cpu_seconds_per_month.toFixed(0)} CPU-s.
+          {hosted && " Hosted mode: reference participants run inside the server request; external agents connect over HTTP or MCP."}
+        </p>
+      )}
       <div className="grid-2">
-        <CreateRun agents={agents.data ?? []} packs={packs.data ?? []} onCreated={runs.reload} />
-        <RunSuite agents={agents.data ?? []} suites={suites.data ?? []} onCreated={runs.reload} />
+        <CreateRun agents={agents.data ?? []} packs={packs.data ?? []} onCreated={runs.reload} runtimes={runtimes} />
+        <RunSuite agents={agents.data ?? []} suites={suites.data ?? []} onCreated={runs.reload} runtimes={runtimes} hosted={hosted} />
       </div>
       <Card
         title={`Runs${packFilter ? ` for pack ${shortHash(packFilter)}` : ""}${agentFilter ? ` for agent ${shortHash(agentFilter)}` : ""}`}
@@ -82,7 +102,17 @@ export default function Runs() {
                       <td className="mono">{fmtRel(r.live?.clock_ms ?? r.clock_ms)}</td>
                       <td className="num">{p ? fmtRaw(r.bankroll_raw, p.summary?.numeraire_decimals) : r.bankroll_raw}</td>
                       <td className="small">{fmtDate(r.created_at)}</td>
-                      <td>{r.has_report ? <Link to={`/runs/${r.run_id}/results`}>Results</Link> : <span className="muted">—</span>}</td>
+                      <td>
+                        {r.has_report ? (
+                          <Link to={`/runs/${r.run_id}/results`}>Results</Link>
+                        ) : r.launch && (r.state === "queued" || r.state === "running") && hosted ? (
+                          <button type="button" className="btn btn-small" disabled={executing === r.run_id} onClick={() => execute(r.run_id)}>
+                            {executing === r.run_id ? "Running…" : "Execute"}
+                          </button>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -95,7 +125,7 @@ export default function Runs() {
   );
 }
 
-function CreateRun({ agents, packs, onCreated }: { agents: Agent[]; packs: Pack[]; onCreated: () => void }) {
+function CreateRun({ agents, packs, onCreated, runtimes }: { agents: Agent[]; packs: Pack[]; onCreated: () => void; runtimes: string[] }) {
   const runnable = packs.filter((p) => p.runnable);
   const [f, setF] = useState<CreateRunForm>({ agent_id: "", pack_id: "", mode: "practice", bankroll_raw: "1000000", isolation: "trusted_external_client", launchKind: "example", example: "cash_only", runtime: "python", agent_seed: "" });
   const [busy, setBusy] = useState(false);
@@ -206,7 +236,7 @@ function CreateRun({ agents, packs, onCreated }: { agents: Agent[]; packs: Pack[
             <label className="field">
               Runtime
               <select value={f.runtime} onChange={(e) => setF({ ...f, runtime: e.target.value })}>
-                {RUNTIMES.map((x) => (
+                {runtimes.map((x) => (
                   <option key={x}>{x}</option>
                 ))}
               </select>
@@ -260,7 +290,7 @@ function CreateRun({ agents, packs, onCreated }: { agents: Agent[]; packs: Pack[
   );
 }
 
-function RunSuite({ agents, suites, onCreated }: { agents: Agent[]; suites: Suite[]; onCreated: () => void }) {
+function RunSuite({ agents, suites, onCreated, runtimes, hosted }: { agents: Agent[]; suites: Suite[]; onCreated: () => void; runtimes: string[]; hosted: boolean }) {
   const [f, setF] = useState({ suite_id: "", agent_id: "", example: "cash_only", runtime: "python", agent_seed: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
@@ -333,7 +363,7 @@ function RunSuite({ agents, suites, onCreated }: { agents: Agent[]; suites: Suit
           <label className="field">
             Runtime
             <select value={f.runtime} onChange={(e) => setF({ ...f, runtime: e.target.value })}>
-              {RUNTIMES.map((x) => (
+              {runtimes.map((x) => (
                 <option key={x}>{x}</option>
               ))}
             </select>
@@ -345,7 +375,7 @@ function RunSuite({ agents, suites, onCreated }: { agents: Agent[]; suites: Suit
         </div>
         <div className="row">
           <button className="btn btn-primary" disabled={busy || !f.suite_id || !f.agent_id}>
-            {busy ? "Starting…" : "Start suite (background)"}
+            {busy ? "Starting…" : hosted ? "Queue suite (then Execute each run)" : "Start suite (background)"}
           </button>
           {res && (
             <span className="small">

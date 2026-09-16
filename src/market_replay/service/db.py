@@ -1,10 +1,19 @@
-"""SQLite (WAL) control-plane store. Raw traces live in append-only JSONL files, not here."""
+"""Control-plane store with two backends: SQLite (local, WAL) and Postgres (hosted, e.g. Neon on Vercel).
+
+Both expose the same methods. SQL is written once with ``?`` placeholders and translated for
+Postgres. Besides metadata rows the store holds, per run: the append-only command trace (the
+durable truth from which a session can be rebuilt by deterministic replay), JSON documents
+(run manifest, report, agent log) and daily usage counters for cost caps.
+"""
 
 from __future__ import annotations
 
 import json
 import sqlite3
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +27,7 @@ CREATE TABLE IF NOT EXISTS packs (
   chain TEXT NOT NULL,
   scope_label TEXT NOT NULL,
   use_status TEXT NOT NULL,
-  duration_ms INTEGER NOT NULL,
+  duration_ms BIGINT NOT NULL,
   is_full_week INTEGER NOT NULL,
   start_utc TEXT NOT NULL,
   end_utc TEXT NOT NULL,
@@ -56,9 +65,26 @@ CREATE TABLE IF NOT EXISTS runs (
   started_at TEXT,
   finished_at TEXT,
   error TEXT,
-  clock_ms INTEGER NOT NULL DEFAULT 0,
+  clock_ms BIGINT NOT NULL DEFAULT 0,
   report_json TEXT,
   exposed INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS traces (
+  run_id TEXT NOT NULL,
+  idx INTEGER NOT NULL,
+  record TEXT NOT NULL,
+  PRIMARY KEY (run_id, idx)
+);
+CREATE TABLE IF NOT EXISTS docs (
+  run_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  doc TEXT NOT NULL,
+  PRIMARY KEY (run_id, kind)
+);
+CREATE TABLE IF NOT EXISTS usage (
+  day TEXT PRIMARY KEY,
+  runs INTEGER NOT NULL DEFAULT 0,
+  cpu_seconds DOUBLE PRECISION NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS comparisons (
   comparison_id TEXT PRIMARY KEY,
@@ -86,28 +112,33 @@ CREATE TABLE IF NOT EXISTS attempts (
 );
 """
 
+TABLES = ("packs", "agents", "runs", "traces", "docs", "usage", "comparisons", "studies", "suite_runs", "attempts")
 
-class Store:
-    def __init__(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.RLock()
-        self._conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=NORMAL")
-        self._conn.execute("PRAGMA foreign_keys=ON")
-        with self._lock:
-            self._conn.executescript(SCHEMA)
 
-    # ------------------------------------------------------------------ generic
+def today_key() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%d")
+
+
+class BaseStore:
+    backend = "base"
+
+    # ------------------------------------------------------------------ primitives (implemented per backend)
     def execute(self, sql: str, params: tuple | dict = ()) -> None:
-        with self._lock:
-            self._conn.execute(sql, params)
+        raise NotImplementedError
 
     def query(self, sql: str, params: tuple | dict = ()) -> list[dict[str, Any]]:
-        with self._lock:
-            cur = self._conn.execute(sql, params)
-            return [dict(r) for r in cur.fetchall()]
+        raise NotImplementedError
+
+    @contextmanager
+    def run_lock(self, run_id: str) -> Iterator[None]:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        raise NotImplementedError
+
+    def reset_for_tests(self) -> None:
+        for t in TABLES:
+            self.execute(f"DELETE FROM {t}")
 
     def one(self, sql: str, params: tuple | dict = ()) -> dict[str, Any] | None:
         rows = self.query(sql, params)
@@ -120,7 +151,7 @@ class Store:
                start_utc, end_utc, execution_model, imported_at, summary_json)
                VALUES (:pack_id, :episode_id, :name, :path, :origin, :chain, :scope_label, :use_status, :duration_ms, :is_full_week,
                :start_utc, :end_utc, :execution_model, :imported_at, :summary_json)
-               ON CONFLICT(pack_id) DO UPDATE SET path=excluded.path, use_status=excluded.use_status, summary_json=excluded.summary_json""",
+               ON CONFLICT(pack_id) DO UPDATE SET path=excluded.path, name=excluded.name, use_status=excluded.use_status, summary_json=excluded.summary_json""",
             row,
         )
 
@@ -173,13 +204,48 @@ class Store:
         return self.one("SELECT * FROM runs WHERE token_hash=?", (token_hash,))
 
     def bump_attempt(self, pack_id: str, agent_id: str) -> int:
-        with self._lock:
-            self._conn.execute(
-                "INSERT INTO attempts (pack_id, agent_id, count) VALUES (?, ?, 1) ON CONFLICT(pack_id, agent_id) DO UPDATE SET count=count+1",
-                (pack_id, agent_id),
-            )
-            row = self.one("SELECT count FROM attempts WHERE pack_id=? AND agent_id=?", (pack_id, agent_id))
-            return int(row["count"]) if row else 1
+        self.execute(
+            "INSERT INTO attempts (pack_id, agent_id, count) VALUES (?, ?, 1) ON CONFLICT(pack_id, agent_id) DO UPDATE SET count=attempts.count+1",
+            (pack_id, agent_id),
+        )
+        row = self.one("SELECT count FROM attempts WHERE pack_id=? AND agent_id=?", (pack_id, agent_id))
+        return int(row["count"]) if row else 1
+
+    # ------------------------------------------------------------------ traces & docs
+    def append_trace(self, run_id: str, records: list[dict[str, Any]]) -> None:
+        for r in records:
+            self.execute("INSERT INTO traces (run_id, idx, record) VALUES (?, ?, ?) ON CONFLICT(run_id, idx) DO NOTHING", (run_id, int(r["index"]), json.dumps(r, sort_keys=True)))
+
+    def trace(self, run_id: str, after: int = -1) -> list[dict[str, Any]]:
+        rows = self.query("SELECT record FROM traces WHERE run_id=? AND idx>? ORDER BY idx", (run_id, after))
+        return [json.loads(r["record"]) for r in rows]
+
+    def trace_len(self, run_id: str) -> int:
+        row = self.one("SELECT COUNT(*) AS n FROM traces WHERE run_id=?", (run_id,))
+        return int(row["n"]) if row else 0
+
+    def put_doc(self, run_id: str, kind: str, doc: Any) -> None:
+        self.execute("INSERT INTO docs (run_id, kind, doc) VALUES (?, ?, ?) ON CONFLICT(run_id, kind) DO UPDATE SET doc=excluded.doc", (run_id, kind, json.dumps(doc, sort_keys=True, default=str)))
+
+    def get_doc(self, run_id: str, kind: str) -> Any:
+        row = self.one("SELECT doc FROM docs WHERE run_id=? AND kind=?", (run_id, kind))
+        return json.loads(row["doc"]) if row else None
+
+    # ------------------------------------------------------------------ usage caps
+    def add_usage(self, *, runs: int = 0, cpu_seconds: float = 0.0) -> None:
+        self.execute(
+            "INSERT INTO usage (day, runs, cpu_seconds) VALUES (?, ?, ?) ON CONFLICT(day) DO UPDATE SET runs=usage.runs+excluded.runs, cpu_seconds=usage.cpu_seconds+excluded.cpu_seconds",
+            (today_key(), runs, float(cpu_seconds)),
+        )
+
+    def usage_today(self) -> dict[str, Any]:
+        row = self.one("SELECT runs, cpu_seconds FROM usage WHERE day=?", (today_key(),))
+        return {"runs": int(row["runs"]), "cpu_seconds": float(row["cpu_seconds"])} if row else {"runs": 0, "cpu_seconds": 0.0}
+
+    def usage_month(self) -> dict[str, Any]:
+        prefix = today_key()[:7] + "-%"
+        row = self.one("SELECT COALESCE(SUM(runs),0) AS runs, COALESCE(SUM(cpu_seconds),0) AS cpu FROM usage WHERE day LIKE ?", (prefix,))
+        return {"runs": int(row["runs"]), "cpu_seconds": float(row["cpu"])} if row else {"runs": 0, "cpu_seconds": 0.0}
 
     # ------------------------------------------------------------------ comparisons / studies / suite runs
     def insert_comparison(self, comparison_id: str, created_at: str, request: dict, result: dict) -> None:
@@ -215,6 +281,128 @@ class Store:
     def suite_runs(self) -> list[dict[str, Any]]:
         return self.query("SELECT * FROM suite_runs ORDER BY created_at")
 
+
+def _named_to_positional(sql: str, params: dict[str, Any]) -> tuple[str, tuple]:
+    """Translate ``:name`` placeholders into positional ``?`` in order of appearance."""
+    import re
+
+    names: list[str] = []
+
+    def repl(m: re.Match[str]) -> str:
+        names.append(m.group(1))
+        return "?"
+
+    out = re.sub(r"(?<![:\w]):(\w+)", repl, sql)
+    return out, tuple(params[n] for n in names)
+
+
+class SqliteStore(BaseStore):
+    backend = "sqlite"
+
+    def __init__(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._path = path
+        self._lock = threading.RLock()
+        self._run_locks: dict[str, threading.RLock] = {}
+        self._conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
+        with self._lock:
+            self._conn.executescript(SCHEMA.replace("DOUBLE PRECISION", "REAL").replace("BIGINT", "INTEGER"))
+
+    def execute(self, sql: str, params: tuple | dict = ()) -> None:
+        with self._lock:
+            self._conn.execute(sql, params)
+
+    def query(self, sql: str, params: tuple | dict = ()) -> list[dict[str, Any]]:
+        with self._lock:
+            cur = self._conn.execute(sql, params)
+            return [dict(r) for r in cur.fetchall()]
+
+    @contextmanager
+    def run_lock(self, run_id: str) -> Iterator[None]:
+        """Serialize commands of one run across threads and store instances sharing the same file (flock)."""
+        import fcntl
+        import hashlib
+
+        with self._lock:
+            lk = self._run_locks.setdefault(run_id, threading.RLock())
+        lock_dir = self._path.parent / "locks"
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        lock_file = lock_dir / (hashlib.sha256(run_id.encode()).hexdigest()[:24] + ".lock")
+        with lk:
+            fd = open(lock_file, "a+")
+            try:
+                fcntl.flock(fd.fileno(), fcntl.LOCK_EX)
+                yield
+            finally:
+                fcntl.flock(fd.fileno(), fcntl.LOCK_UN)
+                fd.close()
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+
+class PgStore(BaseStore):
+    backend = "postgres"
+
+    def __init__(self, url: str) -> None:
+        import psycopg
+
+        self._psycopg = psycopg
+        self.url = url
+        self._lock = threading.RLock()
+        self._conn = psycopg.connect(url, autocommit=True)
+        with self._lock:
+            for stmt in SCHEMA.split(";"):
+                if stmt.strip():
+                    self._conn.execute(stmt)
+
+    @staticmethod
+    def _translate(sql: str, params: tuple | dict) -> tuple[str, tuple]:
+        if isinstance(params, dict):
+            sql, params = _named_to_positional(sql, params)
+        return sql.replace("?", "%s"), tuple(params)
+
+    def execute(self, sql: str, params: tuple | dict = ()) -> None:
+        q, p = self._translate(sql, params)
+        with self._lock:
+            self._conn.execute(q, p)
+
+    def query(self, sql: str, params: tuple | dict = ()) -> list[dict[str, Any]]:
+        from psycopg.rows import dict_row
+
+        q, p = self._translate(sql, params)
+        with self._lock, self._conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(q, p)
+            return [dict(r) for r in cur.fetchall()]
+
+    @contextmanager
+    def run_lock(self, run_id: str) -> Iterator[None]:
+        """Cluster-wide serialization: a transaction-scoped advisory lock on a dedicated connection."""
+        conn = self._psycopg.connect(self.url, autocommit=False)
+        try:
+            conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (run_id,))
+            yield
+        finally:
+            try:
+                conn.commit()
+            finally:
+                conn.close()
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+
+def open_store(url_or_path: str | Path) -> BaseStore:
+    s = str(url_or_path)
+    if s.startswith(("postgres://", "postgresql://")):
+        return PgStore(s)
+    return SqliteStore(Path(s))
+
+
+# Backwards-compatible name used by earlier code.
+Store = SqliteStore

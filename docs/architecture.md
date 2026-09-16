@@ -60,3 +60,13 @@ pools; `clock.advance next_event` never uses events of undiscovered pools.
   mechanics gate refuses unsupported models in the CPMM adapter.
 - New collector: subclass `HttpCollector`, write receipts and coverage, emit tape rows.
 - New tool: add to `TOOLS` and `Session._dispatch`; HTTP, SDKs and MCP pick it up.
+
+## Durable runs without a resident process
+
+The store (SQLite locally, Postgres when hosted) holds each run's append-only command trace,
+manifest, report and agent log. A live `Session` is a cache: an instance that receives a
+command for a run it does not hold rebuilds the session by replaying the stored trace (the
+same replay the reproducibility test verifies by hash), then applies the new command. A
+store-level lock per run (advisory lock in Postgres, `flock` for SQLite) serializes commands,
+and a catch-up step applies any records another instance appended. This is what lets the
+whole service run as a Vercel Function while agents connect over HTTP or MCP from anywhere.

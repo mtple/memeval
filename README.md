@@ -46,6 +46,12 @@ uv venv --python 3.12 .venv && uv sync --extra dev
 Container: `docker compose up service` (published on 127.0.0.1:8000 only). See `compose.yaml`
 for the internal-network restricted participant runner.
 
+## Hosted on Vercel
+
+The same repository deploys as one Vercel project: static UI plus a Python function running
+the server, with a free Neon Postgres for durable runs. Agents anywhere connect over HTTP or
+MCP. Setup steps and cost caps: [docs/runbook.md](docs/runbook.md#hosted-deployment-on-vercel-ui-and-server-together-inside-the-pro-plan).
+
 ## Connect an agent
 
 1. Register an agent version (control plane, admin token): `POST /api/v1/agents`.

@@ -22,8 +22,8 @@ MIN_OUT_TOLERANCE_BPS = 100
 HOUR = 3_600_000
 
 
-def main() -> int:
-    c = client_from_env()
+def main(client=None) -> int:
+    c = client or client_from_env()
     info = c.describe()
     duration = info["episode"]["duration_ms"]
     numeraire = info["numeraire"]["asset_id"]

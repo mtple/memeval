@@ -135,7 +135,7 @@ def test_two_reference_agents_run_without_engine_changes_and_replay(server):
         aid = register(admin, f"{name}_{runtime}", runtime)
         run = admin.post("/api/v1/runs", json={"agent_id": aid, "pack_id": "gen_dev_short", "agent_seed": "3", "launch": {"name": name, "runtime": runtime}}).json()
         view = mgr.wait_for_run(run["run_id"], 300)
-        assert view["state"] == "completed", (name, view["error"], (Path(mgr.data_dir) / "runs" / run["run_id"] / "agent.log").read_text()[-500:])
+        assert view["state"] == "completed", (name, view["error"], mgr.agent_log(run["run_id"])[-500:])
         rep = admin.get(f"/api/v1/runs/{run['run_id']}/report").json()
         assert rep["outcome"]["valuation_complete"] is True
         replay = admin.post(f"/api/v1/runs/{run['run_id']}/replay").json()

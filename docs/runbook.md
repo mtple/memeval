@@ -52,3 +52,49 @@
 - Agent `agent_failed` with exit code — see `data/runs/<run_id>/agent.log`.
 - `environment_failed` — an engine exception; the traceback is in the run's `error` field.
 - Playwright: uses `/opt/pw-browsers` if present; otherwise set `PLAYWRIGHT_BROWSERS_PATH`.
+
+## Hosted deployment on Vercel (UI and server together, inside the Pro plan)
+
+The repository deploys as one Vercel project: the static UI plus a Python function
+(`api/index.py`) that runs the whole control plane and agent plane. Runs are durable because
+every command is appended to Postgres and a session is rebuilt by deterministic replay when a
+request lands on an instance that has no cache (`docs/architecture.md`).
+
+One-time project settings (Vercel dashboard → project → Settings):
+
+1. **General → Root Directory**: empty (repository root). The root `vercel.json` builds the UI
+   from `apps/web` and registers the function.
+2. **Storage → Create → Neon Postgres, Free plan** (or `vercel install neon --plan free`). This
+   injects `DATABASE_URL`/`POSTGRES_URL`. Free tier: 0.5 GB, plenty for traces and reports.
+3. **Environment Variables** (Production):
+   - `MARKET_REPLAY_ADMIN_TOKEN` — a long random string; the only control-plane credential.
+   - `MARKET_REPLAY_PUBLIC_URL` — `https://<your-domain>` (handed to agents as the gateway URL).
+   - `MARKET_REPLAY_BOOTSTRAP` — `all` (registers the four generated weeks and the 2-hour fixture
+     on first start; regenerated deterministically on cold starts) or `dev`.
+   - `MARKET_REPLAY_MAX_RUNS_PER_DAY` (default 200) and `MARKET_REPLAY_MAX_CPU_SECONDS_PER_MONTH`
+     (default 10800 = 3 CPU-hours). Raise them when you buy more usage; no redeploy needed beyond
+     the env change.
+4. **Deployment Protection → Vercel Authentication: off for Production.** Agents connect from
+   outside; the admin token and per-run session tokens are the access control.
+5. **Settings → Billing → Spend Management**: set a hard spend limit. This is the safety net
+   that makes overage impossible regardless of the caps above.
+
+How usage maps to cost: Fluid compute bills active CPU. A 2-hour fixture run costs about a
+CPU-second; a full generated week costs 5–60 CPU-seconds depending on the participant (the
+first full-week request on a cold instance also pays ~5 s to regenerate the pack). With the
+default caps the server cannot exceed 3 CPU-hours a month, which is inside Pro's included
+compute. Scaling up is a matter of raising the two caps; the design has no per-instance state,
+so more traffic means more warm instances, not a rewrite. The next optimization when volume
+grows is periodic session snapshots (to skip long replays on cold starts), which the
+trace-sourced model supports without changing any client.
+
+What external agents use:
+
+- HTTP: `POST https://<domain>/agent/v1/commands` with `Authorization: Bearer agt_...`.
+- MCP over streamable HTTP: `https://<domain>/agent/mcp` with the same bearer header (for
+  OpenClaw, Hermes and other MCP-speaking agents). Tool names use underscores.
+- The session token comes from `POST /api/v1/runs` (admin) without a `launch`.
+
+Not available in hosted mode: TypeScript reference participants (no Node in the Python
+function; run them locally against the hosted URL instead), the restricted local runner, and
+historical collection (run `make collect` locally and import the pack into a local server).

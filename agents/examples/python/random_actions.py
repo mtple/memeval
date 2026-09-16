@@ -17,10 +17,10 @@ MIN_WAIT_MS = 60_000
 MAX_WAIT_MS = 4 * 3_600_000
 
 
-def main() -> int:
+def main(client=None) -> int:
     seed = os.environ.get("MARKET_REPLAY_AGENT_SEED", "42")
     rng = random.Random(seed)
-    c = client_from_env()
+    c = client or client_from_env()
     info = c.describe()
     duration = info["episode"]["duration_ms"]
     numeraire = info["numeraire"]["asset_id"]

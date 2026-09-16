@@ -4,5 +4,16 @@
   "outputDirectory": "apps/web/dist",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": null,
-  "rewrites": [{ "source": "/((?!api/|agent/|assets/).*)", "destination": "/index.html" }]
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 300,
+      "memory": 1024,
+      "excludeFiles": "{tests/**,apps/**,node_modules/**,data/**,docs/**,fixtures/**,collection/**,schemas/**,scripts/**,.venv/**,**/*.png}"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/v1/:path*", "destination": "/api/index" },
+    { "source": "/agent/:path*", "destination": "/api/index" },
+    { "source": "/((?!api/|agent/|assets/).*)", "destination": "/index.html" }
+  ]
 }

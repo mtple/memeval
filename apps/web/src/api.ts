@@ -249,7 +249,8 @@ export type Suite = {
   all_packs_imported: boolean;
 };
 
-export type Meta = { tools: Record<string, string>; unsupported_capabilities: string[]; gateway_url: string; dev_mode: boolean };
+export type Meta = { tools: Record<string, string>; unsupported_capabilities: string[]; gateway_url: string; mcp_url?: string; dev_mode: boolean; hosted?: boolean; runtimes_available?: string[]; store_backend?: string };
+export type Usage = { today: { runs: number; cpu_seconds: number }; month: { runs: number; cpu_seconds: number }; caps: { max_runs_per_day: number; max_cpu_seconds_per_month: number }; remaining: { runs_today: number; cpu_seconds_month: number }; note: string };
 
 export type Holding = { asset_id: string; class: "priced_liquidatable" | "no_route" | "unpriced_missing_data" | string; quantity_raw: string; model_value_raw: string | null };
 

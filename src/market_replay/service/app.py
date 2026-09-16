@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 from ..domain.envelope import Envelope
 from ..engine.session import TOOLS, UNSUPPORTED_CAPABILITIES
 from .auth import constant_time_equal, resolve_admin_token
+from .mcp_server import BearerGate, build_remote_mcp
 from .runs import ApiError, RunManager
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -97,7 +99,15 @@ def cors_origins_from_env() -> list[str]:
 
 def create_app(manager: RunManager, admin_token: str | None = None, cors_origins: list[str] | None = None) -> FastAPI:
     token = resolve_admin_token(admin_token)
-    app = FastAPI(title="Market Replay", version="0.1.0", description="Strategy-agnostic trading-agent evaluator: control plane and agent plane.")
+    remote_mcp = build_remote_mcp(manager.handle_command)
+    mcp_asgi = remote_mcp.streamable_http_app()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        async with remote_mcp.session_manager.run():
+            yield
+
+    app = FastAPI(title="Market Replay", version="0.1.0", description="Strategy-agnostic trading-agent evaluator: control plane and agent plane.", lifespan=lifespan)
     app.state.manager = manager
     app.state.admin_token = token
     if cors_origins:
@@ -130,7 +140,20 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
 
     @app.get("/api/v1/meta", dependencies=[Depends(require_admin)])
     def meta() -> dict[str, Any]:
-        return {"tools": TOOLS, "unsupported_capabilities": UNSUPPORTED_CAPABILITIES, "gateway_url": manager.gateway_url, "dev_mode": manager.dev_mode}
+        return {
+            "tools": TOOLS,
+            "unsupported_capabilities": UNSUPPORTED_CAPABILITIES,
+            "gateway_url": manager.gateway_url,
+            "mcp_url": manager.gateway_url + "/agent/mcp",
+            "dev_mode": manager.dev_mode,
+            "hosted": manager.hosted,
+            "runtimes_available": list(manager.runtimes_available),
+            "store_backend": manager.store.backend,
+        }
+
+    @app.get("/api/v1/usage", dependencies=[Depends(require_admin)])
+    def usage() -> dict[str, Any]:
+        return manager.usage_view()
 
     # ------------------------------------------------------------------ packs
     @app.post("/api/v1/packs/import", dependencies=[Depends(require_admin)])
@@ -209,6 +232,11 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     def get_run(run_id: str) -> dict[str, Any]:
         return manager.run_view(run_id)
 
+    @app.post("/api/v1/runs/{run_id}/execute", dependencies=[Depends(require_admin)])
+    def execute_run(run_id: str) -> dict[str, Any]:
+        """Run a launched Python reference participant to completion inside this request (hosted mode)."""
+        return manager.execute_run(run_id)
+
     @app.post("/api/v1/runs/{run_id}/pause", dependencies=[Depends(require_admin)])
     def pause_run(run_id: str) -> dict[str, Any]:
         return manager.pause(run_id)
@@ -273,6 +301,8 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
         return manager.handle_command(tok, body.request_id, body.tool, body.arguments, body.session_id)
 
     # Any attempt by an agent credential to reach control-plane paths is rejected by require_admin above.
+    # MCP over streamable HTTP lives at /agent/mcp (sub-app mounted after the explicit /agent routes).
+    app.mount("/agent", BearerGate(mcp_asgi), name="mcp")
 
     # ------------------------------------------------------------------ web UI
     if WEB_DIST.exists():

@@ -14,7 +14,7 @@ import os
 from typing import Any
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 
 from ..engine.session import TOOLS
 
@@ -61,3 +61,63 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------- remote (streamable HTTP) facade
+def build_remote_mcp(handle_command) -> FastMCP:
+    """MCP over streamable HTTP for agents that speak MCP (OpenClaw, Hermes and similar).
+
+    Stateless and JSON-response so it works behind serverless functions. The session bearer
+    token travels in the Authorization header of every request and is mapped to the run's
+    session by the same handler the HTTP command endpoint uses.
+    """
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    mcp = FastMCP(
+        "market-replay",
+        instructions="Blinded market simulation tools. Pass tool arguments in the `arguments` object. Quantities are decimal strings in raw units; times are relative milliseconds.",
+        stateless_http=True,
+        json_response=True,
+        streamable_http_path="/mcp",
+        # The endpoint is public by design (agents connect from anywhere) and every call is gated by a
+        # per-run bearer token, so Host-header rebinding protection would only block legitimate hosts.
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    )
+
+    def register(mcp_name: str, canonical: str, description: str) -> None:
+        def tool(ctx: Context, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+            req = ctx.request_context.request if ctx.request_context else None
+            auth = req.headers.get("authorization", "") if req is not None else ""
+            if not auth.startswith("Bearer agt_"):
+                return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "session bearer token required"}}
+            try:
+                env = handle_command(auth[7:], f"mcp_{canonical}", canonical, arguments or {}, None)
+            except Exception as e:
+                return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
+            return env.model_dump(mode="json")
+
+        tool.__name__ = mcp_name
+        tool.__doc__ = f"{description} Canonical tool: {canonical}."
+        mcp.tool(name=mcp_name, description=tool.__doc__, structured_output=True)(tool)
+
+    for mcp_name, canonical in MCP_NAME_MAP.items():
+        register(mcp_name, canonical, TOOLS[canonical])
+    return mcp
+
+
+class BearerGate:
+    """ASGI wrapper: reject MCP requests without a session bearer before they reach the protocol layer."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] == "http":
+            headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+            auth = headers.get("authorization", "")
+            if not auth.startswith("Bearer agt_"):
+                body = b'{"code":"UNAUTHORIZED","message":"session bearer token (agt_...) required"}'
+                await send({"type": "http.response.start", "status": 401, "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
+                await send({"type": "http.response.body", "body": body})
+                return
+        await self.app(scope, receive, send)

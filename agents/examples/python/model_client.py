@@ -27,12 +27,12 @@ SYSTEM = (
 MAX_STEPS = 400
 
 
-def main() -> int:
+def main(client=None) -> int:
     if ModelGateway is None:
         print("model gateway unavailable; install the market-replay package to run this example")
         return 2
     gw = ModelGateway.from_env()
-    c = client_from_env()
+    c = client or client_from_env()
     info = c.describe()
     duration = info["episode"]["duration_ms"]
     tools = info["tools"]

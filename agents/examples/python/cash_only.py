@@ -13,8 +13,8 @@ from market_replay_client import client_from_env
 STEP_MS = 6 * 3_600_000
 
 
-def main() -> int:
-    c = client_from_env()
+def main(client=None) -> int:
+    c = client or client_from_env()
     info = c.describe()
     duration = info["episode"]["duration_ms"]
     while True:
