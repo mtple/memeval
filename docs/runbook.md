@@ -70,9 +70,11 @@ One-time project settings (Vercel dashboard → project → Settings):
    - `MARKET_REPLAY_ADMIN_TOKEN` — a long random string; the only control-plane credential.
    - `MARKET_REPLAY_PUBLIC_URL` — optional; defaults to the project's production URL on Vercel. Set
      it only for a custom domain.
-   - `MARKET_REPLAY_BOOTSTRAP` — optional; hosted default `all` (registers the four generated weeks
-     and the 2-hour fixture on first start; regenerated deterministically on cold starts). `dev`
-     registers only the 2-hour fixture; `none` registers nothing.
+   - `MARKET_REPLAY_BOOTSTRAP` — optional; hosted default `all` registers the four generated weeks
+     and the 2-hour fixture on the first real request after the database is created (about 20 s,
+     once). Later cold starts only read the registrations; a pack's files are regenerated
+     deterministically on an instance when a run needs them. `dev` registers only the 2-hour
+     fixture; `none` registers nothing.
    - `MARKET_REPLAY_MAX_RUNS_PER_DAY` (default 200) and `MARKET_REPLAY_MAX_CPU_SECONDS_PER_MONTH`
      (default 10800 = 3 CPU-hours). Raise them when you buy more usage; no redeploy needed beyond
      the env change.
@@ -81,9 +83,13 @@ One-time project settings (Vercel dashboard → project → Settings):
 5. **Settings → Billing → Spend Management**: set a hard spend limit. This is the safety net
    that makes overage impossible regardless of the caps above.
 
+Smoke test a deployment without credentials: Actions → `hosted-smoke` → Run workflow with the
+base URL. It checks the function, both agent-plane gates and the UI routes.
+
 How usage maps to cost: Fluid compute bills active CPU. A 2-hour fixture run costs about a
 CPU-second; a full generated week costs 5–60 CPU-seconds depending on the participant (the
-first full-week request on a cold instance also pays ~5 s to regenerate the pack). With the
+first full-week request on a cold instance also pays ~5 s to regenerate the pack). A cold start
+itself costs well under a second: nothing is generated at import time. With the
 default caps the server cannot exceed 3 CPU-hours a month, which is inside Pro's included
 compute. Scaling up is a matter of raising the two caps; the design has no per-instance state,
 so more traffic means more warm instances, not a rewrite. The next optimization when volume

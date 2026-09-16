@@ -14,9 +14,11 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from starlette.concurrency import run_in_threadpool
 
 from .app import cors_origins_from_env, create_app
 from .auth import new_admin_token
@@ -38,12 +40,42 @@ def build_hosted_app() -> tuple[FastAPI, RunManager]:
     if public:
         mgr.gateway_url = public.rstrip("/")
     boot = os.environ.get("MARKET_REPLAY_BOOTSTRAP") or ("all" if mgr.hosted else "")
-    if boot and boot != "none":
-        names = ["gen_dev_short"] if boot == "dev" else ["gen_dev_short", "gen_week_trending", "gen_week_reversal", "gen_week_sparse_missing", "gen_week_liquidity_shift"]
-        for n in names:
-            try:
-                mgr.ensure_fixture_pack(n)
-            except Exception as e:  # pragma: no cover - startup must not fail on one pack
-                print(f"[market-replay] bootstrap of {n} failed: {e}", file=sys.stderr)
+    names = [] if boot in ("", "none") else (["gen_dev_short"] if boot == "dev" else list(FIXTURE_NAMES))
     app = create_app(mgr, admin, cors_origins=cors_origins_from_env())
+    if names:
+        install_lazy_bootstrap(app, mgr, names)
     return app, mgr
+
+
+FIXTURE_NAMES = ("gen_dev_short", "gen_week_trending", "gen_week_reversal", "gen_week_sparse_missing", "gen_week_liquidity_shift")
+
+
+def install_lazy_bootstrap(app: FastAPI, mgr: RunManager, names: list[str]) -> None:
+    """Register fixture packs on the first real request, once per process, never at import time.
+
+    Serverless runtimes import the entrypoint during instance initialization, which has a short
+    time limit; generating the fixtures the first time takes ~20 s. After that first registration
+    the check is a handful of store reads per cold start (registered packs are not regenerated
+    until a run needs them). Health checks never trigger it.
+    """
+    lock = threading.Lock()
+    state = {"done": False}
+
+    def bootstrap() -> None:
+        with lock:
+            if state["done"]:
+                return
+            for n in names:
+                try:
+                    mgr.ensure_fixture_pack(n)
+                except Exception as e:  # pragma: no cover - one broken fixture must not take the service down
+                    print(f"[market-replay] bootstrap of {n} failed: {e}", file=sys.stderr)
+            state["done"] = True
+
+    @app.middleware("http")
+    async def _bootstrap_once(request: Request, call_next):
+        if not state["done"] and not request.url.path.endswith("/health"):
+            await run_in_threadpool(bootstrap)
+        return await call_next(request)
+
+    app.state.bootstrap = bootstrap

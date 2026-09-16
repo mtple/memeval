@@ -58,7 +58,8 @@ def test_vercel_config_routes_api_and_agent_to_the_function():
     assert dest("/agent/mcp") == "/api/index"
     assert dest("/agents") == "/index.html"
     fn = cfg["functions"]["api/index.py"]
-    assert fn["maxDuration"] <= 300 and fn["memory"] <= 1024
+    assert fn["maxDuration"] <= 300
+    assert "memory" not in fn, "memory is ignored under Active CPU billing; leave it unset"
     assert "excludeFiles" in fn
     assert (REPO / "api" / "index.py").exists()
     assert "duckdb" not in (REPO / "requirements.txt").read_text()
@@ -100,3 +101,44 @@ def test_vercel_entrypoint_binds_app_with_a_plain_assignment():
     tree = ast.parse((REPO / "api" / "index.py").read_text())
     plain = [n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "app" for t in n.targets)]
     assert plain, "api/index.py must contain a top-level `app = ...` assignment (no tuple unpacking)"
+
+
+def test_registered_fixture_is_not_regenerated_on_a_fresh_instance(tmp_path):
+    """Cold starts must not pay for pack generation: a registered pack with missing files stays lazy."""
+    import shutil
+    import time
+
+    from market_replay.service.runs import RunManager
+
+    store = str(tmp_path / "store.sqlite")
+    first = RunManager(data_dir=tmp_path / "a", store_url=store, hosted=True)
+    first.ensure_fixture_pack("gen_dev_short")
+    first.close()
+    shutil.rmtree(tmp_path / "a" / "packs")  # the ephemeral filesystem is gone
+    second = RunManager(data_dir=tmp_path / "a", store_url=store, hosted=True)
+    t = time.perf_counter()
+    view = second.ensure_fixture_pack("gen_dev_short")
+    assert time.perf_counter() - t < 0.5
+    assert view["name"] == "gen_dev_short"
+    assert not (tmp_path / "a" / "packs").exists()
+    row, pack = second.load_pack("gen_dev_short")  # a run needs it: regenerated on demand, same id
+    assert pack.pack_id == row["pack_id"]
+    second.close()
+
+
+def test_hosted_bootstrap_runs_on_first_request_not_on_health(monkeypatch, tmp_path):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("MARKET_REPLAY_BOOTSTRAP", "dev")
+    monkeypatch.setenv("MARKET_REPLAY_HOSTED", "1")
+    monkeypatch.setenv("MARKET_REPLAY_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKET_REPLAY_ADMIN_TOKEN", "adm_env")
+    from market_replay.service.hosted import build_hosted_app
+
+    app, mgr = build_hosted_app()
+    assert mgr.store.packs() == []  # nothing generated at import time
+    c = TestClient(app)
+    assert c.get("/api/v1/health").status_code == 200
+    assert mgr.store.packs() == []  # health never triggers it
+    assert c.get("/api/v1/meta", headers={"Authorization": "Bearer adm_env"}).status_code == 200
+    assert [p["name"] for p in mgr.store.packs()] == ["gen_dev_short"]
+    mgr.close()

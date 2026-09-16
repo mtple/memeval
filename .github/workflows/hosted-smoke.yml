@@ -1,0 +1,46 @@
+name: hosted-smoke
+
+# Probes a deployed Market Replay (UI + function) without any credentials.
+# Run it from the Actions tab (or the API) with the deployment's base URL.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Deployment base URL, e.g. https://memeval-web.vercel.app"
+        required: true
+        default: "https://memeval-web.vercel.app"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe
+        env:
+          BASE: ${{ inputs.base_url }}
+        run: |
+          set -u
+          fail=0
+          probe() {  # name method path expected_status [body]
+            local name=$1 method=$2 path=$3 want=$4 body=${5:-}
+            local out code
+            if [ -n "$body" ]; then
+              out=$(curl -sS -m 120 -X "$method" -H 'content-type: application/json' -d "$body" -o /tmp/body -w '%{http_code}' "$BASE$path" || echo 000)
+            else
+              out=$(curl -sS -m 120 -X "$method" -o /tmp/body -w '%{http_code}' "$BASE$path" || echo 000)
+            fi
+            code=$out
+            printf '%-32s %s %-28s -> %s (want %s)\n' "$name" "$method" "$path" "$code" "$want"
+            head -c 400 /tmp/body; echo; echo
+            [ "$code" = "$want" ] || fail=1
+          }
+          probe "function: health"        GET  /api/v1/health          200
+          probe "function: admin gate"    GET  /api/v1/meta            401
+          probe "function: packs gate"    GET  /api/v1/packs           401
+          probe "agent plane: http gate"  POST /agent/v1/commands      401 '{"request_id":"smoke","tool":"session.describe","arguments":{}}'
+          probe "agent plane: mcp gate"   POST /agent/mcp              401 '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+          probe "ui: index"               GET  /                       200
+          probe "ui: client route"        GET  /agents                 200
+          probe "ui: missing asset"       GET  /assets/nope.js         404
+          exit $fail

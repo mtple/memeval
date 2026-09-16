@@ -147,9 +147,13 @@ class RunManager:
         return self.pack_row(m.pack_id)
 
     def ensure_fixture_pack(self, name: str) -> dict[str, Any]:
-        """Generate (if needed) and import one of the shipped generated fixtures by name."""
+        """Register one of the shipped generated fixtures by name, generating it only the first time.
+
+        A registered pack whose files are gone (ephemeral filesystem on a fresh serverless instance)
+        is *not* regenerated here: ``load_pack`` does that lazily, and only for packs a run needs.
+        """
         row = self.store.pack(name)
-        if row is not None and Path(row["path"]).exists():
+        if row is not None:
             return self._pack_view(row)
         cfg = FIXTURE_CONFIGS.get(name)
         if cfg is None:

@@ -7,7 +7,6 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 300,
-      "memory": 1024,
       "excludeFiles": "{tests/**,apps/**,node_modules/**,data/**,docs/**,fixtures/**,collection/**,schemas/**,scripts/**,.venv/**,**/*.png}"
     }
   },
