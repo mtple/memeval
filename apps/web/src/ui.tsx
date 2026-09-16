@@ -100,10 +100,8 @@ export function ErrorState({ error, retry }: { error: unknown; retry?: () => voi
     <div className="state state-error" role="alert">
       {e?.kind === "auth" ? (
         <>
-          <strong>Not authorised ({e.status}).</strong>
-          <p>
-            The control plane requires an admin token. Paste it in the <a href="#settings">settings bar</a> at the top of the page (or open the app with <code>?token=…</code>).
-          </p>
+          <strong>Operator sign-in required ({e.status}).</strong>
+          <p>{msg}. This action is reserved for the operator of this server. Use <strong>Sign in</strong> at the top right with the admin token.</p>
         </>
       ) : e?.kind === "no_backend" || e?.kind === "unreachable" ? (
         <>

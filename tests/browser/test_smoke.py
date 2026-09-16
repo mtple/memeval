@@ -1,4 +1,5 @@
-"""Browser smoke test: the built web UI loads, authenticates, lists episodes and shows a run.
+"""Browser smoke test: the built web UI loads for anyone, a stranger can start a run and get a token,
+the operator can sign in, and the results screens keep their honesty statements.
 
 Requires apps/web/dist (``make build``) and the preinstalled Chromium. Marked ``browser``.
 """
@@ -51,9 +52,38 @@ def test_ui_smoke(ui_server):
     with pw.sync_playwright() as p:
         browser = p.chromium.launch(executable_path=exe) if exe else p.chromium.launch()
         page = browser.new_page(viewport={"width": 1200, "height": 900})
-        page.goto(f"{srv.url}/episodes?token=adm_ui_token")
+
+        # 1. Anyone: results first, no sign-in
+        page.goto(f"{srv.url}/")
+        page.wait_for_selector("text=cash_only_python", timeout=20_000)
+        assert page.locator("#signin-btn").count() == 1
+        page.screenshot(path=str(OUT / "home.png"))
+
+        # 2. Anyone: start a run for their own agent and receive a one-time token
+        page.goto(f"{srv.url}/new")
+        page.wait_for_selector("#new-agent-name", timeout=20_000)
+        page.fill("#new-agent-name", "smoke-bot")
+        page.click("#new-submit")
+        page.wait_for_selector("#session-token", timeout=20_000)
+        token = page.inner_text("#session-token")
+        assert token.startswith("agt_")
+        body = page.inner_text("body")
+        assert "/agent/mcp" in body and "/agent/v1/commands" in body
+        page.screenshot(path=str(OUT / "new_run_token.png"))
+        page.goto(f"{srv.url}/")
+        page.wait_for_selector("text=smoke-bot", timeout=20_000)
+        assert "waiting for the agent to connect" in page.inner_text("body")
+
+        # 3. Operator: sign in through the dialog (no token in the URL)
+        page.click("#signin-btn")
+        page.fill("#admin-token", "adm_ui_token")
+        page.keyboard.press("Enter")
+        page.wait_for_selector("text=Operator", timeout=20_000)
+        page.goto(f"{srv.url}/episodes")
         page.wait_for_selector("text=gen_dev_short", timeout=20_000)
+        page.wait_for_selector("text=Import pack", timeout=20_000)  # operator-only form is visible now
         page.screenshot(path=str(OUT / "episodes.png"))
+
         page.goto(f"{srv.url}/runs/{run_id}")
         page.wait_for_selector("text=completed", timeout=20_000)
         page.screenshot(path=str(OUT / "run.png"))
@@ -67,11 +97,12 @@ def test_ui_smoke(ui_server):
         page.goto(f"{srv.url}/data-health")
         page.wait_for_selector("text=Data health", timeout=20_000)
         page.screenshot(path=str(OUT / "data_health.png"))
-        # mobile width renders without horizontal overflow of the main content
+
+        # 4. Mobile width renders without horizontal overflow of the main content
         page.set_viewport_size({"width": 360, "height": 800})
-        page.goto(f"{srv.url}/episodes")
-        page.wait_for_selector("text=gen_dev_short", timeout=20_000)
+        page.goto(f"{srv.url}/")
+        page.wait_for_selector("text=cash_only_python", timeout=20_000)
         width = page.evaluate("document.documentElement.scrollWidth")
         assert width <= 380
-        page.screenshot(path=str(OUT / "episodes_mobile.png"))
+        page.screenshot(path=str(OUT / "home_mobile.png"))
         browser.close()

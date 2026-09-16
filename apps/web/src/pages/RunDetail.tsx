@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ApiError, get, post, type Holding, type Observed, type Pack, type Run } from "../api";
 import { CandleChart, EquitySparkline } from "../charts";
 import { fmtDate, fmtRaw, fmtRel, humanize, shortHash } from "../format";
+import { useRole } from "../role";
 import { Badge, Card, ErrorState, JsonView, KV, Loading, RunStateBadge, useLoad } from "../ui";
 
 const ACTIVE = new Set(["queued", "running", "paused"]);
@@ -17,6 +18,7 @@ export default function RunDetail() {
   }, [run.data]);
   const [actErr, setActErr] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const { role } = useRole();
 
   const r = run.data;
   const dec = pack.data?.summary?.numeraire_decimals;
@@ -57,17 +59,17 @@ export default function RunDetail() {
             title="State"
             actions={
               <>
-                {r.state === "running" && (
+                {role === "admin" && r.state === "running" && (
                   <button type="button" className="btn btn-small" disabled={busy} onClick={() => act("pause")}>
                     Pause
                   </button>
                 )}
-                {r.state === "paused" && (
+                {role === "admin" && r.state === "paused" && (
                   <button type="button" className="btn btn-small" disabled={busy} onClick={() => act("resume")}>
                     Resume
                   </button>
                 )}
-                {ACTIVE.has(r.state) && (
+                {role === "admin" && ACTIVE.has(r.state) && (
                   <button type="button" className="btn btn-small btn-danger" disabled={busy} onClick={() => act("abort")}>
                     Abort
                   </button>
@@ -106,7 +108,7 @@ export default function RunDetail() {
             <KV
               rows={[
                 ["Pack", <Link to={`/data-health/${r.pack_id}`}>{r.pack_name || r.pack_id}</Link>],
-                ["Agent", <Link to={`/runs?agent_id=${r.agent_id}`} className="mono">{shortHash(r.agent_id, 16)}</Link>],
+                ["Agent", <Link to={`/runs?agent_id=${r.agent_id}`}>{r.agent_name ? `${r.agent_name} v${r.agent_version ?? ""}` : shortHash(r.agent_id, 16)}</Link>],
                 ["Mode / isolation", `${r.mode} / ${r.isolation}`],
                 ["Bankroll", `${fmtRaw(r.bankroll_raw, dec)} ${unit ?? ""}`],
                 ["Profile hash", <span className="mono">{shortHash(r.profile_hash, 16)}</span>],

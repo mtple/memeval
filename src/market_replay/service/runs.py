@@ -83,6 +83,7 @@ class RunManager:
         max_cpu_seconds_per_month: float | None = None,
         runtimes_available: tuple[str, ...] | None = None,
         hosted: bool = False,
+        max_runs_per_hour_per_ip: int | None = None,
     ) -> None:
         self.data_dir = data_dir
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -92,6 +93,7 @@ class RunManager:
         self.max_runs_per_day = int(max_runs_per_day if max_runs_per_day is not None else os.environ.get("MARKET_REPLAY_MAX_RUNS_PER_DAY", "200"))
         self.max_cpu_seconds_per_month = float(max_cpu_seconds_per_month if max_cpu_seconds_per_month is not None else os.environ.get("MARKET_REPLAY_MAX_CPU_SECONDS_PER_MONTH", str(3 * 3600)))
         self.runtimes_available = runtimes_available or (("python",) if hosted else ("python", "typescript"))
+        self.max_runs_per_hour_per_ip = int(max_runs_per_hour_per_ip if max_runs_per_hour_per_ip is not None else os.environ.get("MARKET_REPLAY_MAX_RUNS_PER_HOUR_PER_IP", "20"))
         self._packs: dict[str, Pack] = {}
         self._contexts: dict[str, RunContext] = {}
         self._global = threading.RLock()
@@ -333,6 +335,25 @@ class RunManager:
         self.store.insert_agent(row)
         return self.agent_view(agent_id)
 
+    def register_or_reuse_agent(self, *, name: str, version: str, runtime: str = "external", capabilities: list[str] | None = None, config: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Self-serve registration: the same name and version means the same agent."""
+        name = name.strip()
+        version = version.strip() or "1"
+        if not name or len(name) > 64 or len(version) > 32 or not name.isprintable():
+            raise ApiError(400, "agent name must be 1-64 printable characters; version at most 32", "INVALID")
+        existing = self.store.agent_by_name_version(name, version)
+        if existing:
+            return self.agent_view(existing["agent_id"])
+        return self.register_agent(name=name, version=version, runtime=runtime, capabilities=capabilities or [], config=config or {})
+
+    def rate_limit(self, kind: str, key: str, limit: int | None = None, window_s: float = 3600.0) -> None:
+        """Count one event for (kind, key); refuse with 429 RATE_LIMITED past `limit` events per window."""
+        limit = self.max_runs_per_hour_per_ip if limit is None else limit
+        now = time.time()
+        if self.store.count_rate_events(kind, key, now - window_s) >= limit:
+            raise ApiError(429, f"too many {kind} requests from this address; limit {limit} per hour", "RATE_LIMITED")
+        self.store.add_rate_event(kind, key, now)
+
     def agent_view(self, agent_id: str) -> dict[str, Any]:
         row = self.store.agent(agent_id)
         if row is None:
@@ -364,7 +385,7 @@ class RunManager:
         return {
             "today": today,
             "month": month,
-            "caps": {"max_runs_per_day": self.max_runs_per_day, "max_cpu_seconds_per_month": self.max_cpu_seconds_per_month},
+            "caps": {"max_runs_per_day": self.max_runs_per_day, "max_cpu_seconds_per_month": self.max_cpu_seconds_per_month, "max_runs_per_hour_per_ip": self.max_runs_per_hour_per_ip},
             "remaining": {"runs_today": max(0, self.max_runs_per_day - today["runs"]), "cpu_seconds_month": max(0.0, self.max_cpu_seconds_per_month - month["cpu_seconds"])},
             "note": "Caps are operator settings (MARKET_REPLAY_MAX_RUNS_PER_DAY, MARKET_REPLAY_MAX_CPU_SECONDS_PER_MONTH). Raise them when more usage is purchased.",
         }
@@ -702,9 +723,12 @@ class RunManager:
         if row is None:
             raise ApiError(404, f"unknown run {run_id}", "NOT_FOUND")
         pack_row = self.store.pack(row["pack_id"])
+        agent_row = self.store.agent(row["agent_id"])
         view = {
             "run_id": row["run_id"],
             "agent_id": row["agent_id"],
+            "agent_name": agent_row["name"] if agent_row else None,
+            "agent_version": agent_row["version"] if agent_row else None,
             "pack_id": row["pack_id"],
             "episode_id": pack_row["episode_id"] if pack_row else None,
             "pack_name": pack_row["name"] if pack_row else None,
@@ -723,6 +747,7 @@ class RunManager:
             "clock_ms": row["clock_ms"],
             "exposed": bool(row["exposed"]),
             "has_report": row["report_json"] is not None,
+            "result_summary": self._result_summary(row["report_json"]),
         }
         ctx = self._contexts.get(run_id)
         if ctx is None and row["state"] not in TERMINAL:
@@ -755,6 +780,36 @@ class RunManager:
 
     def runs(self, **where: Any) -> list[dict[str, Any]]:
         return [self.run_view(r["run_id"]) for r in self.store.runs(**where)]
+
+    @staticmethod
+    def _result_summary(report_json: str | None) -> dict[str, Any] | None:
+        """The few numbers a result list needs, taken from the stored report (null until one exists)."""
+        if not report_json:
+            return None
+        try:
+            rep = json.loads(report_json)
+        except (TypeError, ValueError):
+            return None
+        outcome = rep.get("outcome", {}) or {}
+        risk = rep.get("risk", {}) or {}
+        activity = rep.get("activity", {}) or {}
+        costs = rep.get("costs", {}) or {}
+        unresolved = rep.get("unresolved", {}) or {}
+        return {
+            "headline_return": outcome.get("headline_return"),
+            "valuation_complete": bool(outcome.get("valuation_complete", False)),
+            "numeraire": outcome.get("numeraire"),
+            "numeraire_decimals": outcome.get("numeraire_decimals"),
+            "initial_equity_raw": outcome.get("initial_equity_raw"),
+            "terminal_model_equity_raw": outcome.get("terminal_model_equity_raw"),
+            "max_drawdown": risk.get("max_drawdown"),
+            "confirmed_fills": activity.get("confirmed_fills", 0),
+            "orders_total": activity.get("orders_total", 0),
+            "gas_total_raw": costs.get("gas_total_raw"),
+            "unpriced_inventory": len(unresolved.get("unpriced_inventory", []) or []) + len(unresolved.get("no_route_inventory", []) or []),
+            "unresolved_orders": len(unresolved.get("orders", []) or []),
+            "status_dimensions": rep.get("status_dimensions", {}),
+        }
 
     def report(self, run_id: str, role: str = "admin") -> dict[str, Any]:
         row = self.store.run(run_id)

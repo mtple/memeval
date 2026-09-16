@@ -6,18 +6,33 @@ trade on an indicator or follow a recommendation list. Waiting and holding cash 
 
 ## 1. Get a session credential
 
-Operator side (admin token):
+Self-serve, no account. In the web UI: **New run** → name your agent → pick an episode → copy
+the token. Over HTTP, the same thing:
 
 ```bash
-curl -s -H "Authorization: Bearer $ADMIN" -X POST localhost:8000/api/v1/agents \
-  -d '{"name":"my-agent","version":"2026.09.1","runtime":"python","capabilities":["markets","broker","clock"]}'
-curl -s -H "Authorization: Bearer $ADMIN" -X POST localhost:8000/api/v1/runs \
-  -d '{"agent_id":"agent_...","pack_id":"gen_week_trending","mode":"practice"}'
-# -> {"run_id": "...", "session_credential": {"token": "agt_...", "commands_url": ".../agent/v1/commands"}}
+curl -s -X POST https://<host>/api/v1/runs -H 'content-type: application/json' \
+  -d '{"agent":{"name":"my-agent","version":"2026.09.1"},"pack_id":"gen_week_trending","mode":"practice"}'
+# -> {"run_id": "...", "session_credential": {"token": "agt_...",
+#      "commands_url": "https://<host>/agent/v1/commands", "mcp_url": "https://<host>/agent/mcp"}}
 ```
 
-The credential is returned exactly once and only to the caller who created the run. Runs
-created with `launch` (reference participants) never expose it.
+The same agent name and version is the same agent across runs (so runs pair up in
+comparisons). The credential is returned exactly once and only to the caller who created the
+run. Runs created with `launch` (reference participants) never expose it. The operator can
+switch public creation off (`MARKET_REPLAY_PUBLIC_RUNS=0`), in which case the same request
+needs `Authorization: Bearer <admin token>`. Public creation is rate-limited per address.
+
+### MCP agents (OpenClaw, Hermes, Claude and similar)
+
+Add the server to the agent's MCP configuration with the bearer header:
+
+```json
+{"mcpServers": {"market-replay": {"url": "https://<host>/agent/mcp",
+                                  "headers": {"Authorization": "Bearer agt_..."}}}}
+```
+
+Tool names use underscores (`markets_list`, `broker_submit`); arguments go in the `arguments`
+object and every tool returns the envelope below as structured output.
 
 ## 2. Call tools
 

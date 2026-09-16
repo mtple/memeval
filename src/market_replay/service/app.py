@@ -43,8 +43,19 @@ class LaunchBody(BaseModel):
     args: list[str] = Field(default_factory=list)
 
 
+class InlineAgentBody(BaseModel):
+    """Self-serve agent identity: the same name and version is the same agent."""
+
+    name: str = Field(min_length=1, max_length=64)
+    version: str = Field(default="1", max_length=32)
+    runtime: str = "external"
+    capabilities: list[str] = Field(default_factory=list)
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
 class RunBody(BaseModel):
-    agent_id: str
+    agent_id: str | None = None
+    agent: InlineAgentBody | None = None
     pack_id: str
     mode: str = "practice"
     bankroll_raw: str = "1000000"
@@ -97,8 +108,24 @@ def cors_origins_from_env() -> list[str]:
     return [o.strip().rstrip("/") for o in raw.split(",") if o.strip()]
 
 
-def create_app(manager: RunManager, admin_token: str | None = None, cors_origins: list[str] | None = None) -> FastAPI:
+def public_runs_from_env() -> bool:
+    """Anyone may register an agent and start a run unless MARKET_REPLAY_PUBLIC_RUNS=0."""
+    return os.environ.get("MARKET_REPLAY_PUBLIC_RUNS", "1") != "0"
+
+
+def client_ip(request: Request) -> str:
+    """Best available client address: platform headers first (Vercel sets them; clients cannot), then the socket."""
+    h = request.headers
+    for name in ("x-vercel-forwarded-for", "x-real-ip", "x-forwarded-for"):
+        v = h.get(name)
+        if v:
+            return v.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def create_app(manager: RunManager, admin_token: str | None = None, cors_origins: list[str] | None = None, public_runs: bool | None = None) -> FastAPI:
     token = resolve_admin_token(admin_token)
+    public_runs = public_runs_from_env() if public_runs is None else bool(public_runs)
     remote_mcp = build_remote_mcp(manager.handle_command)
     mcp_asgi = remote_mcp.streamable_http_app()
 
@@ -110,16 +137,49 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     app = FastAPI(title="Market Replay", version="0.1.0", description="Strategy-agnostic trading-agent evaluator: control plane and agent plane.", lifespan=lifespan)
     app.state.manager = manager
     app.state.admin_token = token
+    app.state.public_runs = public_runs
     if cors_origins:
         # Explicit allowlist only; never "*". Credentials are bearer headers, so allow the Authorization header.
         app.add_middleware(CORSMiddleware, allow_origins=list(cors_origins), allow_methods=["GET", "POST", "OPTIONS"], allow_headers=["Authorization", "Content-Type"], max_age=600)
 
-    def require_admin(authorization: str | None = Header(default=None)) -> None:
-        if not authorization or not authorization.startswith("Bearer "):
-            raise HTTPException(401, {"code": "UNAUTHORIZED", "message": "admin bearer token required"})
+    def role_of(authorization: str | None) -> str:
+        """"public" without a credential, "admin" with the admin token; anything else is refused.
+
+        Agent (session) tokens are rejected outright so a participant can never read the control plane,
+        not even the parts anyone else can read anonymously.
+        """
+        if not authorization:
+            return "public"
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(401, {"code": "UNAUTHORIZED", "message": "malformed Authorization header"})
         supplied = authorization[7:]
-        if supplied.startswith("agt_") or not constant_time_equal(supplied, token):
+        if supplied.startswith("agt_"):
             raise HTTPException(403, {"code": "FORBIDDEN", "message": "agent credentials cannot access the control plane"})
+        if not constant_time_equal(supplied, token):
+            raise HTTPException(403, {"code": "FORBIDDEN", "message": "invalid admin token"})
+        return "admin"
+
+    def require_admin(authorization: str | None = Header(default=None)) -> str:
+        if role_of(authorization) != "admin":
+            raise HTTPException(401, {"code": "UNAUTHORIZED", "message": "admin bearer token required"})
+        return "admin"
+
+    def public_read(authorization: str | None = Header(default=None)) -> str:
+        return role_of(authorization)
+
+    def public_write(kind: str):
+        """Self-serve writes: anyone when public runs are on (rate-limited per address); the operator always."""
+
+        def dep(request: Request, authorization: str | None = Header(default=None)) -> str:
+            role = role_of(authorization)
+            if role == "admin":
+                return role
+            if not public_runs:
+                raise HTTPException(401, {"code": "UNAUTHORIZED", "message": "admin bearer token required (public runs are switched off on this server)"})
+            manager.rate_limit(kind, client_ip(request))
+            return role
+
+        return dep
 
     def agent_token(authorization: str | None = Header(default=None)) -> str:
         if not authorization or not authorization.startswith("Bearer "):
@@ -138,9 +198,12 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     def health() -> dict[str, Any]:
         return {"status": "ok", "service": "market-replay", "dev_mode": manager.dev_mode}
 
-    @app.get("/api/v1/meta", dependencies=[Depends(require_admin)])
-    def meta() -> dict[str, Any]:
+    @app.get("/api/v1/meta")
+    def meta(role: str = Depends(public_read)) -> dict[str, Any]:
         return {
+            "role": role,
+            "public_runs": public_runs,
+            "rate_limit_per_hour_per_ip": manager.max_runs_per_hour_per_ip,
             "tools": TOOLS,
             "unsupported_capabilities": UNSUPPORTED_CAPABILITIES,
             "gateway_url": manager.gateway_url,
@@ -151,7 +214,7 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
             "store_backend": manager.store.backend,
         }
 
-    @app.get("/api/v1/usage", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/usage", dependencies=[Depends(public_read)])
     def usage() -> dict[str, Any]:
         return manager.usage_view()
 
@@ -160,43 +223,43 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     def import_pack(body: ImportPackBody) -> dict[str, Any]:
         return manager.import_pack(body.path, body.name)
 
-    @app.get("/api/v1/packs", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/packs", dependencies=[Depends(public_read)])
     def list_packs() -> dict[str, Any]:
         return {"items": manager.packs()}
 
-    @app.get("/api/v1/packs/{pack_id}", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/packs/{pack_id}", dependencies=[Depends(public_read)])
     def get_pack(pack_id: str) -> dict[str, Any]:
         return manager.pack_row(pack_id)
 
-    @app.get("/api/v1/packs/{pack_id}/validation", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/packs/{pack_id}/validation", dependencies=[Depends(public_read)])
     def pack_validation(pack_id: str) -> dict[str, Any]:
         _row, pack = manager.load_pack(pack_id)
         return pack.validation
 
-    @app.get("/api/v1/packs/{pack_id}/health", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/packs/{pack_id}/health", dependencies=[Depends(public_read)])
     def pack_health(pack_id: str) -> dict[str, Any]:
         return manager.pack_health(pack_id)
 
-    @app.get("/api/v1/packs/{pack_id}/descriptor", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/packs/{pack_id}/descriptor", dependencies=[Depends(public_read)])
     def pack_descriptor(pack_id: str) -> dict[str, Any]:
         row, pack = manager.load_pack(pack_id)
         return manager.public_descriptor(pack, row, "trusted_external_client").model_dump(mode="json")
 
     # ------------------------------------------------------------------ agents
-    @app.post("/api/v1/agents", dependencies=[Depends(require_admin)], status_code=201)
+    @app.post("/api/v1/agents", dependencies=[Depends(public_write("agents"))], status_code=201)
     def create_agent(body: AgentBody) -> dict[str, Any]:
         return manager.register_agent(name=body.name, version=body.version, runtime=body.runtime, capabilities=body.capabilities, config=body.config)
 
-    @app.get("/api/v1/agents", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/agents", dependencies=[Depends(public_read)])
     def list_agents() -> dict[str, Any]:
         return {"items": manager.agents()}
 
-    @app.get("/api/v1/agents/{agent_id}", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/agents/{agent_id}", dependencies=[Depends(public_read)])
     def get_agent(agent_id: str) -> dict[str, Any]:
         return manager.agent_view(agent_id)
 
     # ------------------------------------------------------------------ suites
-    @app.get("/api/v1/suites", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/suites", dependencies=[Depends(public_read)])
     def list_suites() -> dict[str, Any]:
         return {"items": manager.suites_view()}
 
@@ -204,15 +267,21 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     def run_suite(suite_id: str, body: SuiteRunBody) -> dict[str, Any]:
         return manager.run_suite(suite_id, agent_id=body.agent_id, launch_spec=body.launch.model_dump(), isolation=body.isolation, wait=body.wait, agent_seed=body.agent_seed)
 
-    @app.get("/api/v1/suite-runs", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/suite-runs", dependencies=[Depends(public_read)])
     def list_suite_runs() -> dict[str, Any]:
         return {"items": manager.store.suite_runs()}
 
     # ------------------------------------------------------------------ runs
-    @app.post("/api/v1/runs", dependencies=[Depends(require_admin)], status_code=201)
+    @app.post("/api/v1/runs", dependencies=[Depends(public_write("runs"))], status_code=201)
     def create_run(body: RunBody) -> dict[str, Any]:
+        if body.agent is not None:
+            agent_id = manager.register_or_reuse_agent(name=body.agent.name, version=body.agent.version, runtime=body.agent.runtime, capabilities=body.agent.capabilities, config=body.agent.config)["agent_id"]
+        elif body.agent_id:
+            agent_id = body.agent_id
+        else:
+            raise ApiError(400, "agent_id or agent {name, version} is required", "INVALID")
         return manager.create_run(
-            agent_id=body.agent_id,
+            agent_id=agent_id,
             pack_ref=body.pack_id,
             mode=body.mode,
             bankroll_raw=body.bankroll_raw,
@@ -223,16 +292,16 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
             agent_seed=body.agent_seed,
         )
 
-    @app.get("/api/v1/runs", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/runs", dependencies=[Depends(public_read)])
     def list_runs(agent_id: str | None = None, pack_id: str | None = None, suite_id: str | None = None) -> dict[str, Any]:
         where = {k: v for k, v in {"agent_id": agent_id, "pack_id": pack_id, "suite_id": suite_id}.items() if v}
         return {"items": manager.runs(**where)}
 
-    @app.get("/api/v1/runs/{run_id}", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/runs/{run_id}", dependencies=[Depends(public_read)])
     def get_run(run_id: str) -> dict[str, Any]:
         return manager.run_view(run_id)
 
-    @app.post("/api/v1/runs/{run_id}/execute", dependencies=[Depends(require_admin)])
+    @app.post("/api/v1/runs/{run_id}/execute", dependencies=[Depends(public_write("runs"))])
     def execute_run(run_id: str) -> dict[str, Any]:
         """Run a launched Python reference participant to completion inside this request (hosted mode)."""
         return manager.execute_run(run_id)
@@ -249,16 +318,19 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     def abort_run(run_id: str) -> dict[str, Any]:
         return manager.abort(run_id)
 
-    @app.get("/api/v1/runs/{run_id}/report", dependencies=[Depends(require_admin)])
-    def run_report(run_id: str, role: str = Query(default="admin", pattern="^(admin|participant)$")) -> dict[str, Any]:
-        return manager.report(run_id, role)
+    @app.get("/api/v1/runs/{run_id}/report")
+    def run_report(run_id: str, role: str = Query(default="admin", pattern="^(admin|participant)$"), caller: str = Depends(public_read)) -> dict[str, Any]:
+        # Results are public, but only the operator sees the unredacted (de-aliased) report.
+        return manager.report(run_id, role if caller == "admin" else "participant")
 
-    @app.get("/api/v1/runs/{run_id}/observed", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/runs/{run_id}/observed", dependencies=[Depends(public_read)])
     def run_observed(run_id: str, pool_id: str | None = None, interval_ms: int = 60_000) -> dict[str, Any]:
         return manager.observed(run_id, pool_id, interval_ms)
 
-    @app.get("/api/v1/runs/{run_id}/export", dependencies=[Depends(require_admin)])
-    def run_export(run_id: str, role: str = Query(default="admin", pattern="^(admin|participant)$"), include_mappings: bool = False) -> dict[str, Any]:
+    @app.get("/api/v1/runs/{run_id}/export")
+    def run_export(run_id: str, role: str = Query(default="admin", pattern="^(admin|participant)$"), include_mappings: bool = False, caller: str = Depends(public_read)) -> dict[str, Any]:
+        if (role == "admin" or include_mappings) and caller != "admin":
+            raise HTTPException(401, {"code": "UNAUTHORIZED", "message": "admin bearer token required for the admin export"})
         return manager.export(run_id, role, include_mappings)
 
     @app.post("/api/v1/runs/{run_id}/replay", dependencies=[Depends(require_admin)])
@@ -266,15 +338,15 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
         return manager.replay(run_id)
 
     # ------------------------------------------------------------------ comparisons / studies
-    @app.post("/api/v1/comparisons", dependencies=[Depends(require_admin)], status_code=201)
+    @app.post("/api/v1/comparisons", dependencies=[Depends(public_write("comparisons"))], status_code=201)
     def create_comparison(body: ComparisonBody) -> dict[str, Any]:
         return manager.compare(suite_id=body.suite_id, agent_a=body.agent_a, agent_b=body.agent_b, run_ids_a=body.run_ids_a, run_ids_b=body.run_ids_b)
 
-    @app.get("/api/v1/comparisons", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/comparisons", dependencies=[Depends(public_read)])
     def list_comparisons() -> dict[str, Any]:
         return {"items": manager.comparisons()}
 
-    @app.get("/api/v1/comparisons/{comparison_id}", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/comparisons/{comparison_id}", dependencies=[Depends(public_read)])
     def get_comparison(comparison_id: str) -> dict[str, Any]:
         return manager.comparison(comparison_id)
 
@@ -282,7 +354,7 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     def create_study(body: StudyBody) -> dict[str, Any]:
         return manager.register_study(candidates=body.candidates, pack_ids=body.pack_ids, comparison_id=body.comparison_id, intended_outcome=body.intended_outcome, prediction=body.prediction)
 
-    @app.get("/api/v1/studies", dependencies=[Depends(require_admin)])
+    @app.get("/api/v1/studies", dependencies=[Depends(public_read)])
     def list_studies() -> dict[str, Any]:
         return {"items": manager.studies()}
 

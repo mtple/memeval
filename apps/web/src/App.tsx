@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { ApiError, get, getServerUrl, getToken, setServerUrl, setToken } from "./api";
+import { ApiError, get, getServerUrl, setServerUrl, setToken } from "./api";
+import { RoleProvider, useRole } from "./role";
 import { Badge } from "./ui";
+import Home from "./pages/Home";
+import NewRun from "./pages/NewRun";
 import Episodes from "./pages/Episodes";
 import Agents from "./pages/Agents";
 import Runs from "./pages/Runs";
@@ -11,24 +14,19 @@ import Compare from "./pages/Compare";
 import DataHealth from "./pages/DataHealth";
 
 const NAV: [string, string][] = [
+  ["/", "Results"],
   ["/episodes", "Episodes"],
-  ["/agents", "Agent setup"],
-  ["/runs", "Run"],
-  ["/results", "Results"],
+  ["/agents", "Agents"],
   ["/compare", "Compare"],
-  ["/data-health", "Data health"],
 ];
 
 type Health = { status: string; dev_mode: boolean };
 type Conn = { state: "checking" } | { state: "ok"; health: Health } | { state: "down"; error: ApiError | Error };
 
-function SettingsBar({ conn, onChange }: { conn: Conn; onChange: () => void }) {
-  const [tok, setTok] = useState(getToken());
-  const [draft, setDraft] = useState(tok);
-  const [server, setServer] = useState(getServerUrl());
+/** `?token=` (operator) and `?server=` (a UI served elsewhere) are accepted once and removed from the URL. */
+function useQueryParams(onChange: () => void) {
   const loc = useLocation();
   const nav = useNavigate();
-
   useEffect(() => {
     const p = new URLSearchParams(loc.search);
     const t = p.get("token");
@@ -36,14 +34,11 @@ function SettingsBar({ conn, onChange }: { conn: Conn; onChange: () => void }) {
     let changed = false;
     if (srv !== null) {
       setServerUrl(srv);
-      setServer(getServerUrl());
       p.delete("server");
       changed = true;
     }
     if (t) {
       setToken(t);
-      setTok(t);
-      setDraft(t);
       p.delete("token");
       changed = true;
     }
@@ -52,64 +47,86 @@ function SettingsBar({ conn, onChange }: { conn: Conn; onChange: () => void }) {
       onChange();
     }
   }, [loc.search, loc.pathname, nav, onChange]);
+}
 
-  return (
-    <form
-      id="settings"
-      className="settings"
-      onSubmit={(e) => {
-        e.preventDefault();
-        setServerUrl(server);
-        setServer(getServerUrl());
-        setToken(draft.trim());
-        setTok(draft.trim());
-        onChange();
-      }}
-    >
-      <label htmlFor="server-url" className="status">
-        Server
-      </label>
-      <input id="server-url" type="url" autoComplete="off" value={server} onChange={(e) => setServer(e.target.value)} placeholder="http://127.0.0.1:8000 (blank = this origin)" style={{ maxWidth: 260 }} />
-      <label htmlFor="admin-token" className="status">
-        Admin token
-      </label>
-      <input id="admin-token" type="password" autoComplete="off" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="printed by `make serve`" />
-      <button type="submit" className="btn btn-small">
-        Connect
-      </button>
-      {tok && (
+function SignIn({ onChange }: { onChange: () => void }) {
+  const { role, loading } = useRole();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (role === "admin") {
+    return (
+      <span className="nav-right">
+        <Badge tone="ok">Operator</Badge>
         <button
           type="button"
           className="btn btn-small"
           onClick={() => {
             setToken("");
-            setTok("");
-            setDraft("");
             onChange();
           }}
         >
-          Clear token
+          Sign out
         </button>
-      )}
-      <span className="status">
-        {conn.state === "ok" ? (
-          <>
-            <Badge tone="ok">server {conn.health.status}</Badge> {conn.health.dev_mode && <Badge tone="warn">development mode</Badge>}
-          </>
-        ) : conn.state === "checking" ? (
-          <Badge tone="neutral">checking…</Badge>
-        ) : (
-          <Badge tone="bad">not connected</Badge>
-        )}{" "}
-        {tok ? <Badge tone="neutral">token set</Badge> : <Badge tone="warn">no token</Badge>}
       </span>
-    </form>
+    );
+  }
+  return (
+    <span className="nav-right">
+      <button id="signin-btn" type="button" className="btn btn-small" onClick={() => setOpen(true)} disabled={loading}>
+        Sign in
+      </button>
+      {open && (
+        <div className="modal-backdrop" onClick={() => setOpen(false)}>
+          <form
+            className="modal form"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setErr(null);
+              setToken(draft.trim());
+              try {
+                const m = await get<{ role: string }>("/meta");
+                if (m.role !== "admin") throw new Error("not admin");
+                setOpen(false);
+                setDraft("");
+                onChange();
+              } catch {
+                setToken("");
+                setErr("That is not this server's admin token.");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <h2 style={{ textTransform: "none", letterSpacing: 0, color: "var(--text)" }}>Operator sign-in</h2>
+            <p className="muted small">Only the person running this server needs this. Starting runs and reading results does not require signing in.</p>
+            <label className="field">
+              Admin token
+              <input id="admin-token" type="password" autoComplete="current-password" value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus />
+            </label>
+            {err && <p className="notice bad">{err}</p>}
+            <div className="row">
+              <button className="btn btn-primary" disabled={busy || !draft.trim()}>
+                {busy ? "Checking…" : "Sign in"}
+              </button>
+              <button type="button" className="btn" onClick={() => setOpen(false)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </span>
   );
 }
 
-/** One explanation instead of a 404 on every card when no server answers. */
+/** First-run screen when no server answers. The only place the server address is edited. */
 function NotConnected({ error, retry }: { error: ApiError | Error; retry: () => void }) {
   const kind = error instanceof ApiError ? error.kind : "unreachable";
+  const [server, setServer] = useState(getServerUrl());
   const target = getServerUrl() || `${window.location.origin} (this origin)`;
   return (
     <main className="stack">
@@ -117,63 +134,50 @@ function NotConnected({ error, retry }: { error: ApiError | Error; retry: () => 
       <div className="card">
         <p>
           <strong>{kind === "no_backend" ? "This address serves only the interface." : "The server did not answer."}</strong> {target} returned {kind === "no_backend" ? "a page instead of the API" : "a network error"}. Every screen here reads from a
-          running Market Replay server; there is nothing to show until one is connected.
+          running Market Replay server.
         </p>
-        <ol>
-          <li>
-            Start the server on a machine you control: <code>make serve</code> (prints the admin token). Packs, runs and reports live on that machine.
-          </li>
-          <li>
-            If this page is not served by that server (for example a static host), allow this origin on the server:{" "}
-            <code>MARKET_REPLAY_CORS_ORIGINS={window.location.origin} make serve</code>
-          </li>
-          <li>Enter the server URL and admin token in the bar above and press Connect.</li>
-        </ol>
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setServerUrl(server);
+            retry();
+          }}
+        >
+          <label htmlFor="server-url" className="field">
+            Server URL (blank = this origin)
+            <input id="server-url" type="url" autoComplete="off" value={server} onChange={(e) => setServer(e.target.value)} placeholder="https://your-deployment.example" />
+          </label>
+          <div className="row">
+            <button className="btn btn-primary">Connect</button>
+            <button type="button" className="btn" onClick={retry}>
+              Retry
+            </button>
+          </div>
+        </form>
+        <p className="muted small">
+          Self-hosting: <code>make serve</code> starts a server on your machine; to use this page with it, allow this origin with <code>MARKET_REPLAY_CORS_ORIGINS={window.location.origin}</code>.
+        </p>
         <p className="muted small">Detail: {error.message}</p>
-        <button type="button" className="btn" onClick={retry}>
-          Retry
-        </button>
       </div>
     </main>
   );
 }
 
-function ResultsIndex() {
-  return (
-    <main>
-      <h1>Results</h1>
-      <p>Results are attached to a run. Open a run from the Run screen and follow its Results link (available once a report exists).</p>
-      <NavLink to="/runs" className="btn">
-        Go to runs
-      </NavLink>
-    </main>
-  );
-}
-
-export default function App() {
-  const [conn, setConn] = useState<Conn>({ state: "checking" });
-  const [tick, setTick] = useState(0);
-  const recheck = useCallback(() => setTick((t) => t + 1), []);
-  useEffect(() => {
-    let alive = true;
-    setConn({ state: "checking" });
-    get<Health>("/health")
-      .then((h) => alive && setConn({ state: "ok", health: h }))
-      .catch((e: unknown) => alive && setConn({ state: "down", error: e instanceof Error ? e : new Error(String(e)) }));
-    return () => {
-      alive = false;
-    };
-  }, [tick]);
+function Shell({ conn, recheck }: { conn: Conn; recheck: () => void }) {
   return (
     <>
-      <SettingsBar conn={conn} onChange={recheck} />
       <nav className="topnav" aria-label="Primary">
         <span className="brand">Market Replay</span>
         {NAV.map(([to, label]) => (
-          <NavLink key={to} to={to} className={({ isActive }) => (isActive ? "active" : "")}>
+          <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive ? "active" : "")}>
             {label}
           </NavLink>
         ))}
+        <NavLink to="/new" className={({ isActive }) => `btn btn-small btn-primary btn-nav ${isActive ? "active" : ""}`}>
+          + New run
+        </NavLink>
+        {conn.state === "ok" && <SignIn onChange={recheck} />}
       </nav>
       {conn.state === "down" ? (
         <NotConnected error={conn.error} retry={recheck} />
@@ -185,13 +189,14 @@ export default function App() {
         </main>
       ) : (
         <Routes>
-          <Route path="/" element={<Navigate to="/episodes" replace />} />
+          <Route path="/" element={<Home />} />
+          <Route path="/new" element={<NewRun />} />
           <Route path="/episodes" element={<Episodes />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/runs" element={<Runs />} />
           <Route path="/runs/:id" element={<RunDetail />} />
           <Route path="/runs/:id/results" element={<Results />} />
-          <Route path="/results" element={<ResultsIndex />} />
+          <Route path="/results" element={<Navigate to="/" replace />} />
           <Route path="/compare" element={<Compare />} />
           <Route path="/compare/:id" element={<Compare />} />
           <Route path="/data-health" element={<DataHealth />} />
@@ -202,14 +207,39 @@ export default function App() {
               <main>
                 <h1>Not found</h1>
                 <p>
-                  No screen at this path. <NavLink to="/episodes">Go to Episodes</NavLink>.
+                  No screen at this path. <NavLink to="/">Go to Results</NavLink>.
                 </p>
               </main>
             }
           />
         </Routes>
       )}
-      <footer>Blinded interface, not contamination-proof. Generated results are not historical performance.</footer>
+      <footer>
+        Blinded interface, not contamination-proof. Generated results are not historical performance.
+        {conn.state === "ok" && conn.health.dev_mode && " · development mode"}
+      </footer>
     </>
+  );
+}
+
+export default function App() {
+  const [conn, setConn] = useState<Conn>({ state: "checking" });
+  const [tick, setTick] = useState(0);
+  const recheck = useCallback(() => setTick((t) => t + 1), []);
+  useQueryParams(recheck);
+  useEffect(() => {
+    let alive = true;
+    setConn({ state: "checking" });
+    get<Health>("/health")
+      .then((h) => alive && setConn({ state: "ok", health: h }))
+      .catch((e: unknown) => alive && setConn({ state: "down", error: e instanceof Error ? e : new Error(String(e)) }));
+    return () => {
+      alive = false;
+    };
+  }, [tick]);
+  return (
+    <RoleProvider tick={tick}>
+      <Shell conn={conn} recheck={recheck} />
+    </RoleProvider>
   );
 }

@@ -45,7 +45,7 @@ def test_agent_credentials_cannot_reach_control_plane(server):
     for path in ("/api/v1/packs", "/api/v1/runs", f"/api/v1/runs/{run['run_id']}/report", f"/api/v1/runs/{run['run_id']}/export", "/api/v1/agents", "/api/v1/meta"):
         r = httpx.get(srv.url + path, headers=h)
         assert r.status_code == 403, path
-    assert httpx.get(srv.url + "/api/v1/packs").status_code == 401
+    assert httpx.get(srv.url + "/api/v1/packs").status_code == 200  # reads are public; agent tokens still are not
     # another run's session id with this credential is refused
     other = admin.post("/api/v1/runs", json={"agent_id": aid, "pack_id": "gen_dev_short"}).json()
     r = httpx.post(srv.url + "/agent/v1/commands", headers=h, json={"request_id": "x", "tool": "session.describe", "arguments": {}, "session_id": "ses_" + other["run_id"][4:]})

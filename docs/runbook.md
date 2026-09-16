@@ -40,7 +40,10 @@
   different runs; never share a session token.
 - Runs live in the server process; after a restart, finished reports/traces/exports remain
   available, but live views (`/observed`, pause/resume) require the run's process.
-- Admin token: `MARKET_REPLAY_ADMIN_TOKEN` or the value printed by `serve`.
+- Admin token: `MARKET_REPLAY_ADMIN_TOKEN` or the value printed by `serve`. It is the operator's
+  credential only (imports, pause/abort, unredacted exports, replays). Reading results and
+  starting runs is public unless `MARKET_REPLAY_PUBLIC_RUNS=0`; public creation is limited to
+  `MARKET_REPLAY_MAX_RUNS_PER_HOUR_PER_IP` (default 20) per address on top of the global caps.
 - `MARKET_REPLAY_DEV_MODE=0` hides practice-pack dates from the control plane listing.
 - Restricted runner: use `compose.yaml` profile `restricted` for network isolation; the
   in-process runner only scrubs environment/filesystem and says so in the report.
@@ -96,12 +99,13 @@ so more traffic means more warm instances, not a rewrite. The next optimization 
 grows is periodic session snapshots (to skip long replays on cold starts), which the
 trace-sourced model supports without changing any client.
 
-What external agents use:
+What external agents use (self-serve: the UI's New run screen or `POST /api/v1/runs` with an
+inline `agent` gives the token; no operator involvement):
 
 - HTTP: `POST https://<domain>/agent/v1/commands` with `Authorization: Bearer agt_...`.
 - MCP over streamable HTTP: `https://<domain>/agent/mcp` with the same bearer header (for
   OpenClaw, Hermes and other MCP-speaking agents). Tool names use underscores.
-- The session token comes from `POST /api/v1/runs` (admin) without a `launch`.
+- The session token comes from `POST /api/v1/runs` without a `launch`.
 
 Not available in hosted mode: TypeScript reference participants (no Node in the Python
 function; run them locally against the hosted URL instead), the restricted local runner, and

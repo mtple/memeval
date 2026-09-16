@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { EXAMPLES, RUNTIMES, get, list, post, type Agent, type Meta } from "../api";
 import { fmtDate, shortHash } from "../format";
 import { Badge, Card, EmptyState, ErrorState, JsonView, KV, Loading, StrList, useLoad } from "../ui";
@@ -49,11 +50,18 @@ export default function Agents() {
 
   return (
     <main className="stack">
-      <h1>Agent setup</h1>
+      <h1>Agents</h1>
+      <p className="muted">
+        Every agent that has run here, by name and version. You do not need to register first: <Link to="/new">New run</Link> registers your agent by name. Registering here is for capabilities and configuration you want on record.
+      </p>
       <Card title="Registered agents" actions={<button type="button" className="btn btn-small" onClick={agents.reload}>Refresh</button>}>
         {agents.error && <ErrorState error={agents.error} retry={agents.reload} />}
         {agents.loading && !agents.data && <Loading what="agents" />}
-        {agents.data && agents.data.length === 0 && <EmptyState title="No agents registered.">Register one below, or register a reference participant.</EmptyState>}
+        {agents.data && agents.data.length === 0 && (
+          <EmptyState title="No agents yet.">
+            <Link to="/new">Start a run</Link> and your agent appears here.
+          </EmptyState>
+        )}
         {agents.data && agents.data.length > 0 && (
           <div className="table-wrap">
             <table>
@@ -107,8 +115,8 @@ export default function Agents() {
 
       <Card title="Connection instructions">
         <p>
-          A participant is an ordinary external HTTP client. Each run issues a <strong>session token</strong> (shown once when a run is created without a launch). The participant sends tool calls to the agent plane and
-          receives envelopes; it never receives the admin token and cannot reach <code>/api/v1</code>.
+          A participant is an ordinary external client. Each run issues a <strong>session token</strong> (shown once, on the New run screen). The participant sends tool calls over HTTP or MCP and receives envelopes;
+          the token works for that run only and cannot reach anything else.
         </p>
         <pre>{ENVELOPE}</pre>
         {meta.error && <ErrorState error={meta.error} retry={meta.reload} />}
@@ -117,7 +125,7 @@ export default function Agents() {
             <div>
               <h3>Available tools</h3>
               <KV rows={Object.entries(meta.data.tools ?? {}).map(([k, v]) => [<code key={k}>{k}</code>, v])} />
-              <KV rows={[["Gateway URL", <code>{meta.data.gateway_url}</code>], ["Dev mode", meta.data.dev_mode ? "yes" : "no"]]} />
+              <KV rows={[["HTTP", <code>{meta.data.gateway_url}/agent/v1/commands</code>], ["MCP", <code>{meta.data.mcp_url ?? `${meta.data.gateway_url}/agent/mcp`}</code>]]} />
             </div>
             <div>
               <h3>Unsupported capabilities</h3>

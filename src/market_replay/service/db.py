@@ -110,9 +110,15 @@ CREATE TABLE IF NOT EXISTS attempts (
   count INTEGER NOT NULL,
   PRIMARY KEY (pack_id, agent_id)
 );
+CREATE TABLE IF NOT EXISTS rate_events (
+  kind TEXT NOT NULL,
+  key TEXT NOT NULL,
+  ts DOUBLE PRECISION NOT NULL
+);
+CREATE INDEX IF NOT EXISTS rate_events_kind_key_ts ON rate_events (kind, key, ts);
 """
 
-TABLES = ("packs", "agents", "runs", "traces", "docs", "usage", "comparisons", "studies", "suite_runs", "attempts")
+TABLES = ("packs", "agents", "runs", "traces", "docs", "usage", "comparisons", "studies", "suite_runs", "attempts", "rate_events")
 
 
 def today_key() -> str:
@@ -246,6 +252,16 @@ class BaseStore:
         prefix = today_key()[:7] + "-%"
         row = self.one("SELECT COALESCE(SUM(runs),0) AS runs, COALESCE(SUM(cpu_seconds),0) AS cpu FROM usage WHERE day LIKE ?", (prefix,))
         return {"runs": int(row["runs"]), "cpu_seconds": float(row["cpu"])} if row else {"runs": 0, "cpu_seconds": 0.0}
+
+    # ------------------------------------------------------------------ per-key rate limiting (shared across instances)
+    def count_rate_events(self, kind: str, key: str, since_ts: float) -> int:
+        row = self.one("SELECT COUNT(*) AS n FROM rate_events WHERE kind=? AND key=? AND ts>=?", (kind, key, float(since_ts)))
+        return int(row["n"]) if row else 0
+
+    def add_rate_event(self, kind: str, key: str, ts: float) -> None:
+        self.execute("INSERT INTO rate_events (kind, key, ts) VALUES (?, ?, ?)", (kind, key, float(ts)))
+        # Keep the table small: anything older than a day is irrelevant to every window we use.
+        self.execute("DELETE FROM rate_events WHERE ts < ?", (float(ts) - 86400.0,))
 
     # ------------------------------------------------------------------ comparisons / studies / suite runs
     def insert_comparison(self, comparison_id: str, created_at: str, request: dict, result: dict) -> None:

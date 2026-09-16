@@ -28,7 +28,7 @@ reported separately in [docs/implementation-report.md](docs/implementation-repor
 make setup            # uv venv + pinned deps; pnpm install for the web UI
 make test             # 83 unit/property/integration/security tests (network blocked in tests)
 make demo             # generate 4 full weeks, run 3 participants (py+ts), compare, export
-make build && make serve   # web UI at http://127.0.0.1:8000 (admin token printed)
+make build && make serve   # web UI at http://127.0.0.1:8000 (operator token printed; not needed to start runs)
 ```
 
 Without Make:
@@ -37,7 +37,7 @@ Without Make:
 uv venv --python 3.12 .venv && uv sync --extra dev
 .venv/bin/python -m pytest tests -m "not browser"
 .venv/bin/market-replay demo
-.venv/bin/market-replay serve            # then open http://127.0.0.1:8000/?token=<admin token>
+.venv/bin/market-replay serve            # then open http://127.0.0.1:8000 (Sign in with the printed token for operator actions)
 .venv/bin/market-replay run-agent --agent scheduled_basket --suite generated-practice-v1 --runtime typescript
 .venv/bin/market-replay import-report-fixtures
 .venv/bin/market-replay verify           # environment-validation report with sensitivity runs
@@ -52,13 +52,18 @@ The same repository deploys as one Vercel project: static UI plus a Python funct
 the server, with a free Neon Postgres for durable runs. Agents anywhere connect over HTTP or
 MCP. Setup steps and cost caps: [docs/runbook.md](docs/runbook.md#hosted-deployment-on-vercel-ui-and-server-together-inside-the-pro-plan).
 
-## Connect an agent
+## Connect an agent (bring your own)
 
-1. Register an agent version (control plane, admin token): `POST /api/v1/agents`.
-2. Create a run: `POST /api/v1/runs {agent_id, pack_id, mode}`. The response contains a
-   one-time `session_credential` (or, with `launch`, the service starts a reference
-   participant itself and never returns the credential).
-3. The participant calls `POST /agent/v1/commands` with `Authorization: Bearer <token>`:
+Nobody needs an account. On the web UI press **New run**, name your agent, pick an episode and
+copy the one-time session token; or do the same over HTTP:
+
+1. Create a run with your agent named inline: `POST /api/v1/runs {"agent": {"name": "my-bot",
+   "version": "1"}, "pack_id": "gen_week_trending"}`. The response contains a one-time
+   `session_credential` with the HTTP and MCP URLs. (With `launch`, the service runs one of the
+   included reference participants instead and never returns a credential.)
+2. Point the agent at it. MCP-speaking agents (OpenClaw, Hermes, Claude, and similar) use
+   `/agent/mcp` with `Authorization: Bearer <token>`; anything else calls
+   `POST /agent/v1/commands` with the same header:
 
 ```json
 {"request_id": "client_unique_001", "tool": "broker.submit",
@@ -66,6 +71,11 @@ MCP. Setup steps and cost caps: [docs/runbook.md](docs/runbook.md#hosted-deploym
                "amount_in_raw": "1000000", "min_amount_out_raw": "950000000",
                "deadline_ms": 180000, "idempotency_key": "agent_intent_42"}}
 ```
+
+Results, episodes and agents are public reads. The admin token (`MARKET_REPLAY_ADMIN_TOKEN`)
+is only for operator actions: importing packs, pausing or aborting runs, unredacted exports and
+replays. Public run creation is bounded by the daily and monthly caps plus a per-address rate
+limit, and can be switched off with `MARKET_REPLAY_PUBLIC_RUNS=0`.
 
 Every tool returns the same envelope (`request_id, session_id, clock_ms, status, data,
 quality, error`). Quantities are decimal strings in raw units; time is integer milliseconds
@@ -82,7 +92,7 @@ same handler: `market-replay mcp`. Conformance checks any client can run:
 ## Repository layout
 
 ```
-apps/web/                 React + TypeScript + Vite UI (Episodes, Agent setup, Run, Results, Compare, Data health)
+apps/web/                 React + TypeScript + Vite UI (Results, New run, Episodes, Agents, Compare, Data health)
 src/market_replay/
   domain/                 identity, exact quantities, statuses, canonical records, envelope
   engine/                 block schedule, tape, deterministic simulation, session (tool handler)

@@ -249,8 +249,38 @@ export type Suite = {
   all_packs_imported: boolean;
 };
 
-export type Meta = { tools: Record<string, string>; unsupported_capabilities: string[]; gateway_url: string; mcp_url?: string; dev_mode: boolean; hosted?: boolean; runtimes_available?: string[]; store_backend?: string };
-export type Usage = { today: { runs: number; cpu_seconds: number }; month: { runs: number; cpu_seconds: number }; caps: { max_runs_per_day: number; max_cpu_seconds_per_month: number }; remaining: { runs_today: number; cpu_seconds_month: number }; note: string };
+export type Role = "admin" | "public";
+export type Meta = {
+  role: Role;
+  public_runs: boolean;
+  rate_limit_per_hour_per_ip?: number;
+  tools: Record<string, string>;
+  unsupported_capabilities: string[];
+  gateway_url: string;
+  mcp_url?: string;
+  dev_mode: boolean;
+  hosted?: boolean;
+  runtimes_available?: string[];
+  store_backend?: string;
+};
+export type Usage = { today: { runs: number; cpu_seconds: number }; month: { runs: number; cpu_seconds: number }; caps: { max_runs_per_day: number; max_cpu_seconds_per_month: number; max_runs_per_hour_per_ip?: number }; remaining: { runs_today: number; cpu_seconds_month: number }; note: string };
+
+/** The few numbers a result list needs; null until the run has a report. */
+export type ResultSummary = {
+  headline_return: string | null;
+  valuation_complete: boolean;
+  numeraire: string | null;
+  numeraire_decimals: number | null;
+  initial_equity_raw: string | null;
+  terminal_model_equity_raw: string | null;
+  max_drawdown: string | number | null;
+  confirmed_fills: number;
+  orders_total: number;
+  gas_total_raw: string | null;
+  unpriced_inventory: number;
+  unresolved_orders: number;
+  status_dimensions: Record<string, string>;
+};
 
 export type Holding = { asset_id: string; class: "priced_liquidatable" | "no_route" | "unpriced_missing_data" | string; quantity_raw: string; model_value_raw: string | null };
 
@@ -259,6 +289,8 @@ export type RunState = "queued" | "running" | "paused" | "completed" | "agent_fa
 export type Run = {
   run_id: string;
   agent_id: string;
+  agent_name: string | null;
+  agent_version: string | null;
   pack_id: string;
   episode_id: string;
   pack_name: string;
@@ -277,6 +309,7 @@ export type Run = {
   clock_ms: number;
   exposed: boolean;
   has_report: boolean;
+  result_summary: ResultSummary | null;
   live?: {
     clock_ms: number;
     remaining_ms: number;
@@ -295,7 +328,7 @@ export type Run = {
     data_health: { rate_limited: number | boolean; invalid_calls: number | boolean; budget_exhausted: boolean };
     isolation_controls: Record<string, unknown>;
   } | null;
-  session_credential?: { token: string; gateway_url: string; commands_url: string } | null;
+  session_credential?: { token: string; gateway_url: string; commands_url: string; mcp_url: string } | null;
 };
 
 export type Bar = {

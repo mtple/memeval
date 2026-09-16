@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { EXAMPLES, ISOLATIONS, MODES, RUNTIMES, get, list, post, type Agent, type Meta, type Pack, type Run, type Suite, type Usage } from "../api";
-import { buildCreateRunBody, validateCreateRun, type CreateRunForm } from "../forms";
+import { EXAMPLES, RUNTIMES, get, list, post, type Agent, type Meta, type Pack, type Run, type Suite, type Usage } from "../api";
 import { fmtDate, fmtRel, fmtRaw, shortHash } from "../format";
-import { Badge, Card, CopyButton, EmptyState, ErrorState, Loading, RunStateBadge, useLoad } from "../ui";
+import { useRole } from "../role";
+import { Badge, Card, EmptyState, ErrorState, Loading, RunStateBadge, useLoad } from "../ui";
 
 export default function Runs() {
   const [sp] = useSearchParams();
@@ -21,6 +21,7 @@ export default function Runs() {
   const packById = new Map((packs.data ?? []).map((p) => [p.pack_id, p]));
   const runtimes = (meta.data?.runtimes_available ?? [...RUNTIMES]) as string[];
   const hosted = Boolean(meta.data?.hosted);
+  const { role } = useRole();
   const [executing, setExecuting] = useState<string | null>(null);
   const execute = async (runId: string) => {
     setExecuting(runId);
@@ -34,17 +35,19 @@ export default function Runs() {
 
   return (
     <main className="stack">
-      <h1>Run</h1>
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <h1 style={{ margin: 0 }}>All runs</h1>
+        <Link to="/new" className="btn btn-small btn-primary">
+          + New run
+        </Link>
+      </div>
       {usage.data && (
         <p className="muted small">
           Compute used today: {usage.data.today.runs} runs · {usage.data.today.cpu_seconds.toFixed(0)} CPU-s (cap {usage.data.caps.max_runs_per_day}/day). This month: {usage.data.month.cpu_seconds.toFixed(0)} of {usage.data.caps.max_cpu_seconds_per_month.toFixed(0)} CPU-s.
           {hosted && " Hosted mode: reference participants run inside the server request; external agents connect over HTTP or MCP."}
         </p>
       )}
-      <div className="grid-2">
-        <CreateRun agents={agents.data ?? []} packs={packs.data ?? []} onCreated={runs.reload} runtimes={runtimes} />
-        <RunSuite agents={agents.data ?? []} suites={suites.data ?? []} onCreated={runs.reload} runtimes={runtimes} hosted={hosted} />
-      </div>
+      {role === "admin" && <RunSuite agents={agents.data ?? []} suites={suites.data ?? []} onCreated={runs.reload} runtimes={runtimes} hosted={hosted} />}
       <Card
         title={`Runs${packFilter ? ` for pack ${shortHash(packFilter)}` : ""}${agentFilter ? ` for agent ${shortHash(agentFilter)}` : ""}`}
         actions={
@@ -62,7 +65,11 @@ export default function Runs() {
       >
         {runs.error && <ErrorState error={runs.error} retry={runs.reload} />}
         {runs.loading && !runs.data && <Loading what="runs" />}
-        {runs.data && runs.data.length === 0 && <EmptyState title="No runs yet.">Create one above. You need at least one registered agent and one runnable pack.</EmptyState>}
+        {runs.data && runs.data.length === 0 && (
+          <EmptyState title="No runs yet.">
+            <Link to="/new">Start one</Link>: name your agent, pick an episode, get a token.
+          </EmptyState>
+        )}
         {runs.data && runs.data.length > 0 && (
           <div className="table-wrap">
             <table>
@@ -95,7 +102,7 @@ export default function Runs() {
                         {r.error && <div className="small">{r.error}</div>}
                       </td>
                       <td>{r.pack_name || <span className="mono">{shortHash(r.pack_id)}</span>}</td>
-                      <td className="mono small">{agents.data?.find((a) => a.agent_id === r.agent_id)?.name ?? shortHash(r.agent_id)}</td>
+                      <td className="small">{r.agent_name ?? agents.data?.find((a) => a.agent_id === r.agent_id)?.name ?? <span className="mono">{shortHash(r.agent_id)}</span>}</td>
                       <td>
                         {r.mode} <span className="muted small">{r.isolation}</span>
                       </td>
@@ -122,171 +129,6 @@ export default function Runs() {
         )}
       </Card>
     </main>
-  );
-}
-
-function CreateRun({ agents, packs, onCreated, runtimes }: { agents: Agent[]; packs: Pack[]; onCreated: () => void; runtimes: string[] }) {
-  const runnable = packs.filter((p) => p.runnable);
-  const [f, setF] = useState<CreateRunForm>({ agent_id: "", pack_id: "", mode: "practice", bankroll_raw: "1000000", isolation: "trusted_external_client", launchKind: "example", example: "cash_only", runtime: "python", agent_seed: "" });
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<unknown>(null);
-  const [created, setCreated] = useState<Run | null>(null);
-  const pack = runnable.find((p) => p.pack_id === f.pack_id);
-  const dec = pack?.summary?.numeraire_decimals;
-  const problems = validateCreateRun(f);
-  const bankrollOk = !problems.some((m) => m.startsWith("bankroll"));
-
-  return (
-    <Card title="Create run">
-      {agents.length === 0 && (
-        <p className="notice">
-          No agents registered. <Link to="/agents">Register one on Agent setup</Link>.
-        </p>
-      )}
-      {runnable.length === 0 && (
-        <p className="notice">
-          No runnable packs. <Link to="/episodes">Import a pack on Episodes</Link>.
-        </p>
-      )}
-      <form
-        className="form cols"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setBusy(true);
-          setErr(null);
-          setCreated(null);
-          try {
-            setCreated(await post<Run>("/runs", buildCreateRunBody(f)));
-            onCreated();
-          } catch (x) {
-            setErr(x);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <label className="field">
-          Agent
-          <select required value={f.agent_id} onChange={(e) => setF({ ...f, agent_id: e.target.value })}>
-            <option value="">select…</option>
-            {agents.map((a) => (
-              <option key={a.agent_id} value={a.agent_id}>
-                {a.name} v{a.version} ({a.runtime}){a.compatibility?.compatible ? "" : " — incompatible"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          Pack (runnable only)
-          <select required value={f.pack_id} onChange={(e) => setF({ ...f, pack_id: e.target.value })}>
-            <option value="">select…</option>
-            {runnable.map((p) => (
-              <option key={p.pack_id} value={p.pack_id}>
-                {p.name} — {p.chain}, {p.use_status}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          Mode
-          <select value={f.mode} onChange={(e) => setF({ ...f, mode: e.target.value })}>
-            {MODES.map((m) => (
-              <option key={m} value={m}>
-                {m === "practice" ? "practice (dates may be revealed after the run)" : "sealed (no dates, no trajectory disclosure)"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          Isolation
-          <select value={f.isolation} onChange={(e) => setF({ ...f, isolation: e.target.value })}>
-            {ISOLATIONS.map((i) => (
-              <option key={i} value={i}>
-                {i === "trusted_external_client" ? "trusted external client (unenforced)" : "restricted local runner (env scrubbed)"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          Bankroll (raw atomic units{pack ? `, ${pack.summary.numeraire_alias} has ${dec} decimals` : ""})
-          <input required inputMode="numeric" value={f.bankroll_raw} onChange={(e) => setF({ ...f, bankroll_raw: e.target.value.trim() })} placeholder="e.g. 1000000000" aria-invalid={f.bankroll_raw !== "" && !bankrollOk} />
-          <span className="small">{bankrollOk && dec !== undefined ? `= ${fmtRaw(f.bankroll_raw, dec)} ${pack?.summary.numeraire_alias}` : f.bankroll_raw ? "digits only" : ""}</span>
-        </label>
-        <label className="field">
-          Agent seed (optional, stochastic participants only)
-          <input value={f.agent_seed} onChange={(e) => setF({ ...f, agent_seed: e.target.value })} />
-        </label>
-        <label className="field">
-          Launch
-          <select value={f.launchKind} onChange={(e) => setF({ ...f, launchKind: e.target.value })}>
-            <option value="example">included reference agent (server launches it)</option>
-            <option value="external">external client (no launch; session credential returned once)</option>
-          </select>
-        </label>
-        {f.launchKind === "example" ? (
-          <div className="row">
-            <label className="field">
-              Example
-              <select value={f.example} onChange={(e) => setF({ ...f, example: e.target.value })}>
-                {EXAMPLES.map((x) => (
-                  <option key={x}>{x}</option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              Runtime
-              <select value={f.runtime} onChange={(e) => setF({ ...f, runtime: e.target.value })}>
-                {runtimes.map((x) => (
-                  <option key={x}>{x}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-        ) : (
-          <p className="muted small">The run waits for your client to connect with the session token.</p>
-        )}
-        <div className="span2 row">
-          <button className="btn btn-primary" disabled={busy || problems.length > 0} title={problems.join("; ")}>
-            {busy ? "Creating…" : "Create run"}
-          </button>
-          {created && (
-            <span>
-              Created <Link to={`/runs/${created.run_id}`} className="mono">{shortHash(created.run_id, 14)}</Link> <RunStateBadge state={created.state} />
-            </span>
-          )}
-        </div>
-      </form>
-      {err !== null && <ErrorState error={err} />}
-      {created?.session_credential && (
-        <div className="credential" role="alert">
-          <strong>Session credential — shown only once.</strong> It is not stored by this interface and cannot be retrieved again; copy it now.
-          <dl className="kv" style={{ marginTop: 6 }}>
-            <div className="kv-row">
-              <dt>MARKET_REPLAY_TOKEN</dt>
-              <dd>
-                <code>{created.session_credential.token}</code> <CopyButton text={created.session_credential.token} />
-              </dd>
-            </div>
-            <div className="kv-row">
-              <dt>MARKET_REPLAY_URL</dt>
-              <dd>
-                <code>{created.session_credential.gateway_url}</code> <CopyButton text={created.session_credential.gateway_url} />
-              </dd>
-            </div>
-            <div className="kv-row">
-              <dt>Commands URL</dt>
-              <dd>
-                <code>{created.session_credential.commands_url}</code>
-              </dd>
-            </div>
-          </dl>
-          <CopyButton
-            label="Copy as env exports"
-            text={`export MARKET_REPLAY_URL=${created.session_credential.gateway_url}\nexport MARKET_REPLAY_TOKEN=${created.session_credential.token}`}
-          />
-        </div>
-      )}
-    </Card>
   );
 }
 

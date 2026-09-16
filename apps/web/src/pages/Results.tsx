@@ -2,11 +2,13 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { get, post, type Report, type ReplayResult } from "../api";
 import { fmtAmount, fmtDuration, fmtMs, fmtPct, fmtRaw, fmtReturn, humanize, shortHash } from "../format";
+import { useRole } from "../role";
 import { Badge, Card, ErrorState, JsonView, KV, Loading, StrList, downloadJson, toneForStatus, useLoad } from "../ui";
 
 export default function Results() {
   const { id = "" } = useParams();
-  const rep = useLoad(() => get<Report>(`/runs/${id}/report?role=admin`), [id]);
+  const { role } = useRole();
+  const rep = useLoad(() => get<Report>(`/runs/${id}/report?role=${role === "admin" ? "admin" : "participant"}`), [id, role]);
   const [replay, setReplay] = useState<ReplayResult | null>(null);
   const [replayErr, setReplayErr] = useState<unknown>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -213,6 +215,7 @@ export default function Results() {
             <Card
               title="Reproducibility"
               actions={
+                role === "admin" && (
                 <button
                   type="button"
                   className="btn btn-small"
@@ -231,6 +234,7 @@ export default function Results() {
                 >
                   {busy === "replay" ? "Replaying…" : "Replay actions"}
                 </button>
+                )
               }
             >
               <KV
@@ -258,9 +262,11 @@ export default function Results() {
             title="Export"
             actions={
               <>
-                <button type="button" className="btn btn-small" disabled={busy === "admin"} onClick={() => doExport("admin")}>
-                  Download admin bundle
-                </button>
+                {role === "admin" && (
+                  <button type="button" className="btn btn-small" disabled={busy === "admin"} onClick={() => doExport("admin")}>
+                    Download admin bundle
+                  </button>
+                )}
                 <button type="button" className="btn btn-small" disabled={busy === "participant"} onClick={() => doExport("participant")}>
                   Download participant bundle
                 </button>

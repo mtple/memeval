@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { list, post, get, type Pack, type Validation } from "../api";
 import { fmtDuration, fmtMs, fmtDate, humanize } from "../format";
+import { useRole } from "../role";
 import { Badge, Card, EmptyState, ErrorState, GateList, GateSummary, JsonView, KV, Loading, StrList, toneForStatus, useLoad } from "../ui";
 
 const uniq = (xs: string[]) => Array.from(new Set(xs)).sort();
@@ -13,6 +14,7 @@ export default function Episodes() {
   const [use, setUse] = useState("");
   const [kind, setKind] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  const { role } = useRole();
 
   const filtered = useMemo(
     () =>
@@ -47,9 +49,9 @@ export default function Episodes() {
             </span>
           </div>
           {packs.length === 0 ? (
-            <EmptyState title="No packs imported.">
-              Generate development fixtures with <code>make demo</code> or <code>market-replay fixtures generate</code>, then import the resulting pack below. Generated fixtures are synthetic: they are not historical
-              performance and their predictive validity is not established.
+            <EmptyState title="No episodes on this server yet.">
+              The operator imports them (<code>make demo</code> generates fixtures locally; hosted servers register them on first use). Generated fixtures are synthetic: they are not historical performance and
+              their predictive validity is not established.
             </EmptyState>
           ) : (
             <div className="table-wrap">
@@ -119,7 +121,7 @@ export default function Episodes() {
         </>
       )}
       {sel && <PackDetail pack={sel} onClose={() => setSelected(null)} />}
-      <ImportForm onImported={reload} />
+      {role === "admin" && <ImportForm onImported={reload} />}
     </main>
   );
 }
@@ -157,6 +159,9 @@ function PackDetail({ pack: p, onClose }: { pack: Pack; onClose: () => void }) {
           </Link>
           <Link className="btn btn-small" to={`/runs?pack_id=${p.pack_id}`}>
             Runs
+          </Link>
+          <Link className="btn btn-small btn-primary" to="/new">
+            New run
           </Link>
           <button type="button" className="btn btn-small" onClick={onClose}>
             Close
