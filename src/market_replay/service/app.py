@@ -9,18 +9,27 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from ..domain.envelope import Envelope
 from ..engine.session import TOOLS, UNSUPPORTED_CAPABILITIES
 from .auth import constant_time_equal, resolve_admin_token
-from .mcp_server import BearerGate, build_remote_mcp
+from .mcp_server import build_remote_mcp
 from .runs import ApiError, RunManager
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WEB_DIST = REPO_ROOT / "apps" / "web" / "dist"
+SKILL_DIR = REPO_ROOT / "skills" / "market-replay"
+SKILL_CANONICAL_URL = "https://memeval-web.vercel.app"
+
+
+def skill_text(gateway_url: str, name: str = "SKILL.md") -> str:
+    """The agent skill (or one of its scripts) with this server's URL in place of the canonical one."""
+    path = SKILL_DIR / name if name == "SKILL.md" else SKILL_DIR / "scripts" / name
+    text = path.read_text()
+    return text.replace(SKILL_CANONICAL_URL, gateway_url.rstrip("/"))
 
 
 class ImportPackBody(BaseModel):
@@ -64,6 +73,12 @@ class RunBody(BaseModel):
     agent_seed: str | None = None
     isolation: str = "trusted_external_client"
     launch: LaunchBody | None = None
+
+
+class EnrollBody(BaseModel):
+    agent: InlineAgentBody
+    suite_id: str | None = None
+    pack_id: str | None = None
 
 
 class SuiteRunBody(BaseModel):
@@ -126,7 +141,7 @@ def client_ip(request: Request) -> str:
 def create_app(manager: RunManager, admin_token: str | None = None, cors_origins: list[str] | None = None, public_runs: bool | None = None) -> FastAPI:
     token = resolve_admin_token(admin_token)
     public_runs = public_runs_from_env() if public_runs is None else bool(public_runs)
-    remote_mcp = build_remote_mcp(manager.handle_command)
+    remote_mcp = build_remote_mcp(manager, public_runs=lambda: public_runs, client_ip=client_ip)
     mcp_asgi = remote_mcp.streamable_http_app()
 
     @asynccontextmanager
@@ -246,6 +261,22 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
         return manager.public_descriptor(pack, row, "trusted_external_client").model_dump(mode="json")
 
     # ------------------------------------------------------------------ agents
+    @app.post("/api/v1/enroll", dependencies=[Depends(public_write("runs"))], status_code=201)
+    def enroll(body: EnrollBody) -> dict[str, Any]:
+        """Bring-your-own-agent onboarding in one call: register by name, get a session token per episode."""
+        return manager.enroll(agent=body.agent.model_dump(), suite_id=body.suite_id, pack_id=body.pack_id)
+
+    @app.get("/api/v1/skill", include_in_schema=False)
+    @app.get("/skill.md", include_in_schema=False)
+    def skill() -> PlainTextResponse:
+        return PlainTextResponse(skill_text(manager.gateway_url), media_type="text/markdown; charset=utf-8")
+
+    @app.get("/skill/{script}", include_in_schema=False)
+    def skill_script(script: str) -> PlainTextResponse:
+        if script != "market_replay_agent.py":
+            raise HTTPException(404, {"code": "NOT_FOUND", "message": "unknown skill script"})
+        return PlainTextResponse(skill_text(manager.gateway_url, script), media_type="text/x-python; charset=utf-8")
+
     @app.post("/api/v1/agents", dependencies=[Depends(public_write("agents"))], status_code=201)
     def create_agent(body: AgentBody) -> dict[str, Any]:
         return manager.register_agent(name=body.name, version=body.version, runtime=body.runtime, capabilities=body.capabilities, config=body.config)
@@ -372,9 +403,9 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     def commands(body: CommandBody, tok: str = Depends(agent_token)) -> Envelope:
         return manager.handle_command(tok, body.request_id, body.tool, body.arguments, body.session_id)
 
-    # Any attempt by an agent credential to reach control-plane paths is rejected by require_admin above.
     # MCP over streamable HTTP lives at /agent/mcp (sub-app mounted after the explicit /agent routes).
-    app.mount("/agent", BearerGate(mcp_asgi), name="mcp")
+    # No gate: `enroll` needs no credential; every other tool needs a session token (header or argument).
+    app.mount("/agent", mcp_asgi, name="mcp")
 
     # ------------------------------------------------------------------ web UI
     if WEB_DIST.exists():

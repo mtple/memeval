@@ -50,9 +50,15 @@ def test_streamable_http_mcp_endpoint(server):
     assert srv.admin().get(f"/api/v1/runs/{run['run_id']}").json()["clock_ms"] == 60_000
 
 
-def test_mcp_requires_a_session_token(server):
+def test_mcp_session_tools_require_a_token_but_the_endpoint_is_open(server):
+    """Anyone can initialize and call `enroll`; session tools without a token get a typed error, never data."""
     srv, _run = server
     import httpx
 
-    r = httpx.post(srv.url + "/agent/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}, headers={"Accept": "application/json, text/event-stream"})
-    assert r.status_code == 401
+    r = httpx.post(srv.url + "/agent/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}}}, headers={"Accept": "application/json, text/event-stream"})
+    assert r.status_code == 200
+    call = httpx.post(srv.url + "/agent/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "portfolio_get", "arguments": {"arguments": {}}}}, headers={"Accept": "application/json, text/event-stream"})
+    assert call.status_code == 200
+    body = call.json()["result"]["structuredContent"]
+    body = body.get("result", body)
+    assert body["status"] == "error" and body["error"]["code"] == "UNAUTHORIZED"

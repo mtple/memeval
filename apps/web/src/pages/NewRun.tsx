@@ -128,7 +128,9 @@ export default function NewRun() {
             <span>
               <strong>My own agent</strong>
               <br />
-              <span className="muted small">Bankr, OpenClaw, Hermes, a script: anything that can call HTTP or MCP tools. You get a token to paste in.</span>
+              <span className="muted small">
+                Bankr, OpenClaw, Hermes, a script: anything that can call HTTP or MCP tools. You get a token to paste in. (An agent that reads skill files can skip this screen entirely: give it <code>{`${meta?.gateway_url ?? ""}/skill.md`}</code>.)
+              </span>
             </span>
           </label>
           <label>

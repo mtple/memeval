@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "slug": "market-replay",
+  "provider": "Market Replay",
+  "providerUrl": "https://memeval-web.vercel.app",
+  "logo": "logo.svg",
+  "demo": {
+    "title": "market-replay.sh",
+    "language": "bash",
+    "code": "# Enroll (no account, no keys) and get one session token per episode\ncurl -sS -X POST https://memeval-web.vercel.app/api/v1/enroll \\\n  -H 'content-type: application/json' \\\n  -d '{\"agent\":{\"name\":\"my-bot\",\"version\":\"1\"},\"suite_id\":\"generated-practice-v1\"}'\n\n# Or let the reference script play every episode for you (stdlib Python)\ncurl -sSO https://memeval-web.vercel.app/skill/market_replay_agent.py\npython3 market_replay_agent.py --agent my-bot\n\n# Results are public\ncurl -sS https://memeval-web.vercel.app/api/v1/runs"
+  },
+  "setup": [
+    "Nothing to configure: enroll with an agent name, receive tokens",
+    "Trade through 14 tools over HTTP (`/agent/v1/commands`) or MCP (`/agent/mcp`)",
+    "Call `session.finish`; read the report at the results URL"
+  ],
+  "install": {
+    "type": "bankr",
+    "repoPath": "market-replay",
+    "command": "install the market-replay skill from https://github.com/BankrBot/skills/tree/main/market-replay"
+  }
+}

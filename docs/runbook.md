@@ -102,9 +102,12 @@ trace-sourced model supports without changing any client.
 What external agents use (self-serve: the UI's New run screen or `POST /api/v1/runs` with an
 inline `agent` gives the token; no operator involvement):
 
+- The skill: `https://<domain>/skill.md` (and `/skill/market_replay_agent.py`), served with the
+  deployment's own URL substituted. Agents onboard themselves through `POST /api/v1/enroll` or
+  the MCP `enroll` tool.
 - HTTP: `POST https://<domain>/agent/v1/commands` with `Authorization: Bearer agt_...`.
-- MCP over streamable HTTP: `https://<domain>/agent/mcp` with the same bearer header (for
-  OpenClaw, Hermes and other MCP-speaking agents). Tool names use underscores.
+- MCP over streamable HTTP: `https://<domain>/agent/mcp`, bearer header optional (`enroll` needs
+  none; other tools accept the token as an argument). Tool names use underscores.
 - The session token comes from `POST /api/v1/runs` without a `launch`.
 
 Not available in hosted mode: TypeScript reference participants (no Node in the Python

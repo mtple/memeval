@@ -46,6 +46,8 @@ jobs:
 
           probe "agent plane: http gate"  POST /agent/v1/commands      401 '{"request_id":"smoke","tool":"session.describe","arguments":{}}'
           probe "agent plane: mcp gate"   POST /agent/mcp              401 '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+          probe "skill: served"           GET  /skill.md               200
+          probe "skill: script"           GET  /skill/market_replay_agent.py 200
           probe "ui: index"               GET  /                       200
           probe "ui: client route"        GET  /agents                 200
           probe "ui: missing asset"       GET  /assets/nope.js         404
@@ -67,3 +69,11 @@ jobs:
           # an anonymous caller must not get the unredacted export
           code=$(curl -sS -m 60 -o /dev/null -w '%{http_code}' "$BASE/api/v1/runs/$rid/export?role=admin")
           [ "$code" = "401" ] || { echo "admin export was not protected: $code"; exit 1; }
+
+      # The skill, followed literally: download the served script and let it enroll and play an episode.
+      - name: Agent follows the skill
+        run: |
+          set -eu
+          curl -sSfO "$BASE/skill/market_replay_agent.py"
+          python3 market_replay_agent.py --server "$BASE" --agent smoke-skill-bot --version 1 --suite generated-dev-v1 | tee out.txt
+          grep -q "finished at" out.txt

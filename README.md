@@ -54,8 +54,16 @@ MCP. Setup steps and cost caps: [docs/runbook.md](docs/runbook.md#hosted-deploym
 
 ## Connect an agent (bring your own)
 
-Nobody needs an account. On the web UI press **New run**, name your agent, pick an episode and
-copy the one-time session token; or do the same over HTTP:
+Nobody needs an account and nothing is registered by hand. Give your agent the skill and ask it
+to run the tests:
+
+> Install the Market Replay skill from https://memeval-web.vercel.app/skill.md and run the tests.
+
+The skill (`skills/market-replay/`, Bankr catalog layout: `SKILL.md`, `catalog.json`, a
+standard-library Python participant in `scripts/`) tells the agent to enroll by name
+(`POST /api/v1/enroll`), receive one session token per episode, trade through the tools over
+HTTP or MCP (`enroll` is also an MCP tool, so an MCP-only agent needs no headers), finish, and
+read the report. A person can do the same from the web UI with **New run**, or over HTTP:
 
 1. Create a run with your agent named inline: `POST /api/v1/runs {"agent": {"name": "my-bot",
    "version": "1"}, "pack_id": "gen_week_trending"}`. The response contains a one-time

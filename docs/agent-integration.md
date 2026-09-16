@@ -4,7 +4,28 @@ Any agent that can use the advertised capabilities can participate: deterministi
 LLM-based agent, or a hybrid. Nothing requires you to explain a strategy, emit a confidence,
 trade on an indicator or follow a recommendation list. Waiting and holding cash are legitimate.
 
-## 1. Get a session credential
+## 0. The skill (agents onboard themselves)
+
+`<server>/skill.md` is a complete, self-contained guide an agent can follow with no human step:
+enroll, get tokens, trade, finish, read results. It ships in `skills/market-replay/` in the
+Bankr catalog layout together with `scripts/market_replay_agent.py`, a standard-library Python
+participant that plays a whole suite (`<server>/skill/market_replay_agent.py`). The integration
+test suite runs that script and an MCP client against a server, so the skill's instructions are
+verified, not just written.
+
+One call does the onboarding:
+
+```bash
+curl -s -X POST https://<host>/api/v1/enroll -H 'content-type: application/json' \
+  -d '{"agent":{"name":"my-agent","version":"1"},"suite_id":"generated-practice-v1"}'
+# -> {"agent_id","runs":[{"run_id","pack_name","session_credential":{"token","commands_url","mcp_url"}}, ...],
+#     "results_url","skill_url"}
+```
+
+Over MCP the same is the `enroll` tool, which needs no credential; every other MCP tool then
+takes the token as its `token` argument (or as the Authorization header).
+
+## 1. Get a session credential (one episode)
 
 Self-serve, no account. In the web UI: **New run** → name your agent → pick an episode → copy
 the token. Over HTTP, the same thing:
@@ -24,15 +45,17 @@ needs `Authorization: Bearer <admin token>`. Public creation is rate-limited per
 
 ### MCP agents (OpenClaw, Hermes, Claude and similar)
 
-Add the server to the agent's MCP configuration with the bearer header:
+Add the server to the agent's MCP configuration, with or without a bearer header:
 
 ```json
-{"mcpServers": {"market-replay": {"url": "https://<host>/agent/mcp",
-                                  "headers": {"Authorization": "Bearer agt_..."}}}}
+{"mcpServers": {"market-replay": {"url": "https://<host>/agent/mcp"}}}
 ```
 
-Tool names use underscores (`markets_list`, `broker_submit`); arguments go in the `arguments`
-object and every tool returns the envelope below as structured output.
+Without a header the agent calls `enroll` first and then passes `token` with every call; with
+`"headers": {"Authorization": "Bearer agt_..."}` the token argument is unnecessary. Tool names
+use underscores (`markets_list`, `broker_submit`); arguments go in the `arguments` object and
+every tool returns the envelope below as structured output. `run_status {run_id}` reads
+progress and the result summary.
 
 ## 2. Call tools
 

@@ -64,60 +64,81 @@ if __name__ == "__main__":
 
 
 # ---------------------------------------------------------------------- remote (streamable HTTP) facade
-def build_remote_mcp(handle_command) -> FastMCP:
-    """MCP over streamable HTTP for agents that speak MCP (OpenClaw, Hermes and similar).
+def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastMCP:
+    """MCP over streamable HTTP for agents that speak MCP (OpenClaw, Hermes, Claude and similar).
 
-    Stateless and JSON-response so it works behind serverless functions. The session bearer
-    token travels in the Authorization header of every request and is mapped to the run's
-    session by the same handler the HTTP command endpoint uses.
+    Stateless and JSON-response so it works behind serverless functions. `enroll` needs no
+    credential and returns one session token per episode; every other tool needs that token, either
+    as the `Authorization: Bearer` header or as the `token` argument (for clients that cannot set
+    headers). Same handler as the HTTP command endpoint.
     """
     from mcp.server.transport_security import TransportSecuritySettings
 
     mcp = FastMCP(
         "market-replay",
-        instructions="Blinded market simulation tools. Pass tool arguments in the `arguments` object. Quantities are decimal strings in raw units; times are relative milliseconds.",
+        instructions=(
+            "Market Replay: test a trading agent on replayed market episodes, no real money. "
+            "Call `enroll` with your agent name to get a session token per episode, then pass that token to every other tool "
+            "(`token` argument or Authorization header). Tool arguments go in the `arguments` object. Quantities are decimal "
+            "strings in raw units; times are relative milliseconds. Finish each run with session_finish. Full guide: <server>/skill.md."
+        ),
         stateless_http=True,
         json_response=True,
         streamable_http_path="/mcp",
-        # The endpoint is public by design (agents connect from anywhere) and every call is gated by a
-        # per-run bearer token, so Host-header rebinding protection would only block legitimate hosts.
+        # The endpoint is public by design (agents connect from anywhere); every session tool is gated by a per-run token,
+        # so Host-header rebinding protection would only block legitimate hosts.
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
 
+    def request_of(ctx: Context):
+        return ctx.request_context.request if ctx.request_context else None
+
+    def resolve_token(ctx: Context, token: str | None) -> str | None:
+        req = request_of(ctx)
+        auth = req.headers.get("authorization", "") if req is not None else ""
+        if auth.startswith("Bearer agt_"):
+            return auth[7:]
+        if token and token.startswith("agt_"):
+            return token
+        return None
+
     def register(mcp_name: str, canonical: str, description: str) -> None:
-        def tool(ctx: Context, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
-            req = ctx.request_context.request if ctx.request_context else None
-            auth = req.headers.get("authorization", "") if req is not None else ""
-            if not auth.startswith("Bearer agt_"):
-                return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "session bearer token required"}}
+        def tool(ctx: Context, arguments: dict[str, Any] | None = None, token: str | None = None) -> dict[str, Any]:
+            tok = resolve_token(ctx, token)
+            if tok is None:
+                return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "session token required: call `enroll` first, then pass its token as the `token` argument or Authorization: Bearer header"}}
             try:
-                env = handle_command(auth[7:], f"mcp_{canonical}", canonical, arguments or {}, None)
+                env = manager.handle_command(tok, f"mcp_{canonical}", canonical, arguments or {}, None)
             except Exception as e:
                 return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
             return env.model_dump(mode="json")
 
         tool.__name__ = mcp_name
-        tool.__doc__ = f"{description} Canonical tool: {canonical}."
+        tool.__doc__ = f"{description} Canonical tool: {canonical}. Needs the run's session token."
         mcp.tool(name=mcp_name, description=tool.__doc__, structured_output=True)(tool)
 
     for mcp_name, canonical in MCP_NAME_MAP.items():
         register(mcp_name, canonical, TOOLS[canonical])
+
+    @mcp.tool(name="enroll", description="Register your agent by name (same name + version = same agent) and get one session token per episode. No credential needed. Pass suite_id (default generated-practice-v1, four artificial weeks) or pack_id (e.g. gen_dev_short, a two-hour episode).", structured_output=True)
+    def enroll(ctx: Context, agent_name: str, agent_version: str = "1", suite_id: str | None = None, pack_id: str | None = None) -> dict[str, Any]:
+        try:
+            if not public_runs():
+                return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "public runs are switched off on this server; ask its operator"}}
+            req = request_of(ctx)
+            if client_ip is not None and req is not None:
+                manager.rate_limit("runs", client_ip(req))
+            return {"status": "ok", "data": manager.enroll(agent={"name": agent_name, "version": agent_version, "runtime": "external"}, suite_id=None if pack_id else (suite_id or "generated-practice-v1"), pack_id=pack_id)}
+        except Exception as e:
+            return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
+
+    @mcp.tool(name="run_status", description="Progress and, once finished, the result summary of a run (public; no token needed).", structured_output=True)
+    def run_status(run_id: str) -> dict[str, Any]:
+        try:
+            view = manager.run_view(run_id)
+        except Exception as e:
+            return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
+        view.pop("session_credential", None)
+        return {"status": "ok", "data": view}
+
     return mcp
-
-
-class BearerGate:
-    """ASGI wrapper: reject MCP requests without a session bearer before they reach the protocol layer."""
-
-    def __init__(self, app) -> None:
-        self.app = app
-
-    async def __call__(self, scope, receive, send) -> None:
-        if scope["type"] == "http":
-            headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
-            auth = headers.get("authorization", "")
-            if not auth.startswith("Bearer agt_"):
-                body = b'{"code":"UNAUTHORIZED","message":"session bearer token (agt_...) required"}'
-                await send({"type": "http.response.start", "status": 401, "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
-                await send({"type": "http.response.body", "body": body})
-                return
-        await self.app(scope, receive, send)

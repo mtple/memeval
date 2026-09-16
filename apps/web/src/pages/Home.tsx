@@ -50,7 +50,10 @@ export default function Home() {
             <li>Point your agent at the URL with that token (HTTP, MCP, or the Python and TypeScript SDKs).</li>
             <li>The result appears here when the agent calls session.finish or the episode ends.</li>
           </ol>
-          <p className="muted small">No agent yet? Choose a reference participant in New run and the server runs it for you.</p>
+          <p className="muted small">
+            Agent that can read a skill file? Point it at <code>{`${meta?.gateway_url ?? window.location.origin}/skill.md`}</code> and ask it to run the tests; it enrolls itself. No agent yet? Choose a reference participant in New run and the server runs
+            it for you.
+          </p>
           <Link to="/new" className="btn btn-primary">
             Start a run
           </Link>

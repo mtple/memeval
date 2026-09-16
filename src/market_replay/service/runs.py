@@ -968,6 +968,47 @@ class RunManager:
         self.store.insert_suite_run(suite_run_id, suite_id, agent_id, now_iso(), run_ids)
         return {"suite_run_id": suite_run_id, "suite_id": suite_id, "agent_id": agent_id, "run_ids": run_ids, "runs": [self.run_view(r) for r in run_ids]}
 
+    def enroll(self, *, agent: dict[str, Any], suite_id: str | None = None, pack_id: str | None = None) -> dict[str, Any]:
+        """Self-serve: register (or reuse) the agent and create one external-client run per episode.
+
+        Returns every run's one-time session credential. This is the whole onboarding for a
+        bring-your-own agent: no operator, no account.
+        """
+        view = self.register_or_reuse_agent(name=str(agent.get("name", "")), version=str(agent.get("version", "1")), runtime=str(agent.get("runtime", "external")), capabilities=list(agent.get("capabilities") or []), config=dict(agent.get("config") or {}))
+        agent_id = view["agent_id"]
+        runs: list[dict[str, Any]] = []
+        suite_run_id: str | None = None
+        if suite_id:
+            s = self.suites.get(suite_id)
+            if s is None:
+                raise ApiError(404, f"unknown suite {suite_id}", "NOT_FOUND")
+            suite_run_id = "srun_" + secrets.token_hex(6)
+            for name in s.packs:
+                r = self.store.pack(name)
+                if r is None:
+                    if name in FIXTURE_CONFIGS:
+                        r = self.store.pack(self.ensure_fixture_pack(name)["pack_id"])
+                    else:
+                        raise ApiError(400, f"suite pack {name} is not imported", "NOT_IMPORTED")
+                assert r is not None
+                runs.append(self.create_run(agent_id=agent_id, pack_ref=r["pack_id"], mode=s.mode, bankroll_raw=s.bankroll_raw, mask_seed=f"{s.mask_seed}:{name}", engine_seed=f"{s.engine_seed}:{name}", isolation=s.isolation, suite_id=suite_id, suite_run_id=suite_run_id))
+            self.store.insert_suite_run(suite_run_id, suite_id, agent_id, now_iso(), [r["run_id"] for r in runs])
+        elif pack_id:
+            runs.append(self.create_run(agent_id=agent_id, pack_ref=pack_id))
+        else:
+            raise ApiError(400, "suite_id or pack_id is required", "INVALID")
+        return {
+            "agent_id": agent_id,
+            "agent_name": view["name"],
+            "agent_version": view["version"],
+            "suite_id": suite_id,
+            "suite_run_id": suite_run_id,
+            "runs": [{"run_id": r["run_id"], "pack_id": r["pack_id"], "pack_name": r["pack_name"], "episode_id": r["episode_id"], "mode": r["mode"], "bankroll_raw": r["bankroll_raw"], "session_credential": r["session_credential"]} for r in runs],
+            "results_url": self.gateway_url + "/",
+            "skill_url": self.gateway_url + "/skill.md",
+            "note": "Each session_credential is shown once and works only for its run. Call session.finish when done; the report appears at results_url.",
+        }
+
     # ------------------------------------------------------------------ comparisons / studies
     def compare(self, *, suite_id: str | None, agent_a: str, agent_b: str, run_ids_a: list[str] | None = None, run_ids_b: list[str] | None = None) -> dict[str, Any]:
         def collect(agent_id: str, explicit: list[str] | None) -> list[dict[str, Any]]:

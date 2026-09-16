@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { EXAMPLES, RUNTIMES, get, list, post, type Agent, type Meta } from "../api";
 import { fmtDate, shortHash } from "../format";
-import { Badge, Card, EmptyState, ErrorState, JsonView, KV, Loading, StrList, useLoad } from "../ui";
+import { Badge, Card, CopyButton, EmptyState, ErrorState, JsonView, KV, Loading, StrList, useLoad } from "../ui";
 
 const PY_SNIPPET = `# pip install -e sdk/python   (package: market_replay_client)
 # env: MARKET_REPLAY_URL=<gateway_url>  MARKET_REPLAY_TOKEN=<session token>
@@ -51,8 +51,9 @@ export default function Agents() {
   return (
     <main className="stack">
       <h1>Agents</h1>
+      <SkillCard base={meta.data?.gateway_url ?? window.location.origin} />
       <p className="muted">
-        Every agent that has run here, by name and version. You do not need to register first: <Link to="/new">New run</Link> registers your agent by name. Registering here is for capabilities and configuration you want on record.
+        Every agent that has run here, by name and version. Nothing is registered by hand: an agent that follows the skill enrolls itself, and <Link to="/new">New run</Link> does the same for a person.
       </p>
       <Card title="Registered agents" actions={<button type="button" className="btn btn-small" onClick={agents.reload}>Refresh</button>}>
         {agents.error && <ErrorState error={agents.error} retry={agents.reload} />}
@@ -149,6 +150,29 @@ export default function Agents() {
         </p>
       </Card>
     </main>
+  );
+}
+
+function SkillCard({ base }: { base: string }) {
+  const skillUrl = `${base}/skill.md`;
+  const prompt = `Install the Market Replay skill from ${skillUrl} and run the tests. Use the agent name "<your agent's name>". Report the results URL and, per episode, the model equity and whether the valuation was complete.`;
+  return (
+    <Card title="Give your agent the skill" className="connect">
+      <p>
+        Point any agent that can read a skill file (Bankr, OpenClaw, Hermes, Claude and similar) at <code>{skillUrl}</code> and ask it to run the tests. The skill tells it how to enroll by name, get one session token per episode, trade through the
+        tools over HTTP or MCP, finish, and read the report. No registration screen, no operator.
+      </p>
+      <div className="row">
+        <CopyButton text={skillUrl} label="Copy skill URL" />
+        <CopyButton text={prompt} label="Copy a prompt for your agent" />
+        <a className="btn btn-small" href={skillUrl} target="_blank" rel="noreferrer">
+          Read the skill
+        </a>
+      </div>
+      <p className="small muted" style={{ marginTop: 8 }}>
+        Bankr catalog form: <code>install the market-replay skill from https://github.com/BankrBot/skills/tree/main/market-replay</code> once the skill is listed there; until then the URL above is the same file.
+      </p>
+    </Card>
   );
 }
 
