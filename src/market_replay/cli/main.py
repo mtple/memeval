@@ -132,19 +132,39 @@ def _ensure_agent(mgr: RunManager, name: str, version: str, runtime: str) -> str
 def run_agent(
     agent: str = typer.Option(..., help="example name: cash_only | scheduled_basket | random_actions | model_client"),
     suite: str = typer.Option("generated-dev-v1"),
+    pack: str | None = typer.Option(None, help="run on one pack (imported name/id or a pack directory) instead of a suite"),
     runtime: str = typer.Option("python", help="python | typescript"),
     version: str = typer.Option("1"),
     isolation: str = typer.Option("trusted_external_client"),
+    mode: str = typer.Option("practice"),
+    bankroll_raw: str = typer.Option("1000000"),
     agent_seed: str | None = typer.Option(None),
     data_dir: Path = DEFAULT_DATA,
 ) -> None:
-    """Run a reference participant on a suite through the real HTTP agent plane and print the reports."""
+    """Run a reference participant on a suite (or one pack) through the real HTTP agent plane and print the reports."""
     mgr = _manager(data_dir)
+    agent_id = _ensure_agent(mgr, f"{agent}_{runtime}", version, runtime)
+    if pack is not None:
+        row = mgr.store.pack(pack)
+        if row is None:
+            if Path(pack).is_dir():
+                row = mgr.import_pack(Path(pack), Path(pack).name)
+                row = mgr.store.pack(row["pack_id"])
+            else:
+                raise typer.BadParameter(f"unknown pack {pack}")
+        assert row is not None
+        with EmbeddedServer(mgr, resolve_admin_token(None)):
+            view = mgr.create_run(agent_id=agent_id, pack_ref=row["pack_id"], mode=mode, bankroll_raw=bankroll_raw, isolation=isolation, launch_spec={"kind": "example", "name": agent, "runtime": runtime}, agent_seed=agent_seed)
+            mgr.wait_for_run(view["run_id"], 3600)
+        r = mgr.run_view(view["run_id"])
+        rep = mgr.report(r["run_id"])
+        typer.echo(f"{r['run_id']} {r['pack_name']:26s} state={r['state']:12s} return={rep.get('outcome', {}).get('headline_return')} complete={rep.get('outcome', {}).get('valuation_complete')} fills={rep.get('activity', {}).get('confirmed_fills')} error={r['error']}")
+        typer.echo(json.dumps({"run_ids": [r["run_id"]]}))
+        return
     suite_def = mgr.suites.get(suite)
     if suite_def is None:
         raise typer.BadParameter(f"unknown suite {suite}; known: {sorted(mgr.suites)}")
     _ensure_packs(mgr, suite_def.packs, data_dir / "packs" / "generated")
-    agent_id = _ensure_agent(mgr, f"{agent}_{runtime}", version, runtime)
     with EmbeddedServer(mgr, resolve_admin_token(None)):
         result = mgr.run_suite(suite, agent_id=agent_id, launch_spec={"kind": "example", "name": agent, "runtime": runtime}, isolation=isolation, wait=True, agent_seed=agent_seed)
     for r in result["runs"]:

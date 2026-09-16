@@ -1,7 +1,7 @@
 # Reproducible local image for the Market Replay service and demo. No wallets, no provider keys.
 FROM node:22-bookworm-slim AS web
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@10.17.1 --activate
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/web/package.json apps/web/
 RUN pnpm install --frozen-lockfile

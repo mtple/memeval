@@ -1,0 +1,231 @@
+{
+  "items": [
+    {
+      "capability": "no_agent_reconstruction_matches_checkpoints",
+      "evidence": "34 sync checkpoints, 0 mismatches on generated fixture",
+      "status": "tested"
+    },
+    {
+      "capability": "deterministic_replay_same_actions_same_ledger",
+      "evidence": "two sessions with identical seeds and actions produced identical result hashes",
+      "status": "tested"
+    },
+    {
+      "capability": "observation_cutoffs_respected",
+      "evidence": "covered by tests/unit/test_observations.py and tests/unit/test_session.py (as-of filtering, future range clamping, open bars)",
+      "status": "tested"
+    },
+    {
+      "capability": "amount_conservation_in_ledger",
+      "evidence": "every ledger entry balances per asset; enforced at post time and covered by tests/unit/test_simulation.py",
+      "status": "tested"
+    },
+    {
+      "capability": "fees_applied_once",
+      "evidence": "pool fee embedded in output; report lists it as informational; tests/unit/test_cpmm_math.py",
+      "status": "tested"
+    },
+    {
+      "capability": "cpmm_matches_reference_integer_formula",
+      "evidence": "tests/unit/test_cpmm_math.py and tests/property/test_cpmm_property.py",
+      "status": "tested"
+    },
+    {
+      "capability": "historical_no_agent_reconstruction",
+      "evidence": "no authorized historical pack available in this build; collector and reconciler exist and are tested against a fake RPC",
+      "status": "not_tested"
+    },
+    {
+      "capability": "modeled_outputs_vs_contemporaneous_quotes",
+      "evidence": "the supplied quote-only CLI excerpt is rounded and not a fill; it cannot calibrate the model",
+      "status": "not_tested"
+    },
+    {
+      "capability": "routing_depth_and_mev",
+      "evidence": "no router simulation; single-pool CPMM only",
+      "status": "not_tested"
+    },
+    {
+      "capability": "historical_token_restrictions_and_sellability",
+      "evidence": "assumed_standard_transfer for research packs; fixture rules for generated packs",
+      "status": "assumed"
+    },
+    {
+      "capability": "block_interval_fixed_2000ms_on_base",
+      "evidence": "verified only by sampled headers during collection; not established for unseen ranges",
+      "status": "assumed"
+    },
+    {
+      "capability": "latency_and_gas_parameters",
+      "evidence": "fixture values are test settings; historical profile values are assumptions until a fee series is imported",
+      "status": "assumed"
+    },
+    {
+      "capability": "sensitivity_to_latency_and_gas",
+      "evidence": "scheduled basket re-run on fixture variants; outcomes reported without a monotonicity claim",
+      "status": "tested",
+      "variants": {
+        "baseline": {
+          "confirmed_fills": 15,
+          "expired": 0,
+          "gas_total_raw": "750",
+          "headline_return": "-0.07079200",
+          "overrides": {},
+          "reverted": 0,
+          "state": "completed",
+          "valuation_complete": true
+        },
+        "high_gas": {
+          "confirmed_fills": 15,
+          "expired": 0,
+          "gas_total_raw": "75000",
+          "headline_return": "-0.14504200",
+          "overrides": {
+            "gas_cost_raw": "5000"
+          },
+          "reverted": 0,
+          "state": "completed",
+          "valuation_complete": true
+        },
+        "high_latency": {
+          "confirmed_fills": 15,
+          "expired": 0,
+          "gas_total_raw": "750",
+          "headline_return": "-0.07076000",
+          "overrides": {
+            "confirm_blocks": 3,
+            "data_latency_ms": 2000,
+            "quote_latency_ms": 2000,
+            "submit_latency_ms": 5000
+          },
+          "reverted": 0,
+          "state": "completed",
+          "valuation_complete": true
+        },
+        "long_availability_delay": {
+          "confirmed_fills": 15,
+          "expired": 0,
+          "gas_total_raw": "750",
+          "headline_return": "-0.07079200",
+          "overrides": {
+            "availability_delay_ms": 30000
+          },
+          "reverted": 0,
+          "state": "completed",
+          "valuation_complete": true
+        },
+        "low_latency": {
+          "confirmed_fills": 15,
+          "expired": 0,
+          "gas_total_raw": "750",
+          "headline_return": "-0.07079200",
+          "overrides": {
+            "data_latency_ms": 10,
+            "quote_latency_ms": 10,
+            "submit_latency_ms": 50
+          },
+          "reverted": 0,
+          "state": "completed",
+          "valuation_complete": true
+        },
+        "zero_gas": {
+          "confirmed_fills": 15,
+          "expired": 0,
+          "gas_total_raw": "0",
+          "headline_return": "-0.07004200",
+          "overrides": {
+            "gas_cost_raw": "0"
+          },
+          "reverted": 0,
+          "state": "completed",
+          "valuation_complete": true
+        }
+      }
+    }
+  ],
+  "report_version": "environment_validation_v1",
+  "sensitivity_runs": {
+    "baseline": {
+      "confirmed_fills": 15,
+      "expired": 0,
+      "gas_total_raw": "750",
+      "headline_return": "-0.07079200",
+      "overrides": {},
+      "reverted": 0,
+      "state": "completed",
+      "valuation_complete": true
+    },
+    "high_gas": {
+      "confirmed_fills": 15,
+      "expired": 0,
+      "gas_total_raw": "75000",
+      "headline_return": "-0.14504200",
+      "overrides": {
+        "gas_cost_raw": "5000"
+      },
+      "reverted": 0,
+      "state": "completed",
+      "valuation_complete": true
+    },
+    "high_latency": {
+      "confirmed_fills": 15,
+      "expired": 0,
+      "gas_total_raw": "750",
+      "headline_return": "-0.07076000",
+      "overrides": {
+        "confirm_blocks": 3,
+        "data_latency_ms": 2000,
+        "quote_latency_ms": 2000,
+        "submit_latency_ms": 5000
+      },
+      "reverted": 0,
+      "state": "completed",
+      "valuation_complete": true
+    },
+    "long_availability_delay": {
+      "confirmed_fills": 15,
+      "expired": 0,
+      "gas_total_raw": "750",
+      "headline_return": "-0.07079200",
+      "overrides": {
+        "availability_delay_ms": 30000
+      },
+      "reverted": 0,
+      "state": "completed",
+      "valuation_complete": true
+    },
+    "low_latency": {
+      "confirmed_fills": 15,
+      "expired": 0,
+      "gas_total_raw": "750",
+      "headline_return": "-0.07079200",
+      "overrides": {
+        "data_latency_ms": 10,
+        "quote_latency_ms": 10,
+        "submit_latency_ms": 50
+      },
+      "reverted": 0,
+      "state": "completed",
+      "valuation_complete": true
+    },
+    "zero_gas": {
+      "confirmed_fills": 15,
+      "expired": 0,
+      "gas_total_raw": "0",
+      "headline_return": "-0.07004200",
+      "overrides": {
+        "gas_cost_raw": "0"
+      },
+      "reverted": 0,
+      "state": "completed",
+      "valuation_complete": true
+    }
+  },
+  "statement": "Software correctness items are tested on generated fixtures. Environment fidelity against real markets is not established. Predictive usefulness requires a prospective study (see the study registry).",
+  "summary": {
+    "assumed": 3,
+    "failed": 0,
+    "not_tested": 3,
+    "tested": 7
+  }
+}

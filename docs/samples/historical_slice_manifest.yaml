@@ -1,0 +1,116 @@
+schema_version: 1
+pack_id: pack_a7eb7db6a67f81a1a4e641927a610572
+origin: historical_reconstruction
+chain: base
+chain_id: 8453
+scope_label: base_uniswap_v2_native_pairs_research_v1
+title_private: Base v2 research slice 2026-09-15T12:00:00Z..2026-09-15T12:30:00Z
+period:
+  start_utc: '2026-09-15T12:00:01Z'
+  end_utc: '2026-09-15T12:30:01Z'
+  prehistory_start_utc: '2026-09-15T11:00:01Z'
+  start_utc_ms: 1789473601000
+  end_utc_ms: 1789475401000
+  prehistory_start_utc_ms: 1789470001000
+  duration_ms: 1800000
+  is_full_week: false
+universe:
+  factories:
+  - '0x8909dc15e40173ff4699343b6eb8132c65e18ec6'
+  pool_models:
+  - uniswap_v2_plain
+  quote_asset: 8453:0x4200000000000000000000000000000000000006
+  selection_rule_version: active_before_window_earliest_created_v1
+  indexed_block_ranges:
+  - - 51298927
+    - 51343026
+  excluded_or_unsupported_counts:
+    no_wrapped_native_leg: 37
+    beyond_max_pairs: 492
+    missing_state: 0
+  candidate_count: 537
+  selected_count: 8
+  unsupported_count: 37
+  missing_count: 0
+  description: PairCreated cohort from the declared discovery window; wrapped-native
+    pairs only; sampling rule active_before_window_earliest_created_v1 frozen before
+    period flows were read.
+data:
+  objects:
+  - filename: assets.jsonl
+    schema_id: assets_v1
+    size_bytes: 3038
+    sha256: 3d562f5e23e1ae97dab7606db4470b878e3cadf18277f7b6e1d3ad6ddfa7c1f5
+  - filename: pools.jsonl
+    schema_id: pools_v1
+    size_bytes: 5914
+    sha256: 781fec6ea4c1e5404dc4e4958d4ef1b0fca7ca91d542db57398c831d9b183e42
+  - filename: tape.jsonl
+    schema_id: tape_v1
+    size_bytes: 11347
+    sha256: 0fbb5e2a5aa443c599d589e6ed268127e04a5ed53e8b915ce0773c778f0d42e0
+  - filename: inventory.json
+    schema_id: inventory_v1
+    size_bytes: 84820
+    sha256: 488255363705a7932cd0b67733a1261c239811c25e993f7e566828b6f7c55c1e
+  - filename: coverage.json
+    schema_id: coverage_v1
+    size_bytes: 16232
+    sha256: a799d07d325790fd0735a12ccf84992b2c18dd574bdefd14fee114d80db3e806
+  coverage_report: coverage.json
+  availability_model:
+    kind: constant_delay_from_block_time
+    delay_ms: 4000
+    acquisition_utc_ms: 1789546570653
+    note: acquired later than the events; original provider availability not established
+  token_behavior_basis: assumed_standard_transfer
+execution:
+  model: cpmm_fixed_flow_v1
+  parameters_file: execution_params.yaml
+  parameters_hash: 05d4a5ca14dd2bfda5e7d29f7b985077a31b760d8dbf7fb59f4b891872e99e73
+rights:
+  storage_basis: public_chain_data_via_configured_rpc; endpoint terms not reviewed
+    here
+  local_processing_basis: research
+  redistribution: not_cleared
+  simulator_serving: local_only
+  notes: Operator-authorized read-only collection from the official public Base RPC
+    (mainnet.base.org) with a fixed request budget; public chain data; redistribution
+    not cleared.
+validation:
+  report_path: validation.json
+  qualification: research
+  predictive_validity: not_established
+  validator_version: pack_validator_v1
+numeraire: 8453:0x4200000000000000000000000000000000000006
+numeraire_alias: NATIVE
+numeraire_decimals: 18
+generator: {}
+provenance_notes:
+- HISTORICAL RECONSTRUCTION from eth_getLogs. Token sellability/restrictions unknown
+  (assumed standard transfer). Not a full week unless the period says so.
+decision_log:
+- chain id 8453 and factory interface verified against configured deployment reference
+- 'block boundaries fixed: discovery 51298927, prehistory 51340327, period [51342127,
+  51343027)'
+- block interval 2000 ms verified on 3 sampled headers; mismatches=0
+- 'activity scan before the window (lookback_blocks=5400): 88 of 500 in-scope pairs
+  had at least one swap before prehistory start'
+- 'universe frozen: 537 candidates, 88 in scope after rule active_before_window_earliest_created_v1,
+  8 selected'
+- '0x4d8c812808e14f5c08eb1ad5700eed0c7c31c7de: initial state from getReserves at block
+  51340326'
+- '0x45b351161e5fa382c18ad614b60410dfd4cedbec: initial state from getReserves at block
+  51340326'
+- '0x7d0515e5b325feafb0a2b6d3ab8b4f941a171e22: initial state from getReserves at block
+  51340326'
+- '0x88012af1945dede02fcdbe4ff6ba80ff994e030e: initial state from getReserves at block
+  51340326'
+- '0xf3fc8f9392cd7804c4a1dda3e6333a9e26850fd2: initial state from getReserves at block
+  51340326'
+- '0x678a4c3afd7d54fc00aeb308a5e2f2ed77f72f08: initial state from getReserves at block
+  51340326'
+- '0x62fafbf0ffaa4c0ecf637b9c63d34a7312251961: initial state from getReserves at block
+  51340326'
+- '0xa7e17be47bf9a7afcdccb5d770b019729119cc7b: initial state from getReserves at block
+  51340326'

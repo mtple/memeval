@@ -251,7 +251,8 @@ def run_collection(config_path: Path, data_dir: Path, *, transport: httpx.BaseTr
             if active is None:
                 found: set[str] = set()
                 addrs = [a for a, _ in in_scope]
-                cur_a = blocks["discovery_start"]
+                lookback = int(cfg.get("activity_lookback_blocks", 0))
+                cur_a = blocks["discovery_start"] if lookback <= 0 else max(blocks["discovery_start"], blocks["prehistory_start"] - lookback)
                 achunk = chunk
                 while cur_a < blocks["prehistory_start"] and addrs:
                     to_a = min(cur_a + achunk - 1, blocks["prehistory_start"] - 1)
@@ -267,7 +268,7 @@ def run_collection(config_path: Path, data_dir: Path, *, transport: httpx.BaseTr
                     cur_a = to_a + 1
                 active = sorted(found)
                 ck.set(act_key, active)
-                note(f"activity scan before the window: {len(active)} of {len(in_scope)} in-scope pairs had at least one swap before prehistory start")
+                note(f"activity scan before the window (lookback_blocks={lookback or 'full discovery range'}): {len(active)} of {len(in_scope)} in-scope pairs had at least one swap before prehistory start")
             active_set = set(active)
             inactive_out = [{"pool": a, "reason": "no swap observed before the window start under the frozen activity rule"} for a, _ in in_scope if a not in active_set]
             in_scope = [(a, m) for a, m in in_scope if a in active_set]

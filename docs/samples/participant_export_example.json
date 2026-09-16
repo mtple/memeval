@@ -1,0 +1,2235 @@
+{
+  "bundle_hash": "4cade85537fcf6608e0176095e0c544a8620fa56f170e249da1af459d4bf7f9f",
+  "bundle_version": "run_export_v1",
+  "public_descriptor": {
+    "availability_basis": "reconstructed_with_delay_model",
+    "capabilities": [
+      "broker.order",
+      "broker.quote",
+      "broker.submit",
+      "clock.advance",
+      "market.candles",
+      "market.liquidity",
+      "market.restrictions",
+      "market.trades",
+      "markets.get",
+      "markets.list",
+      "portfolio.get",
+      "portfolio.history",
+      "session.describe",
+      "session.finish"
+    ],
+    "chain": "base",
+    "duration_ms": 1800000,
+    "episode_id": "ep_9baac66eb087",
+    "execution_model": "cpmm_fixed_flow_v1",
+    "is_full_week": false,
+    "isolation": "trusted_external_client",
+    "latency_assumptions": {
+      "availability_delay_ms": 4000,
+      "block_interval_ms": 2000,
+      "capacity_profile": {
+        "max_cumulative_displacement_bps": 50,
+        "max_input_bps_of_reserve": 10,
+        "note": "Unvalidated modeling guardrails, not trading rules or fidelity guarantees.",
+        "version": "capacity_v1"
+      },
+      "confirm_blocks": 1,
+      "data_latency_ms": 250,
+      "gas_basis": "assumed_zero_until_recorded_fee_series_imported",
+      "gas_cost_raw": "0",
+      "is_measured": false,
+      "label": "Documented assumptions for Base research packs; block times come from recorded block headers.",
+      "profile_name": "base_research_v1",
+      "quote_latency_ms": 250,
+      "quote_ttl_ms": 10000,
+      "settlement_tail_blocks": 2,
+      "submit_latency_ms": 1000
+    },
+    "limitations": [
+      "blinded interface, not contamination-proof",
+      "fixed external flow counterfactual",
+      "HISTORICAL RECONSTRUCTION from eth_getLogs. Token sellability/restrictions unknown (assumed standard transfer). Not a full week unless the period says so."
+    ],
+    "numeraire_alias": "NATIVE",
+    "numeraire_decimals": 18,
+    "origin": "historical_reconstruction",
+    "predictive_validity": "not_established",
+    "prehistory_ms": 3600000,
+    "token_behavior_basis": "assumed_standard_transfer",
+    "unsupported_capabilities": [
+      "holder_graph",
+      "wallet_history",
+      "social_data",
+      "web_search",
+      "exact_output_swap",
+      "limit_order",
+      "stop_order",
+      "bracket_order",
+      "partial_fill",
+      "cross_chain",
+      "short",
+      "leverage",
+      "lp_provision",
+      "prediction_markets",
+      "best_opportunities_ranking"
+    ],
+    "use_status": "research"
+  },
+  "report": {
+    "activity": {
+      "budget_exhausted": false,
+      "confirmed_fills": 48,
+      "decisions_total": 48,
+      "expired": 0,
+      "model_capacity_rejected": 0,
+      "orders_by_state": {
+        "confirmed": 48
+      },
+      "orders_total": 48,
+      "quality_exposure": {
+        "errors_by_code": {},
+        "invalid_calls": 0,
+        "rate_limited": 0
+      },
+      "requests_total": 123,
+      "reverted": 0,
+      "tool_calls": {
+        "broker.quote": 48,
+        "broker.submit": 48,
+        "clock.advance": 13,
+        "markets.list": 6,
+        "portfolio.get": 6,
+        "session.describe": 1,
+        "session.finish": 1
+      }
+    },
+    "costs": {
+      "fee_note": "Pool fees are embedded in swap outputs and shown for information; they are not subtracted again.",
+      "gas_basis": "assumed_zero_until_recorded_fee_series_imported",
+      "gas_total_raw": "0",
+      "implicit_pool_fee_numeraire_raw": "1200",
+      "implicit_pool_fee_other_raw": {
+        "asset_bq7b7q2n": "2641",
+        "asset_djq5hxxk": "3275245021352423",
+        "asset_fe4jq5aa": "540297121355",
+        "asset_gb7erf9k": "2743313145803491",
+        "asset_k6w6ys3w": "5405381973263243",
+        "asset_mvdfvbfw": "5201138003243193",
+        "asset_nf7w3d3c": "2671351987854671",
+        "asset_w84ckb7e": "67624057765"
+      },
+      "turnover_numeraire_raw": "798820"
+    },
+    "coverage_and_assumptions": {
+      "availability_model": {
+        "acquisition_utc_ms": 1789546570653,
+        "delay_ms": 4000,
+        "kind": "constant_delay_from_block_time",
+        "note": "acquired later than the events; original provider availability not established"
+      },
+      "capacity_profile": {
+        "max_cumulative_displacement_bps": 50,
+        "max_input_bps_of_reserve": 10,
+        "note": "Unvalidated modeling guardrails, not trading rules or fidelity guarantees.",
+        "version": "capacity_v1"
+      },
+      "episode_duration_ms": 1800000,
+      "is_full_week": false,
+      "latency_assumptions": {
+        "availability_delay_ms": 4000,
+        "block_interval_ms": 2000,
+        "capacity_profile": {
+          "max_cumulative_displacement_bps": 50,
+          "max_input_bps_of_reserve": 10,
+          "note": "Unvalidated modeling guardrails, not trading rules or fidelity guarantees.",
+          "version": "capacity_v1"
+        },
+        "confirm_blocks": 1,
+        "data_latency_ms": 250,
+        "gas_basis": "assumed_zero_until_recorded_fee_series_imported",
+        "gas_cost_raw": "0",
+        "is_measured": false,
+        "label": "Documented assumptions for Base research packs; block times come from recorded block headers.",
+        "profile_name": "base_research_v1",
+        "quote_latency_ms": 250,
+        "quote_ttl_ms": 10000,
+        "settlement_tail_blocks": 2,
+        "submit_latency_ms": 1000
+      },
+      "limitations": [
+        "Historical-flow-based simulation: external intents fixed, outputs counterfactual.",
+        "Blinded interface, not contamination-proof.",
+        "Isolation unenforced for trusted external clients.",
+        "Research pack: predictive validity not established."
+      ],
+      "reconciliation_mismatches_in_run": 0,
+      "universe": {
+        "candidate_count": 537,
+        "description": "PairCreated cohort from the declared discovery window; wrapped-native pairs only; sampling rule active_before_window_earliest_created_v1 frozen before period flows were read.",
+        "missing_count": 0,
+        "selected_count": 8,
+        "selection_rule_version": "active_before_window_earliest_created_v1",
+        "unsupported_count": 37
+      }
+    },
+    "inference": {
+      "recorded": false
+    },
+    "outcome": {
+      "headline_return": "-0.00118000",
+      "initial_equity_raw": "1000000",
+      "numeraire": "NATIVE",
+      "numeraire_decimals": 18,
+      "return_definition": "(terminal_model_equity - initial_equity) / initial_equity; costs already in balances are not subtracted again",
+      "terminal_cash_raw": "998820",
+      "terminal_liquidation_gas_raw": "0",
+      "terminal_model_equity_raw": "998820",
+      "terminal_priced_inventory_raw": "0",
+      "valuation_complete": true,
+      "valuation_policy": "liquidate_all_holdings_via_direct_pool_v1",
+      "valuation_warnings": []
+    },
+    "report_version": "run_report_v1",
+    "reproducibility": {
+      "ledger_hash": "004e80cbf630e4ca5263611f767cd667462613407254da273765aeea31f0b77d",
+      "result_hash": "5a373e8b6266df53cc7d3ac54b93e9e3043510c2f284481e27d76e21439494de",
+      "state_hash": "a5d0ad877157b6a8a3aa0772485982c0f738967c19e3b6601007b295b0e06397",
+      "trace_hash": "4b74b646d0cba4ddb673c909f873e75686006bbd9d1f726957a5a2e549c8650e",
+      "trace_length": 123
+    },
+    "risk": {
+      "drawdown_basis": "fixed grid every 3600000 ms plus ledger events; complete points only",
+      "equity_points_complete": 49,
+      "equity_points_total": 49,
+      "exposure_share_of_grid": "0.0000",
+      "gap_count": 0,
+      "gaps": [],
+      "largest_position": {
+        "asset_id": "NATIVE",
+        "share": "1.000000"
+      },
+      "max_drawdown": "0.002668"
+    },
+    "run": {
+      "agent": {
+        "agent_id": "agent_68efc67063a3158c",
+        "capabilities": [
+          "broker",
+          "clock",
+          "markets"
+        ],
+        "compatibility": {
+          "compatible": true,
+          "unsupported_requested": []
+        },
+        "config": {
+          "example": "scheduled_basket_python",
+          "runtime": "python"
+        },
+        "created_at": "2026-09-16T08:14:35.315721Z",
+        "fingerprint": "68efc67063a3158c8281cf5716ae56d00c9a4eb40f8df36a9d3b559b1a2f892f",
+        "name": "scheduled_basket_python",
+        "runtime": "python",
+        "version": "1"
+      },
+      "agent_seed": null,
+      "attempt_number": 1,
+      "clock_ms": 1800000,
+      "episode_id": "ep_9baac66eb087",
+      "error": null,
+      "inference": {
+        "recorded": false
+      },
+      "isolation": "trusted_external_client",
+      "isolation_controls": {
+        "enforced": [],
+        "isolation": "trusted_external_client",
+        "unenforced": [
+          "network",
+          "filesystem",
+          "memory_across_runs"
+        ]
+      },
+      "mode": "practice",
+      "profile_hash": "05d4a5ca14dd2bfda5e7d29f7b985077a31b760d8dbf7fb59f4b891872e99e73",
+      "run_id": "run_099dc7a50cc9db3a",
+      "state": "completed",
+      "wall_clock": {
+        "elapsed_s": 0.413,
+        "started_at": "2026-09-16T08:18:27.755704Z"
+      }
+    },
+    "statement": "This report describes behavior in modeled episodes after modeled costs. It does not establish an edge or future improvement.",
+    "status_dimensions": {
+      "availability_basis": "reconstructed_with_delay_model",
+      "data_origin": "historical_reconstruction",
+      "execution_model": "cpmm_fixed_flow_v1",
+      "isolation": "trusted_external_client",
+      "predictive_validity": "not_established",
+      "token_behavior": "assumed_standard_transfer",
+      "use_status": "research"
+    },
+    "unresolved": {
+      "environment_fidelity_flags": [],
+      "no_route_inventory": [],
+      "orders": [],
+      "unpriced_inventory": []
+    },
+    "versions": {
+      "engine": "market_replay_engine_v1",
+      "execution_parameters_hash": "05d4a5ca14dd2bfda5e7d29f7b985077a31b760d8dbf7fb59f4b891872e99e73",
+      "execution_profile": "base_research_v1",
+      "pack_id": "hidden",
+      "report": "run_report_v1",
+      "validator": "pack_validator_v1"
+    },
+    "wall_clock": {
+      "elapsed_s": 0.413,
+      "started_at": "2026-09-16T08:18:27.755704Z"
+    }
+  },
+  "role": "participant",
+  "run": {
+    "agent_id": "agent_68efc67063a3158c",
+    "bankroll_raw": "1000000",
+    "clock_ms": 1800000,
+    "created_at": "2026-09-16T08:18:27.754552Z",
+    "episode_id": "ep_9baac66eb087",
+    "error": null,
+    "exposed": false,
+    "finished_at": "2026-09-16T08:18:28.171556Z",
+    "has_report": true,
+    "isolation": "trusted_external_client",
+    "launch": {
+      "kind": "example",
+      "name": "scheduled_basket",
+      "runtime": "python"
+    },
+    "mode": "practice",
+    "profile_hash": "05d4a5ca14dd2bfda5e7d29f7b985077a31b760d8dbf7fb59f4b891872e99e73",
+    "run_id": "run_099dc7a50cc9db3a",
+    "started_at": "2026-09-16T08:18:27.755704Z",
+    "state": "completed",
+    "suite_id": null,
+    "suite_run_id": null
+  },
+  "trace": [
+    {
+      "arguments": {},
+      "clock_after_ms": 0,
+      "clock_before_ms": 0,
+      "error_code": null,
+      "index": 0,
+      "request_id": "req_5b0a788641424482",
+      "status": "ok",
+      "tool": "session.describe"
+    },
+    {
+      "arguments": {
+        "to_ms": 225000
+      },
+      "clock_after_ms": 225000,
+      "clock_before_ms": 0,
+      "error_code": null,
+      "index": 1,
+      "request_id": "req_80d83104ee43466a",
+      "status": "ok",
+      "tool": "clock.advance"
+    },
+    {
+      "arguments": {
+        "filters": {
+          "execution_supported_only": true
+        },
+        "limit": 200
+      },
+      "clock_after_ms": 225250,
+      "clock_before_ms": 225000,
+      "error_code": null,
+      "index": 2,
+      "request_id": "req_7d19586126c149f9",
+      "status": "ok",
+      "tool": "markets.list"
+    },
+    {
+      "arguments": {},
+      "clock_after_ms": 225250,
+      "clock_before_ms": 225250,
+      "error_code": null,
+      "index": 3,
+      "request_id": "req_75c97226a1bc4d6e",
+      "status": "ok",
+      "tool": "portfolio.get"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_2yhm84y8"
+      },
+      "clock_after_ms": 225500,
+      "clock_before_ms": 225250,
+      "error_code": null,
+      "index": 4,
+      "request_id": "req_9170de8f73304214",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_mvdfvbfw",
+        "deadline_ms": 825500,
+        "idempotency_key": "basket_buy_1",
+        "min_amount_out_raw": "343275115577246592",
+        "pool_id": "pool_2yhm84y8",
+        "quote_id": "q_000001"
+      },
+      "clock_after_ms": 225750,
+      "clock_before_ms": 225500,
+      "error_code": null,
+      "index": 5,
+      "request_id": "req_faa55d5defda4e32",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_6ab9x3kz"
+      },
+      "clock_after_ms": 226000,
+      "clock_before_ms": 225750,
+      "error_code": null,
+      "index": 6,
+      "request_id": "req_323ff39d13834c1f",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_fe4jq5aa",
+        "deadline_ms": 826000,
+        "idempotency_key": "basket_buy_2",
+        "min_amount_out_raw": "35659610063444",
+        "pool_id": "pool_6ab9x3kz",
+        "quote_id": "q_000002"
+      },
+      "clock_after_ms": 226250,
+      "clock_before_ms": 226000,
+      "error_code": null,
+      "index": 7,
+      "request_id": "req_0b25d09e05a84892",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_7cchxmax"
+      },
+      "clock_after_ms": 226500,
+      "clock_before_ms": 226250,
+      "error_code": null,
+      "index": 8,
+      "request_id": "req_6698979ca7e045e4",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_nf7w3d3c",
+        "deadline_ms": 826500,
+        "idempotency_key": "basket_buy_3",
+        "min_amount_out_raw": "176309233497813010",
+        "pool_id": "pool_7cchxmax",
+        "quote_id": "q_000003"
+      },
+      "clock_after_ms": 226750,
+      "clock_before_ms": 226500,
+      "error_code": null,
+      "index": 9,
+      "request_id": "req_6e2c551eec37449a",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_a6v5gsja"
+      },
+      "clock_after_ms": 227000,
+      "clock_before_ms": 226750,
+      "error_code": null,
+      "index": 10,
+      "request_id": "req_fcb83ae2bc084a0b",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_gb7erf9k",
+        "deadline_ms": 827000,
+        "idempotency_key": "basket_buy_4",
+        "min_amount_out_raw": "181058669357647787",
+        "pool_id": "pool_a6v5gsja",
+        "quote_id": "q_000004"
+      },
+      "clock_after_ms": 227250,
+      "clock_before_ms": 227000,
+      "error_code": null,
+      "index": 11,
+      "request_id": "req_622a61fe62e1494f",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_pqnwyzz6"
+      },
+      "clock_after_ms": 227500,
+      "clock_before_ms": 227250,
+      "error_code": null,
+      "index": 12,
+      "request_id": "req_e08b944d00964485",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_bq7b7q2n",
+        "deadline_ms": 827500,
+        "idempotency_key": "basket_buy_5",
+        "min_amount_out_raw": "175104",
+        "pool_id": "pool_pqnwyzz6",
+        "quote_id": "q_000005"
+      },
+      "clock_after_ms": 227750,
+      "clock_before_ms": 227500,
+      "error_code": null,
+      "index": 13,
+      "request_id": "req_c3931c205dfa4bce",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_q6c7ghkc"
+      },
+      "clock_after_ms": 228000,
+      "clock_before_ms": 227750,
+      "error_code": null,
+      "index": 14,
+      "request_id": "req_3dcf3be93b2b4ed6",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_k6w6ys3w",
+        "deadline_ms": 828000,
+        "idempotency_key": "basket_buy_6",
+        "min_amount_out_raw": "356755210775963454",
+        "pool_id": "pool_q6c7ghkc",
+        "quote_id": "q_000006"
+      },
+      "clock_after_ms": 228250,
+      "clock_before_ms": 228000,
+      "error_code": null,
+      "index": 15,
+      "request_id": "req_482aaa4b423444d8",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_q9brtzns"
+      },
+      "clock_after_ms": 228500,
+      "clock_before_ms": 228250,
+      "error_code": null,
+      "index": 16,
+      "request_id": "req_cd2ed97e506e404f",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_djq5hxxk",
+        "deadline_ms": 828500,
+        "idempotency_key": "basket_buy_7",
+        "min_amount_out_raw": "216166173457111039",
+        "pool_id": "pool_q9brtzns",
+        "quote_id": "q_000007"
+      },
+      "clock_after_ms": 228750,
+      "clock_before_ms": 228500,
+      "error_code": null,
+      "index": 17,
+      "request_id": "req_a05d109ada8040dc",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_wdmduxhh"
+      },
+      "clock_after_ms": 229000,
+      "clock_before_ms": 228750,
+      "error_code": null,
+      "index": 18,
+      "request_id": "req_252e8a88407f40fa",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_w84ckb7e",
+        "deadline_ms": 829000,
+        "idempotency_key": "basket_buy_8",
+        "min_amount_out_raw": "4463187812750",
+        "pool_id": "pool_wdmduxhh",
+        "quote_id": "q_000008"
+      },
+      "clock_after_ms": 229250,
+      "clock_before_ms": 229000,
+      "error_code": null,
+      "index": 19,
+      "request_id": "req_2fb22a730f3246fb",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "max_ms": 900000,
+        "next_event": true
+      },
+      "clock_after_ms": 230000,
+      "clock_before_ms": 229250,
+      "error_code": null,
+      "index": 20,
+      "request_id": "req_6f56ee140cd14fda",
+      "status": "ok",
+      "tool": "clock.advance"
+    },
+    {
+      "arguments": {
+        "to_ms": 450000
+      },
+      "clock_after_ms": 450000,
+      "clock_before_ms": 230000,
+      "error_code": null,
+      "index": 21,
+      "request_id": "req_a4294c410b2c4b2a",
+      "status": "ok",
+      "tool": "clock.advance"
+    },
+    {
+      "arguments": {
+        "filters": {
+          "execution_supported_only": true
+        },
+        "limit": 200
+      },
+      "clock_after_ms": 450250,
+      "clock_before_ms": 450000,
+      "error_code": null,
+      "index": 22,
+      "request_id": "req_fd6f988dde7b420c",
+      "status": "ok",
+      "tool": "markets.list"
+    },
+    {
+      "arguments": {},
+      "clock_after_ms": 450250,
+      "clock_before_ms": 450250,
+      "error_code": null,
+      "index": 23,
+      "request_id": "req_d3866c91dfd14018",
+      "status": "ok",
+      "tool": "portfolio.get"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_2yhm84y8"
+      },
+      "clock_after_ms": 450500,
+      "clock_before_ms": 450250,
+      "error_code": null,
+      "index": 24,
+      "request_id": "req_329657d188f24ce2",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_mvdfvbfw",
+        "deadline_ms": 1050500,
+        "idempotency_key": "basket_buy_9",
+        "min_amount_out_raw": "343275111895648610",
+        "pool_id": "pool_2yhm84y8",
+        "quote_id": "q_000009"
+      },
+      "clock_after_ms": 450750,
+      "clock_before_ms": 450500,
+      "error_code": null,
+      "index": 25,
+      "request_id": "req_89a064b4ad1146b7",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_6ab9x3kz"
+      },
+      "clock_after_ms": 451000,
+      "clock_before_ms": 450750,
+      "error_code": null,
+      "index": 26,
+      "request_id": "req_a890142114424cfa",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_fe4jq5aa",
+        "deadline_ms": 1051000,
+        "idempotency_key": "basket_buy_10",
+        "min_amount_out_raw": "35659610036438",
+        "pool_id": "pool_6ab9x3kz",
+        "quote_id": "q_000010"
+      },
+      "clock_after_ms": 451250,
+      "clock_before_ms": 451000,
+      "error_code": null,
+      "index": 27,
+      "request_id": "req_735ec26b4bbf4d9c",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_7cchxmax"
+      },
+      "clock_after_ms": 451500,
+      "clock_before_ms": 451250,
+      "error_code": null,
+      "index": 28,
+      "request_id": "req_347a41c13ce44515",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_nf7w3d3c",
+        "deadline_ms": 1051500,
+        "idempotency_key": "basket_buy_11",
+        "min_amount_out_raw": "176309232348110645",
+        "pool_id": "pool_7cchxmax",
+        "quote_id": "q_000011"
+      },
+      "clock_after_ms": 451750,
+      "clock_before_ms": 451500,
+      "error_code": null,
+      "index": 29,
+      "request_id": "req_34dfa7d7bc93482a",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_a6v5gsja"
+      },
+      "clock_after_ms": 452000,
+      "clock_before_ms": 451750,
+      "error_code": null,
+      "index": 30,
+      "request_id": "req_32a7af99ed994421",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_gb7erf9k",
+        "deadline_ms": 1052000,
+        "idempotency_key": "basket_buy_12",
+        "min_amount_out_raw": "181058668490339112",
+        "pool_id": "pool_a6v5gsja",
+        "quote_id": "q_000012"
+      },
+      "clock_after_ms": 452250,
+      "clock_before_ms": 452000,
+      "error_code": null,
+      "index": 31,
+      "request_id": "req_e3799fe2b8fd461e",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_pqnwyzz6"
+      },
+      "clock_after_ms": 452500,
+      "clock_before_ms": 452250,
+      "error_code": null,
+      "index": 32,
+      "request_id": "req_4d55ad66b53d4809",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_bq7b7q2n",
+        "deadline_ms": 1052500,
+        "idempotency_key": "basket_buy_13",
+        "min_amount_out_raw": "173006",
+        "pool_id": "pool_pqnwyzz6",
+        "quote_id": "q_000013"
+      },
+      "clock_after_ms": 452750,
+      "clock_before_ms": 452500,
+      "error_code": null,
+      "index": 33,
+      "request_id": "req_41b97f55cbe746e6",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_q6c7ghkc"
+      },
+      "clock_after_ms": 453000,
+      "clock_before_ms": 452750,
+      "error_code": null,
+      "index": 34,
+      "request_id": "req_a03ce758f6dc474b",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_k6w6ys3w",
+        "deadline_ms": 1053000,
+        "idempotency_key": "basket_buy_14",
+        "min_amount_out_raw": "356755210505668767",
+        "pool_id": "pool_q6c7ghkc",
+        "quote_id": "q_000014"
+      },
+      "clock_after_ms": 453250,
+      "clock_before_ms": 453000,
+      "error_code": null,
+      "index": 35,
+      "request_id": "req_6b8b56f8eaa84f42",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_q9brtzns"
+      },
+      "clock_after_ms": 453500,
+      "clock_before_ms": 453250,
+      "error_code": null,
+      "index": 36,
+      "request_id": "req_bd30d3c41ed446ee",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_djq5hxxk",
+        "deadline_ms": 1053500,
+        "idempotency_key": "basket_buy_15",
+        "min_amount_out_raw": "216166172433185486",
+        "pool_id": "pool_q9brtzns",
+        "quote_id": "q_000015"
+      },
+      "clock_after_ms": 453750,
+      "clock_before_ms": 453500,
+      "error_code": null,
+      "index": 37,
+      "request_id": "req_9d8f776168fd4c05",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_wdmduxhh"
+      },
+      "clock_after_ms": 454000,
+      "clock_before_ms": 453750,
+      "error_code": null,
+      "index": 38,
+      "request_id": "req_f4bcc293cfce4f3b",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_w84ckb7e",
+        "deadline_ms": 1054000,
+        "idempotency_key": "basket_buy_16",
+        "min_amount_out_raw": "4463187812643",
+        "pool_id": "pool_wdmduxhh",
+        "quote_id": "q_000016"
+      },
+      "clock_after_ms": 454250,
+      "clock_before_ms": 454000,
+      "error_code": null,
+      "index": 39,
+      "request_id": "req_af1c4bb0e0944a76",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "max_ms": 900000,
+        "next_event": true
+      },
+      "clock_after_ms": 456000,
+      "clock_before_ms": 454250,
+      "error_code": null,
+      "index": 40,
+      "request_id": "req_a7d84e3add764334",
+      "status": "ok",
+      "tool": "clock.advance"
+    },
+    {
+      "arguments": {
+        "to_ms": 675000
+      },
+      "clock_after_ms": 675000,
+      "clock_before_ms": 456000,
+      "error_code": null,
+      "index": 41,
+      "request_id": "req_e66c4d8c405e4f37",
+      "status": "ok",
+      "tool": "clock.advance"
+    },
+    {
+      "arguments": {
+        "filters": {
+          "execution_supported_only": true
+        },
+        "limit": 200
+      },
+      "clock_after_ms": 675250,
+      "clock_before_ms": 675000,
+      "error_code": null,
+      "index": 42,
+      "request_id": "req_773f9619d3c64d6b",
+      "status": "ok",
+      "tool": "markets.list"
+    },
+    {
+      "arguments": {},
+      "clock_after_ms": 675250,
+      "clock_before_ms": 675250,
+      "error_code": null,
+      "index": 43,
+      "request_id": "req_eb04177dd5da4415",
+      "status": "ok",
+      "tool": "portfolio.get"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_2yhm84y8"
+      },
+      "clock_after_ms": 675500,
+      "clock_before_ms": 675250,
+      "error_code": null,
+      "index": 44,
+      "request_id": "req_9925d126785449ca",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_mvdfvbfw",
+        "deadline_ms": 1275500,
+        "idempotency_key": "basket_buy_17",
+        "min_amount_out_raw": "343275108214050688",
+        "pool_id": "pool_2yhm84y8",
+        "quote_id": "q_000017"
+      },
+      "clock_after_ms": 675750,
+      "clock_before_ms": 675500,
+      "error_code": null,
+      "index": 45,
+      "request_id": "req_509718320cdc40ef",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_6ab9x3kz"
+      },
+      "clock_after_ms": 676000,
+      "clock_before_ms": 675750,
+      "error_code": null,
+      "index": 46,
+      "request_id": "req_d136528fe5444295",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_fe4jq5aa",
+        "deadline_ms": 1276000,
+        "idempotency_key": "basket_buy_18",
+        "min_amount_out_raw": "35659610009433",
+        "pool_id": "pool_6ab9x3kz",
+        "quote_id": "q_000018"
+      },
+      "clock_after_ms": 676250,
+      "clock_before_ms": 676000,
+      "error_code": null,
+      "index": 47,
+      "request_id": "req_e33b0f0bf26746f5",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_7cchxmax"
+      },
+      "clock_after_ms": 676500,
+      "clock_before_ms": 676250,
+      "error_code": null,
+      "index": 48,
+      "request_id": "req_48fedd4632b94dae",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_nf7w3d3c",
+        "deadline_ms": 1276500,
+        "idempotency_key": "basket_buy_19",
+        "min_amount_out_raw": "176309231198408291",
+        "pool_id": "pool_7cchxmax",
+        "quote_id": "q_000019"
+      },
+      "clock_after_ms": 676750,
+      "clock_before_ms": 676500,
+      "error_code": null,
+      "index": 49,
+      "request_id": "req_20c7ff9d95aa46fb",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_a6v5gsja"
+      },
+      "clock_after_ms": 677000,
+      "clock_before_ms": 676750,
+      "error_code": null,
+      "index": 50,
+      "request_id": "req_42211b5b47da49dd",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_gb7erf9k",
+        "deadline_ms": 1277000,
+        "idempotency_key": "basket_buy_20",
+        "min_amount_out_raw": "181058667623030442",
+        "pool_id": "pool_a6v5gsja",
+        "quote_id": "q_000020"
+      },
+      "clock_after_ms": 677250,
+      "clock_before_ms": 677000,
+      "error_code": null,
+      "index": 51,
+      "request_id": "req_b3b66df2e5ea48e6",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_pqnwyzz6"
+      },
+      "clock_after_ms": 677500,
+      "clock_before_ms": 677250,
+      "error_code": null,
+      "index": 52,
+      "request_id": "req_fee5579ecc0d4558",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_bq7b7q2n",
+        "deadline_ms": 1277500,
+        "idempotency_key": "basket_buy_21",
+        "min_amount_out_raw": "173006",
+        "pool_id": "pool_pqnwyzz6",
+        "quote_id": "q_000021"
+      },
+      "clock_after_ms": 677750,
+      "clock_before_ms": 677500,
+      "error_code": null,
+      "index": 53,
+      "request_id": "req_e6d160493f904a24",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_q6c7ghkc"
+      },
+      "clock_after_ms": 678000,
+      "clock_before_ms": 677750,
+      "error_code": null,
+      "index": 54,
+      "request_id": "req_67dc4ba4cfd84db0",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_k6w6ys3w",
+        "deadline_ms": 1278000,
+        "idempotency_key": "basket_buy_22",
+        "min_amount_out_raw": "356755210235374081",
+        "pool_id": "pool_q6c7ghkc",
+        "quote_id": "q_000022"
+      },
+      "clock_after_ms": 678250,
+      "clock_before_ms": 678000,
+      "error_code": null,
+      "index": 55,
+      "request_id": "req_c879b69a42f14af4",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_q9brtzns"
+      },
+      "clock_after_ms": 678500,
+      "clock_before_ms": 678250,
+      "error_code": null,
+      "index": 56,
+      "request_id": "req_692b596a86474a31",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_djq5hxxk",
+        "deadline_ms": 1278500,
+        "idempotency_key": "basket_buy_23",
+        "min_amount_out_raw": "216166171409259939",
+        "pool_id": "pool_q9brtzns",
+        "quote_id": "q_000023"
+      },
+      "clock_after_ms": 678750,
+      "clock_before_ms": 678500,
+      "error_code": null,
+      "index": 57,
+      "request_id": "req_52b9b36a82d84782",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_wdmduxhh"
+      },
+      "clock_after_ms": 679000,
+      "clock_before_ms": 678750,
+      "error_code": null,
+      "index": 58,
+      "request_id": "req_9e4d4907a9ef4b48",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_w84ckb7e",
+        "deadline_ms": 1279000,
+        "idempotency_key": "basket_buy_24",
+        "min_amount_out_raw": "4463187812536",
+        "pool_id": "pool_wdmduxhh",
+        "quote_id": "q_000024"
+      },
+      "clock_after_ms": 679250,
+      "clock_before_ms": 679000,
+      "error_code": null,
+      "index": 59,
+      "request_id": "req_2c67d28590d74880",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "max_ms": 900000,
+        "next_event": true
+      },
+      "clock_after_ms": 680000,
+      "clock_before_ms": 679250,
+      "error_code": null,
+      "index": 60,
+      "request_id": "req_bfe5b028bcb04f80",
+      "status": "ok",
+      "tool": "clock.advance"
+    },
+    {
+      "arguments": {
+        "to_ms": 900000
+      },
+      "clock_after_ms": 900000,
+      "clock_before_ms": 680000,
+      "error_code": null,
+      "index": 61,
+      "request_id": "req_d74707f8dc2f4498",
+      "status": "ok",
+      "tool": "clock.advance"
+    },
+    {
+      "arguments": {
+        "filters": {
+          "execution_supported_only": true
+        },
+        "limit": 200
+      },
+      "clock_after_ms": 900250,
+      "clock_before_ms": 900000,
+      "error_code": null,
+      "index": 62,
+      "request_id": "req_60bc37e391bc4294",
+      "status": "ok",
+      "tool": "markets.list"
+    },
+    {
+      "arguments": {},
+      "clock_after_ms": 900250,
+      "clock_before_ms": 900250,
+      "error_code": null,
+      "index": 63,
+      "request_id": "req_e3cfcbc0c5df42ab",
+      "status": "ok",
+      "tool": "portfolio.get"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_2yhm84y8"
+      },
+      "clock_after_ms": 900500,
+      "clock_before_ms": 900250,
+      "error_code": null,
+      "index": 64,
+      "request_id": "req_8bbcd745ade44c22",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_mvdfvbfw",
+        "deadline_ms": 1500500,
+        "idempotency_key": "basket_buy_25",
+        "min_amount_out_raw": "343275104532452825",
+        "pool_id": "pool_2yhm84y8",
+        "quote_id": "q_000025"
+      },
+      "clock_after_ms": 900750,
+      "clock_before_ms": 900500,
+      "error_code": null,
+      "index": 65,
+      "request_id": "req_6b4f1e84c26b4494",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_6ab9x3kz"
+      },
+      "clock_after_ms": 901000,
+      "clock_before_ms": 900750,
+      "error_code": null,
+      "index": 66,
+      "request_id": "req_c627a989b4924fe0",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_fe4jq5aa",
+        "deadline_ms": 1501000,
+        "idempotency_key": "basket_buy_26",
+        "min_amount_out_raw": "35659609982428",
+        "pool_id": "pool_6ab9x3kz",
+        "quote_id": "q_000026"
+      },
+      "clock_after_ms": 901250,
+      "clock_before_ms": 901000,
+      "error_code": null,
+      "index": 67,
+      "request_id": "req_33f2033413454c94",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_7cchxmax"
+      },
+      "clock_after_ms": 901500,
+      "clock_before_ms": 901250,
+      "error_code": null,
+      "index": 68,
+      "request_id": "req_9dabce36aefe4993",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_nf7w3d3c",
+        "deadline_ms": 1501500,
+        "idempotency_key": "basket_buy_27",
+        "min_amount_out_raw": "176309230048705949",
+        "pool_id": "pool_7cchxmax",
+        "quote_id": "q_000027"
+      },
+      "clock_after_ms": 901750,
+      "clock_before_ms": 901500,
+      "error_code": null,
+      "index": 69,
+      "request_id": "req_ced61fcfad25401d",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_a6v5gsja"
+      },
+      "clock_after_ms": 902000,
+      "clock_before_ms": 901750,
+      "error_code": null,
+      "index": 70,
+      "request_id": "req_4ab91c4d4bdb4cae",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_gb7erf9k",
+        "deadline_ms": 1502000,
+        "idempotency_key": "basket_buy_28",
+        "min_amount_out_raw": "181058666755721779",
+        "pool_id": "pool_a6v5gsja",
+        "quote_id": "q_000028"
+      },
+      "clock_after_ms": 902250,
+      "clock_before_ms": 902000,
+      "error_code": null,
+      "index": 71,
+      "request_id": "req_cfc5c6e34d474db1",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_pqnwyzz6"
+      },
+      "clock_after_ms": 902500,
+      "clock_before_ms": 902250,
+      "error_code": null,
+      "index": 72,
+      "request_id": "req_d5b16ac5787842a7",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_bq7b7q2n",
+        "deadline_ms": 1502500,
+        "idempotency_key": "basket_buy_29",
+        "min_amount_out_raw": "175279",
+        "pool_id": "pool_pqnwyzz6",
+        "quote_id": "q_000029"
+      },
+      "clock_after_ms": 902750,
+      "clock_before_ms": 902500,
+      "error_code": null,
+      "index": 73,
+      "request_id": "req_0e41818c0d694685",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_q6c7ghkc"
+      },
+      "clock_after_ms": 903000,
+      "clock_before_ms": 902750,
+      "error_code": null,
+      "index": 74,
+      "request_id": "req_faabc8fd8236475b",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_k6w6ys3w",
+        "deadline_ms": 1503000,
+        "idempotency_key": "basket_buy_30",
+        "min_amount_out_raw": "356755209965079394",
+        "pool_id": "pool_q6c7ghkc",
+        "quote_id": "q_000030"
+      },
+      "clock_after_ms": 903250,
+      "clock_before_ms": 903000,
+      "error_code": null,
+      "index": 75,
+      "request_id": "req_7bb9ac6c36864226",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_q9brtzns"
+      },
+      "clock_after_ms": 903500,
+      "clock_before_ms": 903250,
+      "error_code": null,
+      "index": 76,
+      "request_id": "req_de0a56b9e24848cd",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_djq5hxxk",
+        "deadline_ms": 1503500,
+        "idempotency_key": "basket_buy_31",
+        "min_amount_out_raw": "216166170385334400",
+        "pool_id": "pool_q9brtzns",
+        "quote_id": "q_000031"
+      },
+      "clock_after_ms": 903750,
+      "clock_before_ms": 903500,
+      "error_code": null,
+      "index": 77,
+      "request_id": "req_9b229d52169d451b",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_wdmduxhh"
+      },
+      "clock_after_ms": 904000,
+      "clock_before_ms": 903750,
+      "error_code": null,
+      "index": 78,
+      "request_id": "req_32788435f1df4fec",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_w84ckb7e",
+        "deadline_ms": 1504000,
+        "idempotency_key": "basket_buy_32",
+        "min_amount_out_raw": "4463187812429",
+        "pool_id": "pool_wdmduxhh",
+        "quote_id": "q_000032"
+      },
+      "clock_after_ms": 904250,
+      "clock_before_ms": 904000,
+      "error_code": null,
+      "index": 79,
+      "request_id": "req_f2dbfd127d834fdf",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "max_ms": 900000,
+        "next_event": true
+      },
+      "clock_after_ms": 906000,
+      "clock_before_ms": 904250,
+      "error_code": null,
+      "index": 80,
+      "request_id": "req_e63d93b06f76422a",
+      "status": "ok",
+      "tool": "clock.advance"
+    },
+    {
+      "arguments": {
+        "to_ms": 1125000
+      },
+      "clock_after_ms": 1125000,
+      "clock_before_ms": 906000,
+      "error_code": null,
+      "index": 81,
+      "request_id": "req_557bd1267e5c46a2",
+      "status": "ok",
+      "tool": "clock.advance"
+    },
+    {
+      "arguments": {
+        "filters": {
+          "execution_supported_only": true
+        },
+        "limit": 200
+      },
+      "clock_after_ms": 1125250,
+      "clock_before_ms": 1125000,
+      "error_code": null,
+      "index": 82,
+      "request_id": "req_6c7cb352fd2f4ac1",
+      "status": "ok",
+      "tool": "markets.list"
+    },
+    {
+      "arguments": {},
+      "clock_after_ms": 1125250,
+      "clock_before_ms": 1125250,
+      "error_code": null,
+      "index": 83,
+      "request_id": "req_9ee94d62ed5a4136",
+      "status": "ok",
+      "tool": "portfolio.get"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_2yhm84y8"
+      },
+      "clock_after_ms": 1125500,
+      "clock_before_ms": 1125250,
+      "error_code": null,
+      "index": 84,
+      "request_id": "req_42563b550eec42e1",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_mvdfvbfw",
+        "deadline_ms": 1725500,
+        "idempotency_key": "basket_buy_33",
+        "min_amount_out_raw": "343275100850855022",
+        "pool_id": "pool_2yhm84y8",
+        "quote_id": "q_000033"
+      },
+      "clock_after_ms": 1125750,
+      "clock_before_ms": 1125500,
+      "error_code": null,
+      "index": 85,
+      "request_id": "req_922d596a88124f93",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_6ab9x3kz"
+      },
+      "clock_after_ms": 1126000,
+      "clock_before_ms": 1125750,
+      "error_code": null,
+      "index": 86,
+      "request_id": "req_45d4ba1d21a7411d",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_fe4jq5aa",
+        "deadline_ms": 1726000,
+        "idempotency_key": "basket_buy_34",
+        "min_amount_out_raw": "35659609955423",
+        "pool_id": "pool_6ab9x3kz",
+        "quote_id": "q_000034"
+      },
+      "clock_after_ms": 1126250,
+      "clock_before_ms": 1126000,
+      "error_code": null,
+      "index": 87,
+      "request_id": "req_42b03b3e81cc4457",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_7cchxmax"
+      },
+      "clock_after_ms": 1126500,
+      "clock_before_ms": 1126250,
+      "error_code": null,
+      "index": 88,
+      "request_id": "req_c2622a93c1e14cdb",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_nf7w3d3c",
+        "deadline_ms": 1726500,
+        "idempotency_key": "basket_buy_35",
+        "min_amount_out_raw": "176309228899003618",
+        "pool_id": "pool_7cchxmax",
+        "quote_id": "q_000035"
+      },
+      "clock_after_ms": 1126750,
+      "clock_before_ms": 1126500,
+      "error_code": null,
+      "index": 89,
+      "request_id": "req_a64062e98ab6414a",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_a6v5gsja"
+      },
+      "clock_after_ms": 1127000,
+      "clock_before_ms": 1126750,
+      "error_code": null,
+      "index": 90,
+      "request_id": "req_62e6ab32d6a743f2",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_gb7erf9k",
+        "deadline_ms": 1727000,
+        "idempotency_key": "basket_buy_36",
+        "min_amount_out_raw": "181058665888413123",
+        "pool_id": "pool_a6v5gsja",
+        "quote_id": "q_000036"
+      },
+      "clock_after_ms": 1127250,
+      "clock_before_ms": 1127000,
+      "error_code": null,
+      "index": 91,
+      "request_id": "req_a403b0490f90476d",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_pqnwyzz6"
+      },
+      "clock_after_ms": 1127500,
+      "clock_before_ms": 1127250,
+      "error_code": null,
+      "index": 92,
+      "request_id": "req_ddaf12e31136469f",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_bq7b7q2n",
+        "deadline_ms": 1727500,
+        "idempotency_key": "basket_buy_37",
+        "min_amount_out_raw": "175279",
+        "pool_id": "pool_pqnwyzz6",
+        "quote_id": "q_000037"
+      },
+      "clock_after_ms": 1127750,
+      "clock_before_ms": 1127500,
+      "error_code": null,
+      "index": 93,
+      "request_id": "req_71fbd37537f346ce",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_q6c7ghkc"
+      },
+      "clock_after_ms": 1128000,
+      "clock_before_ms": 1127750,
+      "error_code": null,
+      "index": 94,
+      "request_id": "req_a5bf0a1c758f4ae3",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_k6w6ys3w",
+        "deadline_ms": 1728000,
+        "idempotency_key": "basket_buy_38",
+        "min_amount_out_raw": "356755209694784707",
+        "pool_id": "pool_q6c7ghkc",
+        "quote_id": "q_000038"
+      },
+      "clock_after_ms": 1128250,
+      "clock_before_ms": 1128000,
+      "error_code": null,
+      "index": 95,
+      "request_id": "req_ca45a84f9a0f4b59",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_q9brtzns"
+      },
+      "clock_after_ms": 1128500,
+      "clock_before_ms": 1128250,
+      "error_code": null,
+      "index": 96,
+      "request_id": "req_ea49e57fb0a54718",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_djq5hxxk",
+        "deadline_ms": 1728500,
+        "idempotency_key": "basket_buy_39",
+        "min_amount_out_raw": "216166169361408869",
+        "pool_id": "pool_q9brtzns",
+        "quote_id": "q_000039"
+      },
+      "clock_after_ms": 1128750,
+      "clock_before_ms": 1128500,
+      "error_code": null,
+      "index": 97,
+      "request_id": "req_2f7223e41e8f4cbd",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "pool_id": "pool_wdmduxhh"
+      },
+      "clock_after_ms": 1129000,
+      "clock_before_ms": 1128750,
+      "error_code": null,
+      "index": 98,
+      "request_id": "req_198859a23ccb449b",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "10000",
+        "asset_in": "NATIVE",
+        "asset_out": "asset_w84ckb7e",
+        "deadline_ms": 1729000,
+        "idempotency_key": "basket_buy_40",
+        "min_amount_out_raw": "4463187812323",
+        "pool_id": "pool_wdmduxhh",
+        "quote_id": "q_000040"
+      },
+      "clock_after_ms": 1129250,
+      "clock_before_ms": 1129000,
+      "error_code": null,
+      "index": 99,
+      "request_id": "req_df3112ce7d7c4d11",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "max_ms": 900000,
+        "next_event": true
+      },
+      "clock_after_ms": 1130000,
+      "clock_before_ms": 1129250,
+      "error_code": null,
+      "index": 100,
+      "request_id": "req_08cfdccd14034985",
+      "status": "ok",
+      "tool": "clock.advance"
+    },
+    {
+      "arguments": {
+        "to_ms": 1620000
+      },
+      "clock_after_ms": 1620000,
+      "clock_before_ms": 1130000,
+      "error_code": null,
+      "index": 101,
+      "request_id": "req_f830b35466a74a4f",
+      "status": "ok",
+      "tool": "clock.advance"
+    },
+    {
+      "arguments": {},
+      "clock_after_ms": 1620000,
+      "clock_before_ms": 1620000,
+      "error_code": null,
+      "index": 102,
+      "request_id": "req_89c297bd80c84cc5",
+      "status": "ok",
+      "tool": "portfolio.get"
+    },
+    {
+      "arguments": {
+        "filters": {
+          "execution_supported_only": true
+        },
+        "limit": 200
+      },
+      "clock_after_ms": 1620250,
+      "clock_before_ms": 1620000,
+      "error_code": null,
+      "index": 103,
+      "request_id": "req_c085677cc77a4631",
+      "status": "ok",
+      "tool": "markets.list"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "880481",
+        "asset_in": "asset_bq7b7q2n",
+        "pool_id": "pool_pqnwyzz6"
+      },
+      "clock_after_ms": 1620500,
+      "clock_before_ms": 1620250,
+      "error_code": null,
+      "index": 104,
+      "request_id": "req_d1a447db32764499",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "880481",
+        "asset_in": "asset_bq7b7q2n",
+        "asset_out": "NATIVE",
+        "deadline_ms": 2220500,
+        "idempotency_key": "basket_sell_41",
+        "min_amount_out_raw": "50410",
+        "pool_id": "pool_pqnwyzz6",
+        "quote_id": "q_000041"
+      },
+      "clock_after_ms": 1620750,
+      "clock_before_ms": 1620500,
+      "error_code": null,
+      "index": 105,
+      "request_id": "req_8ac08aa482af4fec",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "1091748340450807814",
+        "asset_in": "asset_djq5hxxk",
+        "pool_id": "pool_q9brtzns"
+      },
+      "clock_after_ms": 1621000,
+      "clock_before_ms": 1620750,
+      "error_code": null,
+      "index": 106,
+      "request_id": "req_634cfdfb29404f13",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "1091748340450807814",
+        "asset_in": "asset_djq5hxxk",
+        "asset_out": "NATIVE",
+        "deadline_ms": 2221000,
+        "idempotency_key": "basket_sell_42",
+        "min_amount_out_raw": "49203",
+        "pool_id": "pool_q9brtzns",
+        "quote_id": "q_000042"
+      },
+      "clock_after_ms": 1621250,
+      "clock_before_ms": 1621000,
+      "error_code": null,
+      "index": 107,
+      "request_id": "req_ad1bce5731ba46c3",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "1801793991087747885",
+        "asset_in": "asset_k6w6ys3w",
+        "pool_id": "pool_q6c7ghkc"
+      },
+      "clock_after_ms": 1621500,
+      "clock_before_ms": 1621250,
+      "error_code": null,
+      "index": 108,
+      "request_id": "req_c871b329aa894c4f",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "1801793991087747885",
+        "asset_in": "asset_k6w6ys3w",
+        "asset_out": "NATIVE",
+        "deadline_ms": 2221500,
+        "idempotency_key": "basket_sell_43",
+        "min_amount_out_raw": "49203",
+        "pool_id": "pool_q6c7ghkc",
+        "quote_id": "q_000043"
+      },
+      "clock_after_ms": 1621750,
+      "clock_before_ms": 1621500,
+      "error_code": null,
+      "index": 109,
+      "request_id": "req_87414e17df044f41",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "914437715267830551",
+        "asset_in": "asset_gb7erf9k",
+        "pool_id": "pool_a6v5gsja"
+      },
+      "clock_after_ms": 1622000,
+      "clock_before_ms": 1621750,
+      "error_code": null,
+      "index": 110,
+      "request_id": "req_e6036a10423c4ce0",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "914437715267830551",
+        "asset_in": "asset_gb7erf9k",
+        "asset_out": "NATIVE",
+        "deadline_ms": 2222000,
+        "idempotency_key": "basket_sell_44",
+        "min_amount_out_raw": "49203",
+        "pool_id": "pool_a6v5gsja",
+        "quote_id": "q_000044"
+      },
+      "clock_after_ms": 1622250,
+      "clock_before_ms": 1622000,
+      "error_code": null,
+      "index": 111,
+      "request_id": "req_2b259ec32a7043a5",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "1733712667747731050",
+        "asset_in": "asset_mvdfvbfw",
+        "pool_id": "pool_2yhm84y8"
+      },
+      "clock_after_ms": 1622500,
+      "clock_before_ms": 1622250,
+      "error_code": null,
+      "index": 112,
+      "request_id": "req_955a67a90e7b4285",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "1733712667747731050",
+        "asset_in": "asset_mvdfvbfw",
+        "asset_out": "NATIVE",
+        "deadline_ms": 2222500,
+        "idempotency_key": "basket_sell_45",
+        "min_amount_out_raw": "49203",
+        "pool_id": "pool_2yhm84y8",
+        "quote_id": "q_000045"
+      },
+      "clock_after_ms": 1622750,
+      "clock_before_ms": 1622500,
+      "error_code": null,
+      "index": 113,
+      "request_id": "req_b174bffff18842e7",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "22541352588570",
+        "asset_in": "asset_w84ckb7e",
+        "pool_id": "pool_wdmduxhh"
+      },
+      "clock_after_ms": 1623000,
+      "clock_before_ms": 1622750,
+      "error_code": null,
+      "index": 114,
+      "request_id": "req_2359e9e5d6314388",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "22541352588570",
+        "asset_in": "asset_w84ckb7e",
+        "asset_out": "NATIVE",
+        "deadline_ms": 2223000,
+        "idempotency_key": "basket_sell_46",
+        "min_amount_out_raw": "49203",
+        "pool_id": "pool_wdmduxhh",
+        "quote_id": "q_000046"
+      },
+      "clock_after_ms": 1623250,
+      "clock_before_ms": 1623000,
+      "error_code": null,
+      "index": 115,
+      "request_id": "req_fa98ee6f1ffd401c",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "890450662618223753",
+        "asset_in": "asset_nf7w3d3c",
+        "pool_id": "pool_7cchxmax"
+      },
+      "clock_after_ms": 1623500,
+      "clock_before_ms": 1623250,
+      "error_code": null,
+      "index": 116,
+      "request_id": "req_0867866a57d1419e",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "890450662618223753",
+        "asset_in": "asset_nf7w3d3c",
+        "asset_out": "NATIVE",
+        "deadline_ms": 2223500,
+        "idempotency_key": "basket_sell_47",
+        "min_amount_out_raw": "49203",
+        "pool_id": "pool_7cchxmax",
+        "quote_id": "q_000047"
+      },
+      "clock_after_ms": 1623750,
+      "clock_before_ms": 1623500,
+      "error_code": null,
+      "index": 117,
+      "request_id": "req_631a2a78150d4333",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "180099040451685",
+        "asset_in": "asset_fe4jq5aa",
+        "pool_id": "pool_6ab9x3kz"
+      },
+      "clock_after_ms": 1624000,
+      "clock_before_ms": 1623750,
+      "error_code": null,
+      "index": 118,
+      "request_id": "req_fc975f8820054b78",
+      "status": "ok",
+      "tool": "broker.quote"
+    },
+    {
+      "arguments": {
+        "amount_in_raw": "180099040451685",
+        "asset_in": "asset_fe4jq5aa",
+        "asset_out": "NATIVE",
+        "deadline_ms": 2224000,
+        "idempotency_key": "basket_sell_48",
+        "min_amount_out_raw": "49203",
+        "pool_id": "pool_6ab9x3kz",
+        "quote_id": "q_000048"
+      },
+      "clock_after_ms": 1624250,
+      "clock_before_ms": 1624000,
+      "error_code": null,
+      "index": 119,
+      "request_id": "req_ad16e998f49148e3",
+      "status": "ok",
+      "tool": "broker.submit"
+    },
+    {
+      "arguments": {
+        "max_ms": 900000,
+        "next_event": true
+      },
+      "clock_after_ms": 1626000,
+      "clock_before_ms": 1624250,
+      "error_code": null,
+      "index": 120,
+      "request_id": "req_e0028b83cd5341dd",
+      "status": "ok",
+      "tool": "clock.advance"
+    },
+    {
+      "arguments": {
+        "to_ms": 1800000
+      },
+      "clock_after_ms": 1800000,
+      "clock_before_ms": 1626000,
+      "error_code": null,
+      "index": 121,
+      "request_id": "req_fa701e8cbae14612",
+      "status": "ok",
+      "tool": "clock.advance"
+    },
+    {
+      "arguments": {},
+      "clock_after_ms": 1800000,
+      "clock_before_ms": 1800000,
+      "error_code": null,
+      "index": 122,
+      "request_id": "req_664c5b163d324487",
+      "status": "ok",
+      "tool": "session.finish"
+    }
+  ]
+}

@@ -13,11 +13,13 @@ prehistory_hours: 1
 #   earliest_created_wrapped_native_pairs_v1      (pure creation order)
 #   active_before_window_earliest_created_v1       (at least one swap strictly before the window, then creation order)
 selection_rule: active_before_window_earliest_created_v1
+# Activity must be observed within this many blocks before the prehistory start (0 = whole discovery range).
+activity_lookback_blocks: 5400
 max_pairs: 8
 # Hard request budget for this collection (the collector stops and stays resumable when exhausted).
 max_requests: 500
 log_chunk_blocks: 2000
 initial_state_lookback_blocks: 20000
 availability_delay_ms: 4000
-out_dir: packs/historical/base_v2_active_slice_2026-09-15T12
+out_dir: packs/historical/base_v2_recent_active_slice_2026-09-15T12
 authorization_note: "Operator-authorized read-only collection from the official public Base RPC (mainnet.base.org) with a fixed request budget; public chain data; redistribution not cleared."
