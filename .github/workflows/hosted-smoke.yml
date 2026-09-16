@@ -17,11 +17,12 @@ jobs:
   smoke:
     if: github.event_name == 'workflow_dispatch' || github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
+    env:
+      BASE: ${{ inputs.base_url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+      ADMIN_TOKEN: ${{ secrets.MARKET_REPLAY_ADMIN_TOKEN }}
     steps:
       - name: Probe
-        env:
-          BASE: ${{ inputs.base_url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
         run: |
           set -u
           echo "Deployment: ${{ github.event.deployment.environment || 'manual' }} -> $BASE"
@@ -48,3 +49,26 @@ jobs:
           probe "ui: client route"        GET  /agents                 200
           probe "ui: missing asset"       GET  /assets/nope.js         404
           exit $fail
+
+      # Optional, credentialed stage: add the deployment's admin token as the repository secret
+      # MARKET_REPLAY_ADMIN_TOKEN and this step runs one complete reference-participant run on
+      # the 2-hour fixture (in-process, durable store), then reads its report and the usage caps.
+      - name: Full run (only when MARKET_REPLAY_ADMIN_TOKEN secret is set)
+        if: ${{ env.ADMIN_TOKEN != '' }}
+        run: |
+          set -eu
+          auth=(-H "Authorization: Bearer $ADMIN_TOKEN" -H 'content-type: application/json')
+          agent=$(curl -sS -m 60 "${auth[@]}" -X POST "$BASE/api/v1/agents" -d '{"name":"smoke_random_actions","version":"1","runtime":"python"}')
+          aid=$(echo "$agent" | jq -r '.agent_id // empty')
+          if [ -z "$aid" ]; then
+            aid=$(curl -sS -m 60 "${auth[@]}" "$BASE/api/v1/agents" | jq -r '.items[] | select(.name=="smoke_random_actions") | .agent_id' | head -1)
+          fi
+          echo "agent: $aid"
+          run=$(curl -sS -m 280 "${auth[@]}" -X POST "$BASE/api/v1/runs" -d "{\"agent_id\":\"$aid\",\"pack_id\":\"gen_dev_short\",\"agent_seed\":\"1\",\"launch\":{\"name\":\"random_actions\",\"runtime\":\"python\"}}")
+          echo "$run" | jq '{run_id, state, error}'
+          rid=$(echo "$run" | jq -r .run_id)
+          state=$(echo "$run" | jq -r .state)
+          [ "$state" = "completed" ] || { echo "run did not complete: $state"; exit 1; }
+          curl -sS -m 60 "${auth[@]}" "$BASE/api/v1/runs/$rid/report" | jq 'keys'
+
+          curl -sS -m 60 "${auth[@]}" "$BASE/api/v1/usage" | jq .
