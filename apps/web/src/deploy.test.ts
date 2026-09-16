@@ -22,7 +22,7 @@ describe.each([["apps/web/vercel.json", new URL("../vercel.json", import.meta.ur
     }
   });
   it("never rewrites API, agent-plane or asset paths", () => {
-    for (const p of ["/api/v1/health", "/agent/v1/commands", "/assets/index-abc.js", "/skill.md", "/skill/market_replay_agent.py"]) {
+    for (const p of ["/api/v1/health", "/agent/v1/commands", "/assets/index-abc.js", "/skill.md", "/skill/market_replay_agent.py", "/join"]) {
       expect(rewrites.some((r) => matches(r.source, p)), p).toBe(false);
     }
   });

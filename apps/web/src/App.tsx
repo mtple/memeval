@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { ApiError, get, getServerUrl, setServerUrl, setToken } from "./api";
+import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { ApiError, get, getServerUrl, setMyAgent, setServerUrl, setToken } from "./api";
 import { RoleProvider, useRole } from "./role";
 import { Badge } from "./ui";
 import Home from "./pages/Home";
+import ResultsFeed from "./pages/ResultsFeed";
 import NewRun from "./pages/NewRun";
 import Episodes from "./pages/Episodes";
 import Agents from "./pages/Agents";
@@ -14,7 +15,8 @@ import Compare from "./pages/Compare";
 import DataHealth from "./pages/DataHealth";
 
 const NAV: [string, string][] = [
-  ["/", "Results"],
+  ["/", "Leaderboard"],
+  ["/results", "Results"],
   ["/episodes", "Episodes"],
   ["/agents", "Agents"],
   ["/compare", "Compare"],
@@ -31,7 +33,13 @@ function useQueryParams(onChange: () => void) {
     const p = new URLSearchParams(loc.search);
     const t = p.get("token");
     const srv = p.get("server");
+    const mine = p.get("agent");
     let changed = false;
+    if (mine) {
+      setMyAgent(mine);
+      p.delete("agent");
+      changed = true;
+    }
     if (srv !== null) {
       setServerUrl(srv);
       p.delete("server");
@@ -196,7 +204,7 @@ function Shell({ conn, recheck }: { conn: Conn; recheck: () => void }) {
           <Route path="/runs" element={<Runs />} />
           <Route path="/runs/:id" element={<RunDetail />} />
           <Route path="/runs/:id/results" element={<Results />} />
-          <Route path="/results" element={<Navigate to="/" replace />} />
+          <Route path="/results" element={<ResultsFeed />} />
           <Route path="/compare" element={<Compare />} />
           <Route path="/compare/:id" element={<Compare />} />
           <Route path="/data-health" element={<DataHealth />} />
@@ -207,7 +215,7 @@ function Shell({ conn, recheck }: { conn: Conn; recheck: () => void }) {
               <main>
                 <h1>Not found</h1>
                 <p>
-                  No screen at this path. <NavLink to="/">Go to Results</NavLink>.
+                  No screen at this path. <NavLink to="/">Go to the leaderboard</NavLink>.
                 </p>
               </main>
             }

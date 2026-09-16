@@ -117,7 +117,7 @@ export default function Runs() {
                             {executing === r.run_id ? "Running…" : "Execute"}
                           </button>
                         ) : (
-                          <span className="muted">—</span>
+                          <span className="muted">n/a</span>
                         )}
                       </td>
                     </tr>
@@ -166,7 +166,7 @@ function RunSuite({ agents, suites, onCreated, runtimes, hosted }: { agents: Age
             <option value="">select…</option>
             {suites.map((s) => (
               <option key={s.suite_id} value={s.suite_id}>
-                {s.suite_id} ({s.pack_count} packs, {s.mode}){s.all_packs_imported ? "" : " — packs missing"}
+                {s.suite_id} ({s.pack_count} packs, {s.mode}){s.all_packs_imported ? "" : " . packs missing"}
               </option>
             ))}
           </select>

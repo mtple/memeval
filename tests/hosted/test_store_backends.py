@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import threading
 
+import pytest
+
 from market_replay.service.db import open_store
 
 
@@ -78,3 +80,18 @@ def test_usage_accounting(store_url):
     assert s.usage_today() == {"runs": 2, "cpu_seconds": 15.0}
     assert s.usage_month()["cpu_seconds"] == 15.0
     s.close()
+
+
+def test_postgres_store_survives_a_dropped_connection(store_url, tmp_path):
+    """Neon closes idle connections; a warm serverless instance must reconnect instead of failing every request."""
+    if not store_url.startswith("postgres"):
+        pytest.skip("postgres only")
+    from market_replay.service.db import open_store
+
+    st = open_store(store_url)
+    st.add_usage(runs=1)
+    st._conn.close()  # simulate the server dropping the session
+    assert st.usage_today()["runs"] >= 1
+    st.add_usage(runs=1)
+    assert st.usage_today()["runs"] >= 2
+    st.close()

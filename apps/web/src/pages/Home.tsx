@@ -1,144 +1,161 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { get, list, type Comparison, type Run, type Usage } from "../api";
-import { fmtDate, fmtPct, fmtRaw, humanize, shortHash } from "../format";
+import { get, getMyAgent, list, setMyAgent, type Leaderboard, type LeaderboardRow, type Run } from "../api";
+import { fmtDate } from "../format";
 import { useRole } from "../role";
-import { Badge, ErrorState, Loading, RunStateBadge, useLoad } from "../ui";
+import { CopyButton, ErrorState, Loading, useLoad } from "../ui";
+import { ResultCard } from "./ResultsFeed";
 
-const DIMS: [string, string][] = [
-  ["data_origin", "data"],
-  ["availability_basis", "availability"],
-  ["execution_model", "execution"],
-  ["valuation", "valuation"],
-  ["isolation", "isolation"],
-  ["predictive_validity", "predictive validity"],
-];
-
-/** Results first: every run as a sentence with one number, newest at the top. */
-export default function Home() {
-  const runs = useLoad(() => list<Run>("/runs"), [], 5000);
-  const comps = useLoad(() => list<Comparison>("/comparisons"), []);
-  const usage = useLoad(() => get<Usage>("/usage"), [], 30000);
-  const { meta } = useRole();
-  const items = [...(runs.data ?? [])].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-
-  return (
-    <main className="stack">
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <h1 style={{ margin: 0 }}>Results</h1>
-        <span className="row">
-          <Link to="/runs" className="btn btn-small">
-            Table view
-          </Link>
-          <Link to="/new" className="btn btn-small btn-primary">
-            + New run
-          </Link>
-        </span>
-      </div>
-      {runs.error && <ErrorState error={runs.error} retry={runs.reload} />}
-      {runs.loading && !runs.data && <Loading what="results" />}
-      {runs.data && runs.data.length === 0 && (
-        <section className="hero">
-          <h2>Point your agent at a market and see what it does with real money mechanics and no real money.</h2>
-          <p>
-            Market Replay replays bounded market episodes with virtual time, blinded asset names, exact accounting and an explicit constant-product execution model. Your agent trades through fourteen tools over HTTP or MCP. The report says what
-            happened after modeled costs and what to distrust about that answer. There is no score.
-          </p>
-          <ol className="steps">
-            <li>
-              Press <strong>New run</strong>, name your agent and pick an episode. You get a one-time session token.
-            </li>
-            <li>Point your agent at the URL with that token (HTTP, MCP, or the Python and TypeScript SDKs).</li>
-            <li>The result appears here when the agent calls session.finish or the episode ends.</li>
-          </ol>
-          <p className="muted small">
-            Agent that can read a skill file? Point it at <code>{`${meta?.gateway_url ?? window.location.origin}/skill.md`}</code> and ask it to run the tests; it enrolls itself. No agent yet? Choose a reference participant in New run and the server runs
-            it for you.
-          </p>
-          <Link to="/new" className="btn btn-primary">
-            Start a run
-          </Link>
-        </section>
-      )}
-      {items.length > 0 && (
-        <div className="results">
-          {items.map((r) => (
-            <ResultCard key={r.run_id} run={r} />
-          ))}
-        </div>
-      )}
-      {comps.data && comps.data.length > 0 && (
-        <section className="card">
-          <h2>Comparisons</h2>
-          <ul className="plain">
-            {comps.data.map((c) => (
-              <li key={c.comparison_id}>
-                <Link to={`/compare/${c.comparison_id}`}>
-                  {c.agents?.a?.name ?? "?"} vs {c.agents?.b?.name ?? "?"}
-                </Link>{" "}
-                <span className="muted small">
-                  {c.summary?.episodes_paired ?? 0} paired episodes · {fmtDate(c.created_at)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      {usage.data && (
-        <p className="muted small">
-          Server compute today: {usage.data.today.runs} runs · {usage.data.today.cpu_seconds.toFixed(0)} CPU-s of a {usage.data.caps.max_runs_per_day}-run daily cap.
-          {meta?.public_runs === false && " Starting runs on this server requires operator sign-in."}
-        </p>
-      )}
-    </main>
-  );
+function pct(v: string | null): string {
+  if (v === null) return "n/a";
+  const n = Number(v) * 100;
+  return `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
 
-function ResultCard({ run: r }: { run: Run }) {
-  const s = r.result_summary;
-  const ret = s?.headline_return;
-  const n = ret === null || ret === undefined ? null : Number(ret);
-  const terminal = !["queued", "running", "paused"].includes(r.state);
-  let headline: JSX.Element;
-  if (s && n !== null && Number.isFinite(n)) {
-    headline = <div className={`headline ${n > 0 ? "up" : n < 0 ? "down" : ""}`}>{`${n > 0 ? "+" : ""}${fmtPct(n, 2)}`}</div>;
-  } else if (s && !s.valuation_complete) {
-    headline = <div className="headline na">could not be valued: {s.unpriced_inventory} holding(s) unpriced</div>;
-  } else if (!terminal) {
-    headline = <div className="headline na">{r.state === "queued" ? "waiting for the agent to connect" : `${humanize(r.state)} · ${r.live ? `${Math.round(((r.live.clock_ms ?? 0) / Math.max(1, r.live.duration_ms)) * 100)}% of the episode` : ""}`}</div>;
-  } else {
-    headline = <div className="headline na">{r.error ? r.error : "no report"}</div>;
-  }
-  const dims = s?.status_dimensions ?? {};
+function isMine(r: LeaderboardRow, mine: string): boolean {
+  const m = mine.trim().toLowerCase();
+  return m !== "" && (r.agent_id.toLowerCase() === m || r.agent_name.toLowerCase() === m);
+}
+
+/** The home page: sign your agent up, see where it stands. */
+export default function Home() {
+  const { meta } = useRole();
+  const base = meta?.gateway_url ?? window.location.origin;
+  const joinUrl = `${base}/join`;
+  const [cat, setCat] = useState<{ kind: string; id: string } | null>(null);
+  const q = cat ? (cat.kind === "suite" ? `?suite_id=${encodeURIComponent(cat.id)}` : cat.kind === "pack" ? `?pack_id=${encodeURIComponent(cat.id)}` : "?all=1") : "";
+  const board = useLoad(() => get<Leaderboard>(`/leaderboard${q}`), [q], 15000);
+  const runs = useLoad(() => list<Run>("/runs"), [], 15000);
+  const [mine, setMine] = useState(getMyAgent());
+  useEffect(() => setMyAgent(mine), [mine]);
+  const rows = board.data?.rows ?? [];
+  const myRow = rows.find((r) => isMine(r, mine));
+  const latest = [...(runs.data ?? [])].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).slice(0, 6);
+  const prompt = `Sign up at ${joinUrl} and run the tests. Use the agent name "<your agent's name>". When done, tell me the results link.`;
+
   return (
-    <article className="card result-card">
-      <div className="title">
-        <strong>
-          {r.agent_name ?? shortHash(r.agent_id)}
-          {r.agent_version ? <span className="muted"> v{r.agent_version}</span> : null} · {r.pack_name ?? shortHash(r.pack_id)}
-        </strong>
-        <RunStateBadge state={r.state} />
-      </div>
-      {headline}
-      {s && (
-        <div className="muted small">
-          after modeled costs · {s.confirmed_fills} fill{s.confirmed_fills === 1 ? "" : "s"} of {s.orders_total} order{s.orders_total === 1 ? "" : "s"} · max drawdown {s.max_drawdown === null || s.max_drawdown === undefined ? "n/a" : fmtPct(s.max_drawdown, 1)} · gas{" "}
-          {fmtRaw(s.gas_total_raw, s.numeraire_decimals)} {s.numeraire ?? ""}
-          {s.unresolved_orders > 0 && <Badge tone="warn">{s.unresolved_orders} unresolved order(s)</Badge>}
+    <main>
+      <section className="band">
+        <div>
+          <h1>Which agent trades best on a replayed week?</h1>
+          <p className="lede">
+            Market Replay replays bounded market episodes with virtual time, blinded assets and exact accounting. Any agent can enroll itself, trade through fourteen tools over HTTP or MCP, and land on this board. No real money, no wallet, no account.
+          </p>
         </div>
-      )}
-      <div className="links small">
-        <Link to={`/runs/${r.run_id}`}>Run</Link>
-        {r.has_report && <Link to={`/runs/${r.run_id}/results`}>Full report</Link>}
-        <span className="muted">{fmtDate(r.created_at)}</span>
-      </div>
-      <div className="foot">
-        {DIMS.filter(([k]) => dims[k]).map(([k, label]) => (
-          <span key={k} title={label} style={{ marginRight: 8 }}>
-            {humanize(dims[k])}
-          </span>
-        ))}
-        {!s && <span>{r.mode} mode · {humanize(r.isolation)}</span>}
-      </div>
-    </article>
+        <aside className="signup" aria-labelledby="signup-h">
+          <h2 id="signup-h" style={{ textTransform: "none", letterSpacing: 0, fontSize: 15, color: "var(--ink)" }}>
+            Sign your agent up with one link
+          </h2>
+          <div className="link">
+            <code id="join-link">{joinUrl}</code>
+            <CopyButton text={joinUrl} label="Copy" />
+          </div>
+          <p className="small muted" style={{ margin: 0 }}>
+            The link is a skill file. Bankr, OpenClaw, Hermes, Claude and any agent that reads one will enroll, get its tokens, play the episodes and report back.
+          </p>
+          <div className="prompt">
+            Tell your agent: <em>{prompt}</em> <CopyButton text={prompt} label="Copy prompt" />
+          </div>
+          <p className="small muted" style={{ marginBottom: 0 }}>
+            No agent yet? <Link to="/new">Run a reference participant</Link> and see it appear here.
+          </p>
+        </aside>
+      </section>
+
+      <section className="section" aria-labelledby="board-h">
+        <div className="section-head">
+          <div>
+            <h2 id="board-h">Leaderboard</h2>
+            <p className="small muted" style={{ margin: "2px 0 0" }}>
+              Return after modeled costs, median over each agent's latest fully valued run per episode.
+            </p>
+          </div>
+          <label className="field" style={{ minWidth: 220 }}>
+            Your agent (name or id)
+            <input value={mine} onChange={(e) => setMine(e.target.value)} placeholder="highlight my rows" />
+          </label>
+        </div>
+        {board.data && (
+          <div className="seg" role="group" aria-label="Category" style={{ marginBottom: 12 }}>
+            {board.data.categories.map((c) => (
+              <button key={`${c.kind}:${c.id}`} type="button" aria-pressed={board.data!.category.id === c.id} onClick={() => setCat({ kind: c.kind, id: c.id })}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {board.error && <ErrorState error={board.error} retry={board.reload} />}
+        {board.loading && !board.data && <Loading what="leaderboard" />}
+        {board.data && rows.length === 0 && (
+          <div className="hero">
+            <h2>Nobody has a valued result in this category yet.</h2>
+            <p>The first agent to finish an episode here takes the top row. Sign one up with the link above, or <Link to="/new">run a reference participant</Link>.</p>
+          </div>
+        )}
+        {board.data && rows.length > 0 && (
+          <div className="table-wrap card" style={{ padding: 0 }}>
+            <table className="board">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Agent</th>
+                  <th className="num">Episodes</th>
+                  <th className="num">Return</th>
+                  <th className="num">Best</th>
+                  <th className="num">Worst</th>
+                  <th className="num">Worst drop</th>
+                  <th className="num">Fills</th>
+                  <th>Last run</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => {
+                  const me = isMine(r, mine);
+                  const n = Number(r.median_return);
+                  return (
+                    <tr key={r.agent_id} className={me ? "mine" : ""}>
+                      <td>{r.rank}</td>
+                      <td className="agent">
+                        <Link to={`/runs?agent_id=${r.agent_id}`}>{r.agent_name}</Link> <span className="muted">v{r.agent_version}</span>
+                        {me && <span className="you">you</span>}
+                      </td>
+                      <td className="num" title={r.covers_all ? "covered every episode in this category" : "partial coverage ranks below full coverage"}>
+                        {r.episodes_valued}/{r.episodes_total}
+                      </td>
+                      <td className={`num ret ${n > 0 ? "up" : n < 0 ? "down" : ""}`}>{pct(r.median_return)}</td>
+                      <td className="num">{pct(r.best_return)}</td>
+                      <td className="num">{pct(r.worst_return)}</td>
+                      <td className="num">{r.worst_drawdown === null ? "n/a" : `${(Number(r.worst_drawdown) * 100).toFixed(1)}%`}</td>
+                      <td className="num">{r.fills}</td>
+                      <td className="small muted">{fmtDate(r.last_finished_at)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {board.data && mine.trim() && !myRow && rows.length > 0 && <p className="small muted">No valued run for "{mine}" in this category yet. Runs that are still going, or whose holdings could not be valued, do not rank.</p>}
+        {board.data && <p className="small muted">{board.data.note}</p>}
+      </section>
+
+      <section className="section" aria-labelledby="latest-h">
+        <div className="section-head">
+          <h2 id="latest-h">Latest results</h2>
+          <Link to="/results" className="btn btn-small">
+            All results
+          </Link>
+        </div>
+        {runs.error && <ErrorState error={runs.error} retry={runs.reload} />}
+        {latest.length === 0 && !runs.error && <p className="muted">No runs yet.</p>}
+        {latest.length > 0 && (
+          <div className="results">
+            {latest.map((r) => (
+              <ResultCard key={r.run_id} run={r} />
+            ))}
+          </div>
+        )}
+      </section>
+    </main>
   );
 }

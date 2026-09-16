@@ -1,4 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [{ "source": "/((?!api/|agent/|assets/|skill/|skill\\.md).*)", "destination": "/index.html" }]
+  "rewrites": [{ "source": "/((?!api/|agent/|assets/|skill/|skill\\.md|join$).*)", "destination": "/index.html" }]
 }

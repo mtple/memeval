@@ -116,7 +116,7 @@ function NewComparison({ agents, suites, onCreated }: { agents: Agent[]; suites:
   );
 }
 
-const diffStr = (v: string | number | null | undefined, pct = true) => (v === null || v === undefined ? "—" : pct ? fmtPct(v, 3) : String(v));
+const diffStr = (v: string | number | null | undefined, pct = true) => (v === null || v === undefined ? "n/a" : pct ? fmtPct(v, 3) : String(v));
 
 function RunCells({ runs }: { runs: Comparison["per_episode"][number]["runs_a"] }) {
   if (!runs?.length) return <span className="muted">no run</span>;
@@ -166,7 +166,7 @@ function ComparisonView({ c }: { c: Comparison }) {
           </ul>
         </div>
       )}
-      <Card title={`Per episode — ${c.agents.a.name} (A) vs ${c.agents.b.name} (B)`}>
+      <Card title={`Per episode: ${c.agents.a.name} (A) vs ${c.agents.b.name} (B)`}>
         <p className="muted small">All attempted runs are shown, including failed ones. Diffs are A − B and only exist for paired episodes.</p>
         <div className="table-wrap">
           <table>
@@ -193,7 +193,7 @@ function ComparisonView({ c }: { c: Comparison }) {
                   </td>
                   <td>{e.paired ? <Badge tone="ok">paired</Badge> : <Badge tone="warn">unpaired</Badge>}</td>
                   <td className="num">{diffStr(e.return_diff_a_minus_b)}</td>
-                  <td className="num">{e.gas_diff_a_minus_b_raw ?? "—"}</td>
+                  <td className="num">{e.gas_diff_a_minus_b_raw ?? "n/a"}</td>
                   <td className="num">{diffStr(e.drawdown_diff_a_minus_b)}</td>
                 </tr>
               ))}
@@ -220,8 +220,8 @@ function ComparisonView({ c }: { c: Comparison }) {
               ["Unique calendar periods", c.evidence_counts?.unique_calendar_periods],
               ["Chains", c.evidence_counts?.chains],
               ["Stochastic trials A / B", `${c.evidence_counts?.stochastic_trials_a} / ${c.evidence_counts?.stochastic_trials_b}`],
-              ["Suite", c.suite_id ?? "—"],
-              ["Suite fingerprint", <span className="mono">{c.suite_fingerprint ?? "—"}</span>],
+              ["Suite", c.suite_id ?? "n/a"],
+              ["Suite fingerprint", <span className="mono">{c.suite_fingerprint ?? "n/a"}</span>],
               ["Agent A", `${c.agents.a.name} v${c.agents.a.version} (${c.agents.a.runtime})`],
               ["A fingerprint", <span className="mono">{c.agents.a.fingerprint}</span>],
               ["Agent B", `${c.agents.b.name} v${c.agents.b.version} (${c.agents.b.runtime})`],

@@ -370,11 +370,34 @@ class PgStore(BaseStore):
         self._psycopg = psycopg
         self.url = url
         self._lock = threading.RLock()
-        self._conn = psycopg.connect(url, autocommit=True)
+        self._conn = self._connect()
         with self._lock:
             for stmt in SCHEMA.split(";"):
                 if stmt.strip():
                     self._conn.execute(stmt)
+
+    def _connect(self):
+        return self._psycopg.connect(self.url, autocommit=True, connect_timeout=15)
+
+    def _live(self):
+        """The connection, reopened if the server dropped it (Neon suspends idle compute; warm serverless
+        instances outlive that). Callers hold the lock."""
+        if self._conn.closed or self._conn.broken:
+            self._conn = self._connect()
+        return self._conn
+
+    def _with_retry(self, fn):
+        """Run fn(conn) once; on a dropped connection reconnect and run it once more."""
+        with self._lock:
+            try:
+                return fn(self._live())
+            except (self._psycopg.OperationalError, self._psycopg.InterfaceError):
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+                self._conn = self._connect()
+                return fn(self._conn)
 
     @staticmethod
     def _translate(sql: str, params: tuple | dict) -> tuple[str, tuple]:
@@ -384,16 +407,19 @@ class PgStore(BaseStore):
 
     def execute(self, sql: str, params: tuple | dict = ()) -> None:
         q, p = self._translate(sql, params)
-        with self._lock:
-            self._conn.execute(q, p)
+        self._with_retry(lambda conn: conn.execute(q, p))
 
     def query(self, sql: str, params: tuple | dict = ()) -> list[dict[str, Any]]:
         from psycopg.rows import dict_row
 
         q, p = self._translate(sql, params)
-        with self._lock, self._conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(q, p)
-            return [dict(r) for r in cur.fetchall()]
+
+        def go(conn):
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(q, p)
+                return [dict(r) for r in cur.fetchall()]
+
+        return self._with_retry(go)
 
     @contextmanager
     def run_lock(self, run_id: str) -> Iterator[None]:

@@ -23,7 +23,7 @@ export default function DataHealth() {
             <option value="">select a pack…</option>
             {(packs.data ?? []).map((p) => (
               <option key={p.pack_id} value={p.pack_id}>
-                {p.name} — {p.chain}, {humanize(p.use_status)}
+                {p.name} . {p.chain}, {humanize(p.use_status)}
               </option>
             ))}
           </select>
@@ -145,7 +145,7 @@ export default function DataHealth() {
                 <ul className="gate-list">
                   {H.unsupported_inventory.map((u, i) => (
                     <li key={i}>
-                      <span className="mono small">{u.pool}</span> {u.model && <Badge tone="muted">{u.model}</Badge>} <span className="small">— {u.reason}</span>
+                      <span className="mono small">{u.pool}</span> {u.model && <Badge tone="muted">{u.model}</Badge>} <span className="small">n/a {u.reason}</span>
                     </li>
                   ))}
                 </ul>
@@ -253,7 +253,7 @@ function Metric({ label, v, warn }: { label: string; v: number | undefined; warn
     <div className="metric">
       <span className="lbl">{label}</span>
       <span className="val" style={warn && v ? { color: "var(--warn-fg)" } : undefined}>
-        {v ?? "—"}
+        {v ?? "n/a"}
       </span>
     </div>
   );

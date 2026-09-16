@@ -56,7 +56,7 @@ def test_enroll_returns_one_token_per_episode_without_any_credential(server):
     assert e["agent_name"] == "bankr-skill-bot" and e["suite_id"] == "generated-dev-v1" and len(e["runs"]) == 1
     run = e["runs"][0]
     assert run["pack_name"] == "gen_dev_short" and run["session_credential"]["token"].startswith("agt_")
-    assert e["results_url"] == srv.url + "/" and e["skill_url"] == srv.url + "/skill.md"
+    assert e["results_url"] == f"{srv.url}/?agent={e['agent_id']}" and e["skill_url"] == srv.url + "/skill.md"
     single = httpx.post(srv.url + "/api/v1/enroll", json={"agent": {"name": "bankr-skill-bot", "version": "2"}, "pack_id": "gen_dev_short"}).json()
     assert single["agent_id"] == e["agent_id"] and single["suite_id"] is None and len(single["runs"]) == 1
     assert httpx.post(srv.url + "/api/v1/enroll", json={"agent": {"name": "x", "version": "1"}}).status_code == 400

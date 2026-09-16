@@ -49,7 +49,7 @@ export function resolveApiBase(): string {
 }
 
 /** Why a request failed. The UI shows one message per kind instead of a raw status code. */
-export type FailureKind = "no_backend" | "unreachable" | "auth" | "api";
+export type FailureKind = "no_backend" | "unreachable" | "auth" | "api" | "server";
 
 export class ApiError extends Error {
   status: number;
@@ -66,7 +66,7 @@ export class ApiError extends Error {
   }
 }
 
-const NO_BACKEND_MSG = "No Market Replay server answered at this address. This page is only the interface; start the server (make serve) and enter its URL in the settings bar.";
+const NO_BACKEND_MSG = "No Market Replay server answered at this address. This page is only the interface; it needs a running server behind it.";
 
 export async function api<T>(path: string, init: RequestInit = {}, auth = true): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
@@ -92,6 +92,10 @@ export async function api<T>(path: string, init: RequestInit = {}, auth = true):
       const detail = isJson && "detail" in (body as object) ? (body as { detail: unknown }).detail : body;
       const msg = typeof detail === "string" ? detail : detail && typeof detail === "object" && "message" in detail ? String((detail as { message: unknown }).message) : "not authorised";
       throw new ApiError(res.status, msg, body, "auth");
+    }
+    if (!isJson && res.status >= 500) {
+      // The server exists but failed (a cold start, a database that went away, a crash).
+      throw new ApiError(res.status, `The server failed to answer this request (HTTP ${res.status}). Try again in a moment; if it keeps happening the operator can read the cause in the server logs.`, body, "server");
     }
     if (!isJson) {
       // A static host (or a non-API server) answered: there is no backend behind this address.
@@ -477,3 +481,34 @@ export type Stats = { median: string | number | null; mean: string | number | nu
 
 export const EXAMPLES = ["cash_only", "scheduled_basket", "random_actions", "model_client"] as const;
 export const RUNTIMES = ["python", "typescript"] as const;
+
+export type LeaderboardCategory = { kind: "suite" | "pack" | "all"; id: string; label: string; episodes: string[] };
+export type LeaderboardRow = {
+  rank: number;
+  agent_id: string;
+  agent_name: string;
+  agent_version: string;
+  runtime: string;
+  episodes_valued: number;
+  episodes_total: number;
+  covers_all: boolean;
+  runs_attempted: number;
+  median_return: string;
+  mean_return: string;
+  best_return: string;
+  worst_return: string;
+  worst_drawdown: string | null;
+  fills: number;
+  last_finished_at: string | null;
+  run_ids: string[];
+};
+export type Leaderboard = { category: LeaderboardCategory; categories: LeaderboardCategory[]; rows: LeaderboardRow[]; note: string };
+
+/** The agent this browser considers "mine" (set from ?agent= on the results link, or typed on the leaderboard). */
+export const MY_AGENT_KEY = "mr_my_agent";
+export function getMyAgent(): string {
+  return storageGet(MY_AGENT_KEY);
+}
+export function setMyAgent(v: string): void {
+  storageSet(MY_AGENT_KEY, v.trim());
+}

@@ -106,7 +106,7 @@ export default function Episodes() {
                             <div className="muted">{p.period_dev_mode.note}</div>
                           </>
                         ) : (
-                          <span className="muted">—</span>
+                          <span className="muted">n/a</span>
                         )}
                       </td>
                       <td>
@@ -185,8 +185,8 @@ function PackDetail({ pack: p, onClose }: { pack: Pack; onClose: () => void }) {
               ["Token behaviour basis", humanize(s?.token_behavior_basis)],
               ["Numeraire", `${s?.numeraire_alias ?? "?"} (${s?.numeraire_decimals ?? "?"} decimals)`],
               ["Imported", fmtDate(p.imported_at)],
-              ["Scenario", s?.scenario ?? "—"],
-              ["Supported actions", p.supported_actions?.join(", ") || "—"],
+              ["Scenario", s?.scenario ?? "n/a"],
+              ["Supported actions", p.supported_actions?.join(", ") || "n/a"],
               ["Unsupported capabilities", p.unsupported_capabilities?.join(", ") || "none"],
               ["Executable failure", s?.executable_failure ?? "none"],
               ["Predictive validity", humanize(p.predictive_validity || "not_established")],
@@ -210,7 +210,7 @@ function PackDetail({ pack: p, onClose }: { pack: Pack; onClose: () => void }) {
                 ["Pools executable / total", `${s.pools_executable} / ${s.pools_total}`],
                 ["Assets", s.assets_total],
                 ["Tape events", s.tape_events],
-                ["Coverage states", Object.entries(s.coverage_states ?? {}).map(([k, v]) => `${k}: ${v}`).join(", ") || "—"],
+                ["Coverage states", Object.entries(s.coverage_states ?? {}).map(([k, v]) => `${k}: ${v}`).join(", ") || "n/a"],
               ]}
             />
           ) : (
@@ -263,7 +263,7 @@ function PackDetail({ pack: p, onClose }: { pack: Pack; onClose: () => void }) {
             <ul className="plain">
               {s.unsupported_inventory.map((x, i) => (
                 <li key={i}>
-                  <span className="mono">{x.pool}</span> — {x.reason}
+                  <span className="mono">{x.pool}</span> . {x.reason}
                 </li>
               ))}
             </ul>

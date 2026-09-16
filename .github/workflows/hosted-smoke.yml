@@ -51,6 +51,8 @@ jobs:
           printf '%-32s %s %-28s -> %s\n' "agent plane: mcp token gate" POST /agent/mcp "$(echo "$mcp" | head -c 300)"
           echo "$mcp" | grep -q '"UNAUTHORIZED"' || fail=1
           probe "skill: served"           GET  /skill.md               200
+          probe "skill: join link"        GET  /join                   200
+          probe "leaderboard"             GET  /api/v1/leaderboard     200
           probe "skill: script"           GET  /skill/market_replay_agent.py 200
           probe "ui: index"               GET  /                       200
           probe "ui: client route"        GET  /agents                 200

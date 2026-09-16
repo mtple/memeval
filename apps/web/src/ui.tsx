@@ -68,7 +68,7 @@ export function KV({ rows }: { rows: [ReactNode, ReactNode][] }) {
       {rows.map(([k, v], i) => (
         <div key={i} className="kv-row">
           <dt>{k}</dt>
-          <dd>{v ?? "—"}</dd>
+          <dd>{v ?? <span className="muted">none</span>}</dd>
         </div>
       ))}
     </dl>
@@ -102,6 +102,11 @@ export function ErrorState({ error, retry }: { error: unknown; retry?: () => voi
         <>
           <strong>Operator sign-in required ({e.status}).</strong>
           <p>{msg}. This action is reserved for the operator of this server. Use <strong>Sign in</strong> at the top right with the admin token.</p>
+        </>
+      ) : e?.kind === "server" ? (
+        <>
+          <strong>The server hit an error.</strong>
+          <p>{msg}</p>
         </>
       ) : e?.kind === "no_backend" || e?.kind === "unreachable" ? (
         <>
@@ -232,7 +237,7 @@ export function GateList({ gates }: { gates: { gate: string; status: string; det
       {gates.map((g) => (
         <li key={g.gate}>
           <Badge tone={toneForStatus(g.status)}>{g.status.replace(/_/g, " ")}</Badge> <strong>{g.gate}</strong>
-          {g.detail && <span className="muted"> — {g.detail}</span>}
+          {g.detail && <span className="muted">. {g.detail}</span>}
         </li>
       ))}
     </ul>

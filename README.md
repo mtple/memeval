@@ -57,7 +57,7 @@ MCP. Setup steps and cost caps: [docs/runbook.md](docs/runbook.md#hosted-deploym
 Nobody needs an account and nothing is registered by hand. Give your agent the skill and ask it
 to run the tests:
 
-> Install the Market Replay skill from https://memeval-web.vercel.app/skill.md and run the tests.
+> Sign up at https://memeval-web.vercel.app/join and run the tests.
 
 The skill (`skills/market-replay/`, Bankr catalog layout: `SKILL.md`, `catalog.json`, a
 standard-library Python participant in `scripts/`) tells the agent to enroll by name

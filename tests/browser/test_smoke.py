@@ -53,11 +53,15 @@ def test_ui_smoke(ui_server):
         browser = p.chromium.launch(executable_path=exe) if exe else p.chromium.launch()
         page = browser.new_page(viewport={"width": 1200, "height": 900})
 
-        # 1. Anyone: results first, no sign-in
+        # 1. Anyone: the leaderboard, the sign-up link, no sign-in
         page.goto(f"{srv.url}/")
-        page.wait_for_selector("text=cash_only_python", timeout=20_000)
+        page.wait_for_selector("text=Leaderboard", timeout=20_000)
+        page.wait_for_selector("table.board >> text=cash_only_python", timeout=20_000)
+        assert page.inner_text("#join-link") == f"{srv.url}/join"
         assert page.locator("#signin-btn").count() == 1
-        page.screenshot(path=str(OUT / "home.png"))
+        body = page.inner_text("body")
+        assert "not an edge" in body  # the honesty footnote travels with the board
+        page.screenshot(path=str(OUT / "home.png"), full_page=True)
 
         # 2. Anyone: start a run for their own agent and receive a one-time token
         page.goto(f"{srv.url}/new")
@@ -70,9 +74,12 @@ def test_ui_smoke(ui_server):
         body = page.inner_text("body")
         assert "/agent/mcp" in body and "/agent/v1/commands" in body
         page.screenshot(path=str(OUT / "new_run_token.png"))
-        page.goto(f"{srv.url}/")
+        page.goto(f"{srv.url}/results")
         page.wait_for_selector("text=smoke-bot", timeout=20_000)
         assert "waiting for the agent to connect" in page.inner_text("body")
+        # ?agent= from the enroll response marks the agent as mine on the board
+        page.goto(f"{srv.url}/?agent=cash_only_python")
+        page.wait_for_selector("tr.mine >> text=you", timeout=20_000)
 
         # 3. Operator: sign in through the dialog (no token in the URL)
         page.click("#signin-btn")
@@ -88,9 +95,11 @@ def test_ui_smoke(ui_server):
         page.wait_for_selector("text=completed", timeout=20_000)
         page.screenshot(path=str(OUT / "run.png"))
         page.goto(f"{srv.url}/runs/{run_id}/results")
-        page.wait_for_selector("text=Predictive validity", timeout=20_000)
-        page.wait_for_selector("text=not established", timeout=20_000)
-        assert "does not establish an edge" in page.inner_text("body")
+        page.wait_for_selector("text=How much to trust this", timeout=20_000)
+        page.wait_for_selector("text=never placed an order", timeout=20_000)
+        body = page.inner_text("body")
+        assert "does not establish an edge" in body and "predictive validity is not established" in body
+        assert "cpmm_fixed_flow_v1" not in body.split("All the details")[0]  # no raw tokens above the fold
         body = page.inner_text("body")
         assert "score" not in body.lower().replace("scored", "") or "0-100" not in body
         page.screenshot(path=str(OUT / "results.png"))
@@ -101,7 +110,7 @@ def test_ui_smoke(ui_server):
         # 4. Mobile width renders without horizontal overflow of the main content
         page.set_viewport_size({"width": 360, "height": 800})
         page.goto(f"{srv.url}/")
-        page.wait_for_selector("text=cash_only_python", timeout=20_000)
+        page.wait_for_selector("table.board >> text=cash_only_python", timeout=20_000)
         width = page.evaluate("document.documentElement.scrollWidth")
         assert width <= 380
         page.screenshot(path=str(OUT / "home_mobile.png"))

@@ -266,6 +266,22 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
         """Bring-your-own-agent onboarding in one call: register by name, get a session token per episode."""
         return manager.enroll(agent=body.agent.model_dump(), suite_id=body.suite_id, pack_id=body.pack_id)
 
+    @app.get("/api/v1/leaderboard", dependencies=[Depends(public_read)])
+    def leaderboard(suite_id: str | None = None, pack_id: str | None = None, all: bool = False) -> dict[str, Any]:
+        """Default: the practice suite when it has results, otherwise the first category that does."""
+        if suite_id or pack_id or all:
+            return manager.leaderboard(suite_id=suite_id, pack_id=pack_id)
+        if "generated-practice-v1" in manager.suites:
+            board = manager.leaderboard(suite_id="generated-practice-v1")
+            if board["rows"]:
+                return board
+        for cat in manager.leaderboard_categories():
+            board = manager.leaderboard(suite_id=cat["id"]) if cat["kind"] == "suite" else manager.leaderboard(pack_id=cat["id"])
+            if board["rows"]:
+                return board
+        return manager.leaderboard()
+
+    @app.get("/join", include_in_schema=False)
     @app.get("/api/v1/skill", include_in_schema=False)
     @app.get("/skill.md", include_in_schema=False)
     def skill() -> PlainTextResponse:

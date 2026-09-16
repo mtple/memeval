@@ -37,6 +37,12 @@ describe("failure classification", () => {
     expect((err as ApiError).kind).toBe("no_backend");
     expect((err as ApiError).message).toMatch(/no Market Replay server/i);
   });
+  it("treats a 5xx HTML page as a server failure, not a missing backend", async () => {
+    vi.stubGlobal("fetch", async () => new Response("<html>A server error has occurred</html>", { status: 500, headers: { "content-type": "text/html" } }));
+    const err = (await api("/runs").catch((e) => e)) as ApiError;
+    expect(err.kind).toBe("server");
+    expect(err.message).toMatch(/server failed/i);
+  });
   it("treats 401/403 as an auth problem", async () => {
     vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ detail: { code: "UNAUTHORIZED" } }), { status: 401, headers: { "content-type": "application/json" } }));
     const err = (await api("/packs").catch((e) => e)) as ApiError;

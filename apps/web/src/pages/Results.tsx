@@ -1,14 +1,16 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { get, post, type Report, type ReplayResult } from "../api";
+import { get, post, type Report, type ReplayResult, type Run } from "../api";
+import { DIMENSION_ORDER, dimensionLabel, explainDimension, summarySentence } from "../explain";
 import { fmtAmount, fmtDuration, fmtMs, fmtPct, fmtRaw, fmtReturn, humanize, shortHash } from "../format";
 import { useRole } from "../role";
-import { Badge, Card, ErrorState, JsonView, KV, Loading, StrList, downloadJson, toneForStatus, useLoad } from "../ui";
+import { Badge, Card, ErrorState, JsonView, KV, Loading, StrList, downloadJson, useLoad } from "../ui";
 
 export default function Results() {
   const { id = "" } = useParams();
   const { role } = useRole();
   const rep = useLoad(() => get<Report>(`/runs/${id}/report?role=${role === "admin" ? "admin" : "participant"}`), [id, role]);
+  const run = useLoad(() => get<Run>(`/runs/${id}`), [id]);
   const [replay, setReplay] = useState<ReplayResult | null>(null);
   const [replayErr, setReplayErr] = useState<unknown>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -35,9 +37,7 @@ export default function Results() {
   return (
     <main className="stack">
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <h1 style={{ margin: 0 }}>
-          Results for run <span className="mono">{shortHash(id, 16)}</span>
-        </h1>
+        <h1 style={{ margin: 0 }}>{run.data ? `${run.data.agent_name ?? "Agent"} on ${run.data.pack_name ?? "episode"}` : "Result"}</h1>
         <Link to={`/runs/${id}`} className="btn btn-small">
           Back to run
         </Link>
@@ -53,63 +53,71 @@ export default function Results() {
       {rep.loading && !R && <Loading what="report" />}
       {R && (
         <>
-          <Card title="Status dimensions">
-            <div className="dims">
-              {(
-                [
-                  ["data_origin", "Data origin"],
-                  ["availability_basis", "Availability basis"],
-                  ["execution_model", "Execution model"],
-                  ["token_behavior", "Token behaviour"],
-                  ["isolation", "Isolation"],
-                  ["use_status", "Use status"],
-                  ["predictive_validity", "Predictive validity"],
-                ] as [string, string][]
-              ).map(([k, label]) => (
-                <span key={k} className="dim">
-                  <span>{label}</span>
-                  <Badge tone={k === "predictive_validity" ? "muted" : toneForStatus(R.status_dimensions?.[k])}>{humanize(R.status_dimensions?.[k] ?? "unknown")}</Badge>
-                </span>
-              ))}
+          <Card title="What happened">
+            <p style={{ fontSize: 15, margin: 0 }}>
+              {summarySentence({
+                agent: run.data?.agent_name ?? "The agent",
+                episode: run.data?.pack_name ?? "the episode",
+                durationMs: R.coverage_and_assumptions.episode_duration_ms,
+                isFullWeek: R.coverage_and_assumptions.is_full_week,
+                unit: unit ?? "",
+                decimals: dec ?? 0,
+                initialRaw: R.outcome.initial_equity_raw,
+                terminalRaw: R.outcome.terminal_model_equity_raw,
+                headlineReturn: R.outcome.headline_return,
+                valuationComplete: R.outcome.valuation_complete,
+                orders: R.activity.orders_total,
+                fills: R.activity.confirmed_fills,
+                gasRaw: R.costs.gas_total_raw,
+                unpriced: (R.unresolved.unpriced_inventory?.length ?? 0) + (R.unresolved.no_route_inventory?.length ?? 0),
+              })}
+            </p>
+            <div className="metrics" style={{ marginTop: 12 }}>
+              <M label="Started with" value={fmtRaw(R.outcome.initial_equity_raw, dec)} sub={unit} />
+              <M label="Ended with" value={R.outcome.terminal_model_equity_raw === null ? "could not be valued" : fmtRaw(R.outcome.terminal_model_equity_raw, dec)} sub={R.outcome.terminal_model_equity_raw === null ? undefined : unit} warn={R.outcome.terminal_model_equity_raw === null} />
+              <M label="Return after costs" value={R.outcome.headline_return === null ? "not stated" : fmtReturn(R.outcome.headline_return)} warn={R.outcome.headline_return === null} />
+              <M label="Worst drop from a peak" value={R.risk.max_drawdown === null ? "not supportable" : fmtPct(R.risk.max_drawdown)} warn={R.risk.max_drawdown === null} />
+              <M label="Orders filled" value={`${R.activity.confirmed_fills} of ${R.activity.orders_total}`} sub={R.activity.reverted || R.activity.expired ? `${R.activity.reverted} reverted, ${R.activity.expired} expired` : undefined} />
+              <M label="Gas paid" value={fmtRaw(R.costs.gas_total_raw, dec)} sub={unit} />
             </div>
-          </Card>
-
-          <Card title="Outcome">
-            <div className="metrics">
-              <M label="Initial equity" value={fmtRaw(R.outcome.initial_equity_raw, dec)} sub={unit} />
-              <M
-                label="Terminal model equity"
-                value={R.outcome.terminal_model_equity_raw === null ? "null" : fmtRaw(R.outcome.terminal_model_equity_raw, dec)}
-                sub={R.outcome.terminal_model_equity_raw === null ? "valuation incomplete" : unit}
-                warn={R.outcome.terminal_model_equity_raw === null}
-              />
-              <M label="Headline return" value={R.outcome.headline_return === null ? "null — valuation incomplete" : fmtReturn(R.outcome.headline_return)} sub={R.outcome.return_definition} warn={R.outcome.headline_return === null} />
-              <M label="Valuation" value={R.outcome.valuation_complete ? "complete" : "incomplete"} warn={!R.outcome.valuation_complete} sub={R.outcome.valuation_policy} />
-            </div>
-            <KV
-              rows={[
-                ["Terminal cash", amt(R.outcome.terminal_cash_raw)],
-                ["Terminal priced inventory", amt(R.outcome.terminal_priced_inventory_raw)],
-                ["Terminal liquidation gas", amt(R.outcome.terminal_liquidation_gas_raw)],
-                ["Return definition", R.outcome.return_definition],
-                ["Valuation policy", R.outcome.valuation_policy],
-              ]}
-            />
             {R.outcome.valuation_warnings?.length > 0 && (
-              <div className="notice">
-                <strong>Valuation warnings</strong>
+              <div className="notice" style={{ marginTop: 10 }}>
+                <strong>About the valuation</strong>
                 <StrList items={R.outcome.valuation_warnings} />
               </div>
             )}
+            {(R.activity.quality_exposure?.invalid_calls ?? 0) + (R.activity.quality_exposure?.rate_limited ?? 0) > 0 && (
+              <p className="muted small" style={{ marginTop: 8 }}>
+                The agent made {R.activity.quality_exposure?.invalid_calls ?? 0} invalid calls and was rate-limited {R.activity.quality_exposure?.rate_limited ?? 0} times. That is part of the result.
+              </p>
+            )}
           </Card>
 
+          <Card title="How much to trust this">
+            <ul className="plain" style={{ paddingLeft: 18 }}>
+              {DIMENSION_ORDER.map((k) => (
+                <li key={k}>
+                  <strong>{dimensionLabel(k)}.</strong> {explainDimension(k, R.status_dimensions?.[k])}
+                </li>
+              ))}
+              <li>
+                <strong>Valuation.</strong>{" "}
+                {R.outcome.valuation_complete ? "Every holding could be priced by selling it through the model's own pools, so the final value is complete." : "Some holdings could not be priced, so the final value and the return are not stated."}
+              </li>
+            </ul>
+            <p className="statement">{R.statement}</p>
+          </Card>
+
+          <details className="more">
+            <summary>All the details (risk, costs, activity, unresolved items, assumptions, versions, reproducibility, exports)</summary>
+            <div className="stack" style={{ marginTop: 8 }}>
           <div className="grid-2">
             <Card title="Risk">
               <div className="metrics">
                 <M label="Max drawdown" value={R.risk.max_drawdown === null ? "not supportable" : fmtPct(R.risk.max_drawdown)} sub={R.risk.drawdown_basis} warn={R.risk.max_drawdown === null} />
                 <M label="Equity points complete / total" value={`${R.risk.equity_points_complete} / ${R.risk.equity_points_total}`} sub={`${R.risk.gap_count} gaps`} warn={R.risk.gap_count > 0} />
                 <M label="Exposure share of grid" value={fmtPct(R.risk.exposure_share_of_grid)} />
-                <M label="Largest position" value={R.risk.largest_position ? fmtPct(R.risk.largest_position.share) : "—"} sub={R.risk.largest_position?.asset_id} />
+                <M label="Largest position" value={R.risk.largest_position ? fmtPct(R.risk.largest_position.share) : "n/a"} sub={R.risk.largest_position?.asset_id} />
               </div>
               {R.risk.gaps?.length > 0 && <JsonView value={R.risk.gaps} />}
             </Card>
@@ -277,9 +285,8 @@ export default function Results() {
             {exportErr !== null && <ErrorState error={exportErr} />}
           </Card>
 
-          <Card title="Statement">
-            <p className="statement">{R.statement}</p>
-          </Card>
+            </div>
+          </details>
           <JsonView value={R} />
         </>
       )}

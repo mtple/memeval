@@ -1004,9 +1004,95 @@ class RunManager:
             "suite_id": suite_id,
             "suite_run_id": suite_run_id,
             "runs": [{"run_id": r["run_id"], "pack_id": r["pack_id"], "pack_name": r["pack_name"], "episode_id": r["episode_id"], "mode": r["mode"], "bankroll_raw": r["bankroll_raw"], "session_credential": r["session_credential"]} for r in runs],
-            "results_url": self.gateway_url + "/",
+            "results_url": f"{self.gateway_url}/?agent={agent_id}",
             "skill_url": self.gateway_url + "/skill.md",
             "note": "Each session_credential is shown once and works only for its run. Call session.finish when done; the report appears at results_url.",
+        }
+
+    # ------------------------------------------------------------------ leaderboard
+    def leaderboard_categories(self) -> list[dict[str, Any]]:
+        """What can be ranked: each suite as a whole, then each episode on its own."""
+        cats: list[dict[str, Any]] = []
+        for s in self.suites.values():
+            if s.sealed or len(s.packs) < 2:  # a one-episode suite is its episode's own tab
+                continue
+            cats.append({"kind": "suite", "id": s.suite_id, "label": _suite_label(s), "episodes": list(s.packs)})
+        for r in self.store.packs():
+            cats.append({"kind": "pack", "id": r["pack_id"], "label": _episode_label(r["name"], r["is_full_week"], r["duration_ms"]), "episodes": [r["name"]]})
+        return cats
+
+    def leaderboard(self, *, suite_id: str | None = None, pack_id: str | None = None) -> dict[str, Any]:
+        """Agents ranked by median return after modeled costs over their latest completed, fully valued
+        run per episode. Ranking never claims an edge: the footnote travels with the table."""
+        if suite_id:
+            s = self.suites.get(suite_id)
+            if s is None:
+                raise ApiError(404, f"unknown suite {suite_id}", "NOT_FOUND")
+            episode_names = list(s.packs)
+            category = {"kind": "suite", "id": suite_id, "label": _suite_label(s), "episodes": episode_names}
+            wanted_packs = {r["pack_id"] for n in episode_names if (r := self.store.pack(n))}
+        elif pack_id:
+            r = self.store.pack(pack_id)
+            if r is None:
+                raise ApiError(404, f"unknown pack {pack_id}", "NOT_FOUND")
+            wanted_packs = {r["pack_id"]}
+            category = {"kind": "pack", "id": r["pack_id"], "label": _episode_label(r["name"], r["is_full_week"], r["duration_ms"]), "episodes": [r["name"]]}
+        else:
+            wanted_packs = {r["pack_id"] for r in self.store.packs()}
+            category = {"kind": "all", "id": "all", "label": "Every episode", "episodes": [r["name"] for r in self.store.packs()]}
+        # latest valued run per (agent, pack)
+        best: dict[tuple[str, str], dict[str, Any]] = {}
+        attempts: dict[str, int] = {}
+        for row in self.store.runs():
+            if row["pack_id"] not in wanted_packs:
+                continue
+            attempts[row["agent_id"]] = attempts.get(row["agent_id"], 0) + 1
+            if row["state"] != str(RunState.COMPLETED) or not row["report_json"]:
+                continue
+            summ = self._result_summary(row["report_json"])
+            if not summ or not summ["valuation_complete"] or summ["headline_return"] is None:
+                continue
+            key = (row["agent_id"], row["pack_id"])
+            if key not in best or (row["finished_at"] or "") > (best[key]["finished_at"] or ""):
+                best[key] = {"finished_at": row["finished_at"], "run_id": row["run_id"], **summ}
+        per_agent: dict[str, list[dict[str, Any]]] = {}
+        for (aid, _pid), v in best.items():
+            per_agent.setdefault(aid, []).append(v)
+        rows = []
+        for aid, vals in per_agent.items():
+            a = self.store.agent(aid)
+            rets = sorted(float(v["headline_return"]) for v in vals)
+            mid = len(rets) // 2
+            median = rets[mid] if len(rets) % 2 else (rets[mid - 1] + rets[mid]) / 2
+            dds = [float(v["max_drawdown"]) for v in vals if v.get("max_drawdown") is not None]
+            rows.append(
+                {
+                    "agent_id": aid,
+                    "agent_name": a["name"] if a else aid,
+                    "agent_version": a["version"] if a else "",
+                    "runtime": a["runtime"] if a else "",
+                    "episodes_valued": len(vals),
+                    "episodes_total": len(wanted_packs),
+                    "covers_all": len(vals) >= len(wanted_packs),
+                    "runs_attempted": attempts.get(aid, 0),
+                    "median_return": f"{median:.6f}",
+                    "mean_return": f"{sum(rets) / len(rets):.6f}",
+                    "best_return": f"{rets[-1]:.6f}",
+                    "worst_return": f"{rets[0]:.6f}",
+                    "worst_drawdown": f"{max(dds):.6f}" if dds else None,
+                    "fills": sum(int(v.get("confirmed_fills") or 0) for v in vals),
+                    "last_finished_at": max((v["finished_at"] or "") for v in vals) or None,
+                    "run_ids": [v["run_id"] for v in vals],
+                }
+            )
+        rows.sort(key=lambda r: (not r["covers_all"], -float(r["median_return"]), r["agent_name"]))
+        for i, r in enumerate(rows, 1):
+            r["rank"] = i
+        return {
+            "category": category,
+            "categories": self.leaderboard_categories(),
+            "rows": rows,
+            "note": "Ranked by median return after modeled costs over each agent's latest completed, fully valued run per episode. Agents that covered every episode rank above partial coverage. Generated episodes are artificial; a high rank is not an edge and predicts nothing.",
         }
 
     # ------------------------------------------------------------------ comparisons / studies
@@ -1074,3 +1160,18 @@ class RunManager:
 
     def studies(self) -> list[dict[str, Any]]:
         return [json.loads(r["record_json"]) for r in self.store.studies()]
+
+
+def _episode_label(name: str, is_full_week: Any, duration_ms: Any) -> str:
+    """'gen_week_trending' -> 'Week: trending'; short fixtures say their length."""
+    base = name.replace("gen_week_", "").replace("gen_", "").replace("_", " ")
+    if is_full_week:
+        return f"Week: {base}"
+    hours = float(duration_ms or 0) / 3_600_000
+    return f"{base} ({hours:g}h)" if hours else base
+
+
+def _suite_label(s: SuiteDef) -> str:
+    n = len(s.packs)
+    weeks = all(name.startswith("gen_week_") for name in s.packs)
+    return f"All {n} weeks" if weeks else f"All {n} episodes ({s.suite_id})"

@@ -159,7 +159,7 @@ export default function NewRun() {
             <select value={f.example} onChange={(e) => setF({ ...f, example: e.target.value })}>
               {EXAMPLES.filter((x) => x !== "model_client").map((x) => (
                 <option key={x} value={x}>
-                  {x} — {EXAMPLE_TEXT[x]}
+                  {x}: {EXAMPLE_TEXT[x]}
                 </option>
               ))}
             </select>

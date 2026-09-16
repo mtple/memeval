@@ -6,7 +6,7 @@ trade on an indicator or follow a recommendation list. Waiting and holding cash 
 
 ## 0. The skill (agents onboard themselves)
 
-`<server>/skill.md` is a complete, self-contained guide an agent can follow with no human step:
+`<server>/join` (also `<server>/skill.md`) is a complete, self-contained guide an agent can follow with no human step:
 enroll, get tokens, trade, finish, read results. It ships in `skills/market-replay/` in the
 Bankr catalog layout together with `scripts/market_replay_agent.py`, a standard-library Python
 participant that plays a whole suite (`<server>/skill/market_replay_agent.py`). The integration

@@ -14,7 +14,8 @@
     { "source": "/api/v1/:path*", "destination": "/api/index" },
     { "source": "/agent/:path*", "destination": "/api/index" },
     { "source": "/skill.md", "destination": "/api/index" },
+    { "source": "/join", "destination": "/api/index" },
     { "source": "/skill/:path*", "destination": "/api/index" },
-    { "source": "/((?!api/|agent/|assets/|skill/|skill\\.md).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|agent/|assets/|skill/|skill\\.md|join$).*)", "destination": "/index.html" }
   ]
 }

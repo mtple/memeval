@@ -118,3 +118,29 @@ def test_run_list_carries_a_result_summary_once_a_report_exists(tmp_path: Path, 
     listed = next(x for x in c.get("/api/v1/runs").json()["items"] if x["run_id"] == run["run_id"])
     assert listed["result_summary"]["headline_return"] == s["headline_return"] and listed["agent_name"] == "ref"
     mgr.close()
+
+
+def test_leaderboard_ranks_agents_per_category_and_join_serves_the_skill(tmp_path: Path, dev_pack_dir: Path):
+    mgr = RunManager(data_dir=tmp_path / "data", hosted=True)
+    mgr.import_pack(dev_pack_dir, "gen_dev_short")
+    c = TestClient(create_app(mgr, "adm_public_test"))
+    for name, example in (("holder", "cash_only"), ("basket", "scheduled_basket")):
+        r = c.post("/api/v1/runs", json={"agent": {"name": name, "version": "1", "runtime": "python"}, "pack_id": "gen_dev_short", "launch": {"name": example, "runtime": "python"}})
+        assert r.status_code == 201 and r.json()["state"] == "completed", r.text
+    lb = c.get("/api/v1/leaderboard?pack_id=gen_dev_short").json()
+    assert lb["category"]["kind"] == "pack" and [x["kind"] for x in lb["categories"]][:1] == ["suite"]
+    names = [r["agent_name"] for r in lb["rows"]]
+    assert set(names) == {"holder", "basket"} and [r["rank"] for r in lb["rows"]] == [1, 2]
+    assert all(r["episodes_valued"] == 1 and r["covers_all"] for r in lb["rows"])
+    assert "not an edge" in lb["note"]
+    suite = c.get("/api/v1/leaderboard?suite_id=generated-dev-v1").json()
+    assert suite["category"]["episodes"] == ["gen_dev_short"] and len(suite["rows"]) == 2
+    assert c.get("/api/v1/leaderboard?suite_id=nope").status_code == 404
+    default = c.get("/api/v1/leaderboard").json()  # practice suite has no rows here: falls back to a category that does
+    assert default["rows"] and default["category"]["id"] != "generated-practice-v1"
+    assert c.get("/api/v1/leaderboard?all=1").json()["category"]["kind"] == "all"
+    join = c.get("/join")
+    assert join.status_code == 200 and join.text.startswith("---\nname: market-replay")
+    enrolled = c.post("/api/v1/enroll", json={"agent": {"name": "holder", "version": "1"}, "pack_id": "gen_dev_short"}).json()
+    assert enrolled["results_url"].endswith(f"/?agent={enrolled['agent_id']}")
+    mgr.close()

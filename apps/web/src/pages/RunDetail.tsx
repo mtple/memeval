@@ -97,7 +97,7 @@ export default function RunDetail() {
               <Metric label="Cash reserved" value={fmtRaw(live?.cash_reserved_raw, dec)} sub={unit} />
               <Metric
                 label="Model equity"
-                value={live ? (live.model_equity_raw === null ? "incomplete" : fmtRaw(live.model_equity_raw, dec)) : "—"}
+                value={live ? (live.model_equity_raw === null ? "incomplete" : fmtRaw(live.model_equity_raw, dec)) : "n/a"}
                 sub={live && !live.valuation_complete ? "valuation incomplete" : unit}
                 tone={live && !live.valuation_complete ? "warn" : undefined}
               />
@@ -114,7 +114,7 @@ export default function RunDetail() {
                 ["Profile hash", <span className="mono">{shortHash(r.profile_hash, 16)}</span>],
                 ["Launch", r.launch ? <code>{JSON.stringify(r.launch)}</code> : "external client"],
                 ["Created / started / finished", `${fmtDate(r.created_at)} / ${fmtDate(r.started_at)} / ${fmtDate(r.finished_at)}`],
-                ["Requests / decisions / orders", live ? `${live.requests} / ${live.decisions} / ${live.orders_total} (${live.pending_orders} pending)` : "—"],
+                ["Requests / decisions / orders", live ? `${live.requests} / ${live.decisions} / ${live.orders_total} (${live.pending_orders} pending)` : "n/a"],
               ]}
             />
           </Card>
@@ -266,7 +266,7 @@ function ObservedPanel({ runId, clock, dec, active }: { runId: string; clock: nu
   const asOf = d?.clock_ms ?? clock;
   return (
     <Card
-      title="Observed only — as of virtual clock"
+      title="Observed only, as of the virtual clock"
       actions={
         <>
           <label className="field">
@@ -355,10 +355,10 @@ function ObservedPanel({ runId, clock, dec, active }: { runId: string; clock: nu
                         <td className="small">
                           {String(o.asset_in ?? "")} → {String(o.asset_out ?? "")}
                         </td>
-                        <td className="num">{String(o.amount_in_raw ?? "—")}</td>
-                        <td className="num">{o.amount_out_raw === null || o.amount_out_raw === undefined ? "—" : String(o.amount_out_raw)}</td>
+                        <td className="num">{String(o.amount_in_raw ?? "n/a")}</td>
+                        <td className="num">{o.amount_out_raw === null || o.amount_out_raw === undefined ? "n/a" : String(o.amount_out_raw)}</td>
                         <td className="mono small">{fmtRel(o.submitted_ms as number)}</td>
-                        <td className="mono small">{o.fill_time_ms === null || o.fill_time_ms === undefined ? "—" : fmtRel(o.fill_time_ms as number)}</td>
+                        <td className="mono small">{o.fill_time_ms === null || o.fill_time_ms === undefined ? "n/a" : fmtRel(o.fill_time_ms as number)}</td>
                         <td className="small">{o.reason ? String(o.reason) : ""}</td>
                       </tr>
                     ))}
