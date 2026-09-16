@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+dist/
+build/
+
+# Node
+node_modules/
+apps/web/dist/
+sdk/typescript/dist/
+*.tsbuildinfo
+
+# Local data: raw, normalized, private packs and runs
+data/
+!data/README.md
+
+# Env
+.env
+.env.local
+
+# Browser test output
+tests/browser/output/
+playwright-report/
+test-results/
