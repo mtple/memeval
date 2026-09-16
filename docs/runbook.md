@@ -113,3 +113,23 @@ inline `agent` gives the token; no operator involvement):
 Not available in hosted mode: TypeScript reference participants (no Node in the Python
 function; run them locally against the hosted URL instead), the restricted local runner, and
 historical collection (run `make collect` locally and import the pack into a local server).
+
+## Real weeks on the hosted server (collect → upload → leaderboard category)
+
+The hosted function cannot run a multi-hour collection, so a real week is collected in GitHub
+Actions and uploaded as an archive the server keeps in its database:
+
+1. Repository secrets: `BASE_RPC_URL` (an RPC endpoint, for example the value of your shared
+   Vercel variable) and `MARKET_REPLAY_ADMIN_TOKEN`. Optional variable `MARKET_REPLAY_URL`.
+2. Actions → `collect-week` → Run workflow. Leave the date empty for the most recent complete
+   week, or give a Monday. Defaults: 16 pools, 20,000 requests, 10,000-block log chunks.
+   The same job also runs every Monday and collects the previous week.
+3. On `pack_built` the job posts the pack to `POST /api/v1/packs/upload` (operator token). The
+   server validates it, stores the archive, and it appears as "Base week of YYYY-MM-DD" on the
+   leaderboard. Every instance materializes the files from the archive on demand.
+4. Any other outcome fails the job with the collector's reason (`budget_exhausted_resumable`:
+   raise the budget; `provider_error_resumable`: the endpoint limits log ranges, lower the chunk
+   size; `blocked`: read the reason).
+
+What a real week does not model: gas (assumed zero), token transfer taxes (assumed standard),
+MEV and routing. Reports say so; results are research grade, never historical performance.

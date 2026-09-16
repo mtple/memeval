@@ -110,6 +110,14 @@ CREATE TABLE IF NOT EXISTS attempts (
   count INTEGER NOT NULL,
   PRIMARY KEY (pack_id, agent_id)
 );
+CREATE TABLE IF NOT EXISTS pack_archives (
+  pack_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  archive BYTEA NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS rate_events (
   kind TEXT NOT NULL,
   key TEXT NOT NULL,
@@ -118,7 +126,7 @@ CREATE TABLE IF NOT EXISTS rate_events (
 CREATE INDEX IF NOT EXISTS rate_events_kind_key_ts ON rate_events (kind, key, ts);
 """
 
-TABLES = ("packs", "agents", "runs", "traces", "docs", "usage", "comparisons", "studies", "suite_runs", "attempts", "rate_events")
+TABLES = ("packs", "agents", "runs", "traces", "docs", "usage", "comparisons", "studies", "suite_runs", "attempts", "rate_events", "pack_archives")
 
 
 def today_key() -> str:
@@ -252,6 +260,20 @@ class BaseStore:
         prefix = today_key()[:7] + "-%"
         row = self.one("SELECT COALESCE(SUM(runs),0) AS runs, COALESCE(SUM(cpu_seconds),0) AS cpu FROM usage WHERE day LIKE ?", (prefix,))
         return {"runs": int(row["runs"]), "cpu_seconds": float(row["cpu"])} if row else {"runs": 0, "cpu_seconds": 0.0}
+
+    # ------------------------------------------------------------------ pack archives (packs that are not regenerable fixtures)
+    def put_pack_archive(self, pack_id: str, name: str, archive: bytes, sha256: str, created_at: str) -> None:
+        self.execute(
+            "INSERT INTO pack_archives (pack_id, name, sha256, size, archive, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(pack_id) DO UPDATE SET name=excluded.name, sha256=excluded.sha256, size=excluded.size, archive=excluded.archive",
+            (pack_id, name, sha256, len(archive), archive, created_at),
+        )
+
+    def get_pack_archive(self, pack_id: str) -> bytes | None:
+        row = self.one("SELECT archive FROM pack_archives WHERE pack_id=?", (pack_id,))
+        return bytes(row["archive"]) if row else None
+
+    def pack_archive_meta(self, pack_id: str) -> dict[str, Any] | None:
+        return self.one("SELECT pack_id, name, sha256, size, created_at FROM pack_archives WHERE pack_id=?", (pack_id,))
 
     # ------------------------------------------------------------------ per-key rate limiting (shared across instances)
     def count_rate_events(self, kind: str, key: str, since_ts: float) -> int:

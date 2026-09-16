@@ -11,9 +11,11 @@ serialized by a store-level lock, so two instances can never interleave.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import secrets
+import tarfile
 import threading
 import time
 import traceback
@@ -148,6 +150,51 @@ class RunManager:
             self._packs[m.pack_id] = pack
         return self.pack_row(m.pack_id)
 
+    MAX_PACK_ARCHIVE = 80 * 1024 * 1024
+
+    def upload_pack(self, archive: bytes, name: str | None = None) -> dict[str, Any]:
+        """Import a pack from a gzip tar of its directory and keep the archive in the store, so any
+        instance can materialize it later (historical weeks are not regenerable like fixtures)."""
+        if len(archive) > self.MAX_PACK_ARCHIVE:
+            raise ApiError(413, f"pack archive larger than {self.MAX_PACK_ARCHIVE // (1024 * 1024)} MB", "TOO_LARGE")
+        target = self._extract_archive(archive, name)
+        view = self.import_pack(target, name or target.name)
+        self.store.put_pack_archive(view["pack_id"], view["name"], archive, hashlib.sha256(archive).hexdigest(), now_iso())
+        return view
+
+    def _extract_archive(self, archive: bytes, name: str | None) -> Path:
+        try:
+            with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tf:
+                members = [m for m in tf.getmembers() if m.isfile() or m.isdir()]
+                if not members:
+                    raise ApiError(400, "empty archive", "PACK_INVALID")
+                manifests = [m.name for m in members if m.name.endswith("manifest.yaml")]
+                if len(manifests) != 1:
+                    raise ApiError(400, "archive must contain exactly one pack (one manifest.yaml)", "PACK_INVALID")
+                root = manifests[0][: -len("manifest.yaml")].rstrip("/")
+                pack_name = name or (Path(root).name if root else "uploaded_pack")
+                target = self.data_dir / "packs" / "uploaded" / pack_name
+                if target.exists():
+                    import shutil
+
+                    shutil.rmtree(target)
+                target.mkdir(parents=True)
+                for m in members:
+                    rel = m.name[len(root):].lstrip("/") if root else m.name
+                    if not rel or ".." in Path(rel).parts or Path(rel).is_absolute():
+                        continue
+                    dest = target / rel
+                    if m.isdir():
+                        dest.mkdir(parents=True, exist_ok=True)
+                        continue
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    src = tf.extractfile(m)
+                    if src is not None:
+                        dest.write_bytes(src.read())
+                return target
+        except tarfile.TarError as e:
+            raise ApiError(400, f"not a gzip tar archive: {e}", "PACK_INVALID") from e
+
     def ensure_fixture_pack(self, name: str) -> dict[str, Any]:
         """Register one of the shipped generated fixtures by name, generating it only the first time.
 
@@ -203,13 +250,18 @@ class RunManager:
                 path = Path(row["path"])
                 if not (path / "manifest.yaml").exists():
                     # Ephemeral filesystem (serverless) or moved files: shipped fixtures are regenerated
-                    # deterministically and must hash to the same pack id.
+                    # deterministically and must hash to the same pack id; uploaded packs come back
+                    # from the archive kept in the store.
                     cfg = FIXTURE_CONFIGS.get(row["name"])
-                    if cfg is None:
-                        raise ApiError(410, f"pack files for {row['name']} are not available on this instance", "PACK_FILES_MISSING")
-                    path = self.data_dir / "packs" / "generated" / row["name"]
-                    if not (path / "manifest.yaml").exists():
-                        generate_pack(cfg, path)
+                    if cfg is not None:
+                        path = self.data_dir / "packs" / "generated" / row["name"]
+                        if not (path / "manifest.yaml").exists():
+                            generate_pack(cfg, path)
+                    else:
+                        archive = self.store.get_pack_archive(row["pack_id"])
+                        if archive is None:
+                            raise ApiError(410, f"pack files for {row['name']} are not available on this instance", "PACK_FILES_MISSING")
+                        path = self._extract_archive(archive, row["name"])
                     self.store.execute("UPDATE packs SET path=? WHERE pack_id=?", (str(path.resolve()), row["pack_id"]))
                 pack = Pack.load(path)
                 if pack.pack_id != row["pack_id"]:
@@ -1016,9 +1068,9 @@ class RunManager:
         for s in self.suites.values():
             if s.sealed or len(s.packs) < 2:  # a one-episode suite is its episode's own tab
                 continue
-            cats.append({"kind": "suite", "id": s.suite_id, "label": _suite_label(s), "episodes": list(s.packs)})
+            cats.append({"kind": "suite", "id": s.suite_id, "label": _suite_label(s), "description": s.description, "episodes": list(s.packs)})
         for r in self.store.packs():
-            cats.append({"kind": "pack", "id": r["pack_id"], "label": _episode_label(r["name"], r["is_full_week"], r["duration_ms"]), "episodes": [r["name"]]})
+            cats.append({"kind": "pack", "id": r["pack_id"], "label": _episode_label(r), "description": _episode_description(r), "episodes": [r["name"]]})
         return cats
 
     def leaderboard(self, *, suite_id: str | None = None, pack_id: str | None = None) -> dict[str, Any]:
@@ -1029,17 +1081,17 @@ class RunManager:
             if s is None:
                 raise ApiError(404, f"unknown suite {suite_id}", "NOT_FOUND")
             episode_names = list(s.packs)
-            category = {"kind": "suite", "id": suite_id, "label": _suite_label(s), "episodes": episode_names}
+            category = {"kind": "suite", "id": suite_id, "label": _suite_label(s), "description": s.description, "episodes": episode_names}
             wanted_packs = {r["pack_id"] for n in episode_names if (r := self.store.pack(n))}
         elif pack_id:
             r = self.store.pack(pack_id)
             if r is None:
                 raise ApiError(404, f"unknown pack {pack_id}", "NOT_FOUND")
             wanted_packs = {r["pack_id"]}
-            category = {"kind": "pack", "id": r["pack_id"], "label": _episode_label(r["name"], r["is_full_week"], r["duration_ms"]), "episodes": [r["name"]]}
+            category = {"kind": "pack", "id": r["pack_id"], "label": _episode_label(r), "description": _episode_description(r), "episodes": [r["name"]]}
         else:
             wanted_packs = {r["pack_id"] for r in self.store.packs()}
-            category = {"kind": "all", "id": "all", "label": "Every episode", "episodes": [r["name"] for r in self.store.packs()]}
+            category = {"kind": "all", "id": "all", "label": "Every episode", "description": "Every episode on this server, artificial and real, ranked together.", "episodes": [r["name"] for r in self.store.packs()]}
         # latest valued run per (agent, pack)
         best: dict[tuple[str, str], dict[str, Any]] = {}
         attempts: dict[str, int] = {}
@@ -1162,13 +1214,35 @@ class RunManager:
         return [json.loads(r["record_json"]) for r in self.store.studies()]
 
 
-def _episode_label(name: str, is_full_week: Any, duration_ms: Any) -> str:
-    """'gen_week_trending' -> 'Week: trending'; short fixtures say their length."""
+def _episode_label(row: dict[str, Any]) -> str:
+    """'gen_week_trending' -> 'Week: trending'; a real week says its chain and start date."""
+    name, is_full_week, duration_ms = row["name"], row["is_full_week"], row["duration_ms"]
+    if str(row.get("origin", "")) != "generated_fixture":
+        start = str(row.get("start_utc") or "")[:10]
+        chain = str(row.get("chain") or "").capitalize()
+        if is_full_week:
+            return f"{chain} week of {start}" if start else f"{chain} week"
+        hours = float(duration_ms or 0) / 3_600_000
+        return f"{chain} {start} ({hours:g}h)"
     base = name.replace("gen_week_", "").replace("gen_", "").replace("_", " ")
     if is_full_week:
         return f"Week: {base}"
     hours = float(duration_ms or 0) / 3_600_000
     return f"{base} ({hours:g}h)" if hours else base
+
+
+def _episode_description(row: dict[str, Any]) -> str:
+    """One sentence under the category tab: the scenario for fixtures, provenance for real data."""
+    try:
+        summary = json.loads(row.get("summary_json") or "{}")
+    except (TypeError, ValueError):
+        summary = {}
+    if str(row.get("origin", "")) == "generated_fixture":
+        scenario = summary.get("scenario") or ""
+        return f"Artificial market with known rules. {scenario}".strip()
+    start, end = str(row.get("start_utc") or "")[:16].replace("T", " "), str(row.get("end_utc") or "")[:16].replace("T", " ")
+    pools = summary.get("pools_executable")
+    return f"Real swaps recorded on {row.get('chain')} from {start} to {end} UTC, {pools} tradable pools, replayed through the execution model (gas and token taxes assumed standard). Not historical performance."
 
 
 def _suite_label(s: SuiteDef) -> str:

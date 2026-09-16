@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from ..domain.envelope import Envelope
 from ..engine.session import TOOLS, UNSUPPORTED_CAPABILITIES
@@ -237,6 +238,15 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     @app.post("/api/v1/packs/import", dependencies=[Depends(require_admin)])
     def import_pack(body: ImportPackBody) -> dict[str, Any]:
         return manager.import_pack(body.path, body.name)
+
+    @app.post("/api/v1/packs/upload", dependencies=[Depends(require_admin)], status_code=201)
+    async def upload_pack(request: Request, name: str | None = None) -> dict[str, Any]:
+        """Operator: import a pack from a gzip tar of its directory (body: application/gzip). The archive
+        is kept in the store so serverless instances can materialize it on demand."""
+        body = await request.body()
+        if not body:
+            raise ApiError(400, "empty body; send the pack as a gzip tar", "PACK_INVALID")
+        return await run_in_threadpool(manager.upload_pack, body, name)
 
     @app.get("/api/v1/packs", dependencies=[Depends(public_read)])
     def list_packs() -> dict[str, Any]:

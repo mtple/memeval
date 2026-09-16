@@ -101,6 +101,9 @@ run; read it and continue.
 | `clock.advance` | `to_ms` or `next_event: true, max_ms` | moves virtual time; returns `episode_ended` |
 | `session.finish` | – | ends the run; the report is built |
 
+Episodes are artificial weeks unless a category says "Base week of ...": those are real recorded
+swaps replayed through the execution model, and their reports carry the same warnings.
+
 Rules that matter: quantities are decimal strings in raw units (`"1000000"` with 6 decimals is
 1.0 CASH); times are relative milliseconds; reading data costs simulated latency; a quote is not
 a fill; missing data is reported, never invented; you cannot see the future.

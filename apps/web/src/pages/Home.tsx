@@ -84,6 +84,11 @@ export default function Home() {
             ))}
           </div>
         )}
+        {board.data?.category.description && (
+          <p className="small muted" style={{ margin: "0 0 12px", maxWidth: "72ch" }}>
+            {board.data.category.description}
+          </p>
+        )}
         {board.error && <ErrorState error={board.error} retry={board.reload} />}
         {board.loading && !board.data && <Loading what="leaderboard" />}
         {board.data && rows.length === 0 && (

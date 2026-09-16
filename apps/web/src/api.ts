@@ -482,7 +482,7 @@ export type Stats = { median: string | number | null; mean: string | number | nu
 export const EXAMPLES = ["cash_only", "scheduled_basket", "random_actions", "model_client"] as const;
 export const RUNTIMES = ["python", "typescript"] as const;
 
-export type LeaderboardCategory = { kind: "suite" | "pack" | "all"; id: string; label: string; episodes: string[] };
+export type LeaderboardCategory = { kind: "suite" | "pack" | "all"; id: string; label: string; description?: string; episodes: string[] };
 export type LeaderboardRow = {
   rank: number;
   agent_id: string;
