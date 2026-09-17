@@ -27,6 +27,13 @@ from ..collectors.historical import run_collection
 from .runs import ApiError, RunManager, now_iso
 
 RESUMABLE = ("queued", "collecting")
+# Venues a week can be recorded from. v2 pairs are constant-product; v3/v4 pools are concentrated
+# liquidity (v4 is where Clanker/Bankr launches trade, behind hooks).
+PROTOCOLS = {
+    "uniswap_v2": "v2 pairs",
+    "uniswap_v3": "v3 pools",
+    "uniswap_v4": "v4 pools",
+}
 MAX_PROVIDER_RETRIES = 6
 LEASE_GRACE_SECONDS = 90  # a slice may overrun its deadline by one request plus the save
 
@@ -69,10 +76,12 @@ class WeekJobs:
         return bool(self.rpc_url)
 
     # ------------------------------------------------------------------ requests
-    def request(self, start_utc: str, end_utc: str | None = None, *, requested_by: str = "", chain: str = "base") -> dict[str, Any]:
-        """Queue a period (a week from `start_utc` unless `end_utc` is given). Idempotent per period."""
+    def request(self, start_utc: str, end_utc: str | None = None, *, requested_by: str = "", chain: str = "base", protocol: str = "uniswap_v2") -> dict[str, Any]:
+        """Queue a period (a week from `start_utc` unless `end_utc` is given). Idempotent per period and venue."""
         if not self.enabled:
             raise ApiError(503, "no RPC endpoint is configured on this server (BASE_RPC_URL); real weeks cannot be collected", "WEEKS_DISABLED")
+        if protocol not in PROTOCOLS:
+            raise ApiError(400, f"unknown venue {protocol!r}; one of {sorted(PROTOCOLS)}", "INVALID")
         start = _parse(start_utc)
         end = _parse(end_utc) if end_utc else start + timedelta(days=7)
         if end <= start:
@@ -82,7 +91,7 @@ class WeekJobs:
         if (end - start) > timedelta(days=7, hours=1):
             raise ApiError(400, "a period is at most one week", "INVALID")
         is_week = (end - start) >= timedelta(days=7)
-        existing = self.m.store.week_job_by_period(chain, _iso(start), _iso(end))
+        existing = self.m.store.week_job_by_period(chain, _iso(start), _iso(end), protocol)
         if existing:
             return self.view(existing)
         # Sealed naming: the public name carries a sequence number, never the calendar. Agents (and their
@@ -97,7 +106,7 @@ class WeekJobs:
         cfg = {
             "rpc_url_env": "BASE_RPC_URL",
             "chain": chain,
-            "protocol": "uniswap_v2",
+            "protocol": protocol,
             "period_start_utc": _iso(start),
             "period_end_utc": _iso(end),
             "discovery_window_start_utc": _iso(start - timedelta(days=7 if is_week else 1)),
@@ -113,7 +122,7 @@ class WeekJobs:
             "authorization_note": "Operator-configured read-only RPC endpoint with a fixed request budget; public chain data; redistribution not cleared.",
         }
         now = now_iso()
-        self.m.store.insert_week_job({"job_id": job_id, "name": name, "chain": chain, "period_start_utc": cfg["period_start_utc"], "period_end_utc": cfg["period_end_utc"], "status": "queued", "config_json": json.dumps(cfg, sort_keys=True), "requests_used": 0, "attempts": 0, "note": "queued; the next tick starts collecting", "error": None, "pack_id": None, "requested_by": requested_by, "created_at": now, "updated_at": now})
+        self.m.store.insert_week_job({"job_id": job_id, "name": name, "chain": chain, "protocol": protocol, "period_start_utc": cfg["period_start_utc"], "period_end_utc": cfg["period_end_utc"], "status": "queued", "config_json": json.dumps(cfg, sort_keys=True), "requests_used": 0, "attempts": 0, "note": "queued; the next tick starts collecting", "error": None, "pack_id": None, "requested_by": requested_by, "created_at": now, "updated_at": now})
         return self.view(self.m.store.week_job(job_id))
 
     def jobs(self, role: str = "public") -> list[dict[str, Any]]:
@@ -133,8 +142,9 @@ class WeekJobs:
         out = {
             "job_id": row["job_id"],
             "name": row["name"],
-            "label": week_label(row["name"], row["chain"]),
+            "label": week_label(row["name"], row["chain"], row.get("protocol") or cfg.get("protocol") or "uniswap_v2"),
             "chain": row["chain"],
+            "protocol": row.get("protocol") or cfg.get("protocol") or "uniswap_v2",
             "duration_hours": hours,
             "dates_sealed": True,
             "status": row["status"],
@@ -263,14 +273,17 @@ class WeekJobs:
         return {"uploaded": uploaded, "kept": len(seen) - uploaded}
 
 
-def week_label(name: str, chain: str) -> str:
-    """'base_week_03' -> 'Base week 3'; 'base_period_02_1h' -> 'Base period 2 (1h)'."""
+def week_label(name: str, chain: str, protocol: str | None = None) -> str:
+    """'base_week_03' -> 'Base week 3'; 'base_period_02_1h' -> 'Base period 2 (1h)'. The venue is named for
+    anything but the original v2 pairs ('Base week 4, v4 pools'); the calendar never is."""
     parts = name.split("_")
+    venue = PROTOCOLS.get(protocol or "", "")
+    suffix = f", {venue}" if venue and protocol != "uniswap_v2" else ""
     if len(parts) >= 3 and parts[1] == "week" and parts[2].isdigit():
-        return f"{chain.capitalize()} week {int(parts[2])}"
+        return f"{chain.capitalize()} week {int(parts[2])}{suffix}"
     if len(parts) >= 4 and parts[1] == "period" and parts[2].isdigit():
-        return f"{chain.capitalize()} period {int(parts[2])} ({parts[3]})"
-    return name.replace("_", " ")
+        return f"{chain.capitalize()} period {int(parts[2])} ({parts[3]}){suffix}"
+    return name.replace("_", " ") + suffix
 
 
 def _parse(s: str) -> datetime:

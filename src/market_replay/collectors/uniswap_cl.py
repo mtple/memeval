@@ -71,6 +71,7 @@ from .historical import (
 
 CL_MODELS = {"uniswap_v3": PoolModel.UNISWAP_V3_CL, "uniswap_v4": PoolModel.UNISWAP_V4_CL}
 FEE_DENOMINATOR_PIPS = 1_000_000
+DYNAMIC_FEE_FLAG = 0x800000  # v4 LPFeeLibrary.DYNAMIC_FEE_FLAG: the hook sets the fee per swap
 
 
 # ---------------------------------------------------------------------- normalizer
@@ -367,6 +368,22 @@ def run_cl_collection(
                 swap_logs = scan(pool_key, "swaps", pk + ":swaps", address=addr, topics=[[TOPIC_V3_SWAP]], start=max(meta["created_block"], pre_start), end_exclusive=blocks["period_end"])
                 raw_logs = liq_logs + swap_logs
             rows = normalize_cl_logs(raw_logs, protocol=protocol, pool_key=pool_key, fee_pips=int(meta["fee"]), block_time_ms=block_time_ms)
+            # v4 pools may carry the dynamic-fee flag (0x800000) instead of a fee: the hook sets the fee per swap
+            # and every Swap event reports it. The pool's own fee for agent fills is then the last fee observed
+            # before the window (or the first one inside it); the basis is recorded on the pool.
+            pool_fee = int(meta["fee"])
+            fee_basis = "pool_fee_from_initialize"
+            if pool_fee & DYNAMIC_FEE_FLAG:
+                observed = [(r["block"], int(r["fee_pips"])) for r in rows if r["kind"] == "cl_swap" and r.get("fee_pips") is not None]
+                before = [f for b, f in observed if b < pre_start]
+                if before:
+                    pool_fee, fee_basis = before[-1], "dynamic_hook_fee_last_observed_before_window"
+                elif observed:
+                    pool_fee, fee_basis = observed[0][1], "dynamic_hook_fee_first_observed_inside_window"
+                else:
+                    pool_fee, fee_basis = 0, "dynamic_hook_fee_never_observed"
+                if not (0 <= pool_fee < FEE_DENOMINATOR_PIPS):
+                    pool_fee, fee_basis = FEE_DENOMINATOR_PIPS - 1, "dynamic_hook_fee_out_of_range_clamped"
             init_rows = [r for r in rows if r["kind"] == "cl_init"]
             init_block = init_rows[0]["block"] if init_rows else None
             # Initial state at the block before the prehistory window (pools initialized inside the window start from their cl_init row).
@@ -444,9 +461,10 @@ def run_cl_collection(
                     "model": str(CL_MODELS[protocol]),
                     "asset0": f"{dep['chain_id']}:{legs[0]}",
                     "asset1": f"{dep['chain_id']}:{legs[1]}",
-                    "fee_numerator": FEE_DENOMINATOR_PIPS - int(meta["fee"]),
+                    "fee_numerator": FEE_DENOMINATOR_PIPS - pool_fee,
                     "fee_denominator": FEE_DENOMINATOR_PIPS,
-                    "fee_pips": int(meta["fee"]),
+                    "fee_pips": pool_fee,
+                    "fee_basis": fee_basis,
                     "tick_spacing": int(meta["tick_spacing"]),
                     "hooks": meta["hooks"],
                     "created_block": meta["created_block"],

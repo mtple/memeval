@@ -1223,7 +1223,12 @@ def _episode_label(row: dict[str, Any]) -> str:
     if str(row.get("origin", "")) != "generated_fixture":
         from .weeks import week_label
 
-        return week_label(name, str(row.get("chain") or ""))
+        try:
+            models = json.loads(row.get("summary_json") or "{}").get("universe", {}).get("pool_models") or []
+        except (TypeError, ValueError):
+            models = []
+        protocol = "uniswap_v4" if any("v4" in str(m) for m in models) else "uniswap_v3" if any("v3" in str(m) for m in models) else "uniswap_v2"
+        return week_label(name, str(row.get("chain") or ""), protocol)
     base = name.replace("gen_week_", "").replace("gen_", "").replace("_", " ")
     if is_full_week:
         return f"Week: {base}"

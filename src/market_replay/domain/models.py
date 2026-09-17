@@ -67,6 +67,7 @@ class Pool(StrictModel):
     unsupported_reason: str | None = None
     # concentrated liquidity (uniswap_v3_cl / uniswap_v4_cl)
     fee_pips: int | None = None
+    fee_basis: str | None = None  # e.g. "pool_fee_from_initialize", "dynamic_hook_fee_last_observed_before_window"
     tick_spacing: int | None = None
     hooks: str | None = None
     initial_sqrt_price_x96: str | None = None

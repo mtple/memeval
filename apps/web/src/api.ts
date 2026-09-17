@@ -273,6 +273,7 @@ export type WeekJob = {
   name: string;
   label: string;
   chain: string;
+  protocol?: string;
   duration_hours: number;
   dates_sealed: boolean;
   period_start_utc?: string;

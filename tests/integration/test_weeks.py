@@ -12,6 +12,7 @@ from market_replay.service.app import create_app
 from market_replay.service.runs import RunManager
 from market_replay.service.weeks import WeekJobs
 from tests.integration.test_collector import FakeBase
+from tests.integration.test_collector_cl import FakePoolManager
 
 PERIOD_START = "2025-09-04T14:53:20Z"
 PERIOD_END = "2025-09-04T15:53:20Z"
@@ -65,6 +66,38 @@ def test_a_period_is_collected_in_slices_across_fresh_instances_and_becomes_a_ca
     final.close()
 
 
+def test_a_v4_period_is_collected_and_labelled_by_venue(tmp_path: Path):
+    fake = FakePoolManager(protocol="uniswap_v4")
+    store = str(tmp_path / "store.sqlite")
+    mgr = RunManager(data_dir=tmp_path / "data", store_url=store, hosted=True)
+    mgr.weeks = WeekJobs(mgr, rpc_url="http://fake-rpc.local", slice_seconds=240, max_requests=600, log_chunk_blocks=3000, max_pairs=2, selection_rule="earliest_created_wrapped_native_pairs_v1", transport=httpx.MockTransport(fake.handle), sleep=lambda s: None)
+    v2 = mgr.weeks.request(PERIOD_START, PERIOD_END)  # same period on v2 pairs is a different job
+    job = mgr.weeks.request(PERIOD_START, PERIOD_END, protocol="uniswap_v4")
+    assert job["job_id"] != v2["job_id"] and job["protocol"] == "uniswap_v4" and job["label"] == "Base period 2 (1h), v4 pools"
+    assert v2["label"] == "Base period 1 (1h)"
+    assert mgr.weeks.request(PERIOD_START, PERIOD_END, protocol="uniswap_v4")["job_id"] == job["job_id"]
+    try:
+        mgr.weeks.request(PERIOD_START, PERIOD_END, protocol="sushi")
+    except Exception as e:  # noqa: BLE001
+        assert "unknown venue" in str(e)
+    else:
+        raise AssertionError("unknown venue accepted")
+    # the v2 job goes first (older); the fake chain serves v4 logs, so v2 collection blocks and the v4 one builds
+    mgr.store.update_week_job(v2["job_id"], status="failed", error="skipped in test")
+    out = None
+    for _ in range(80):
+        out = mgr.weeks.tick(slice_seconds=0.001)
+        if out["advanced"] is None or out["advanced"]["status"] in ("built", "failed"):
+            break
+    assert out and out["advanced"] and out["advanced"]["status"] == "built", out
+    view = mgr.weeks.job(job["job_id"])
+    row, pack = mgr.load_pack(view["name"])
+    assert any(p.model == "uniswap_v4_cl" for p in pack.pools.values()) and any(r["kind"] == "cl_swap" for r in pack.tape)
+    cats = mgr.leaderboard_categories()
+    assert any(c["id"] == view["pack_id"] and c["label"] == "Base period 2 (1h), v4 pools" for c in cats)
+    mgr.close()
+
+
 def test_week_requests_are_validated_capped_and_public_over_http(tmp_path: Path):
     fake = FakeBase()
     mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))
@@ -73,6 +106,7 @@ def test_week_requests_are_validated_capped_and_public_over_http(tmp_path: Path)
     assert c.get("/api/v1/meta").json()["weeks_enabled"] is True
     assert c.post("/api/v1/weeks", json={"week_start": "not a date"}).status_code == 400
     assert c.post("/api/v1/weeks", json={"week_start": "2999-01-01"}).status_code == 400  # not finished yet
+    assert c.post("/api/v1/weeks", json={"week_start": PERIOD_START, "period_end": PERIOD_END, "protocol": "curve"}).status_code == 400
     r = c.post("/api/v1/weeks", json={"week_start": PERIOD_START, "period_end": PERIOD_END})
     assert r.status_code == 201 and r.json()["status"] == "queued"
     assert c.post("/api/v1/weeks", json={"week_start": "2025-08-04"}).status_code == 429  # daily cap

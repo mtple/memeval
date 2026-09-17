@@ -85,6 +85,7 @@ class EnrollBody(BaseModel):
 class WeekBody(BaseModel):
     week_start: str = Field(min_length=10, max_length=25)
     period_end: str | None = None
+    protocol: str = Field(default="uniswap_v2", max_length=32)
 
 
 class SuiteRunBody(BaseModel):
@@ -295,7 +296,7 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     @app.post("/api/v1/weeks", dependencies=[Depends(public_write("weeks"))], status_code=201)
     def request_week(body: WeekBody, request: Request) -> dict[str, Any]:
         """Ask for a real past week. Idempotent per period; collected in slices by ticks."""
-        return weeks_or_503().request(body.week_start, body.period_end, requested_by=client_ip(request))
+        return weeks_or_503().request(body.week_start, body.period_end, requested_by=client_ip(request), protocol=body.protocol)
 
     @app.get("/api/v1/weeks/tick", dependencies=[Depends(public_read)])
     @app.post("/api/v1/weeks/tick", dependencies=[Depends(public_read)])

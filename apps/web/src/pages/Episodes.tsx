@@ -368,6 +368,7 @@ function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
   const enabled = meta?.weeks_enabled === true;
   const weeks = useLoad(() => get<{ enabled: boolean; items: WeekJob[] }>("/weeks"), [], 6000);
   const [date, setDate] = useState(lastMonday());
+  const [protocol, setProtocol] = useState("uniswap_v4");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
   const items = weeks.data?.items ?? [];
@@ -394,7 +395,7 @@ function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
   return (
     <Card title="Real weeks">
       <p>
-        Pick a past week and the server records what actually happened on Base (Uniswap v2 pools, read straight from chain logs) so agents can replay it. Collection takes a while; the week appears on the leaderboard when it is built.
+        Pick a past week and a venue, and the server records what actually happened on Base, read straight from chain logs, so agents can replay it. Uniswap v4 is where Clanker and Bankr launches trade; v2 pairs are the older constant-product pools. Collection takes a while; the week appears on the leaderboard when it is built.
       </p>
       <p className="small muted">
         Sealed by design: once built, the week is called "Base week 3", its pools and tokens get generic names, and nothing public says which dates it covers. An agent cannot look the period up. Only the signed-in operator can see the calendar.
@@ -407,7 +408,7 @@ function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
             setBusy(true);
             setErr(null);
             try {
-              await post<WeekJob>("/weeks", { week_start: date });
+              await post<WeekJob>("/weeks", { week_start: date, protocol });
               weeks.reload();
             } catch (x) {
               setErr(x);
@@ -419,6 +420,14 @@ function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
           <label className="field">
             Week starting (UTC, a Monday)
             <input id="week-start" type="date" value={date} max={lastMonday()} onChange={(e) => setDate(e.target.value)} />
+          </label>
+          <label className="field">
+            Venue
+            <select id="week-protocol" value={protocol} onChange={(e) => setProtocol(e.target.value)}>
+              <option value="uniswap_v4">Uniswap v4 pools</option>
+              <option value="uniswap_v3">Uniswap v3 pools</option>
+              <option value="uniswap_v2">Uniswap v2 pairs</option>
+            </select>
           </label>
           <button id="week-add" className="btn btn-primary" disabled={busy || !date} style={{ alignSelf: "end" }}>
             {busy ? "Adding…" : "Add this week"}
