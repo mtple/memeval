@@ -302,6 +302,11 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     @app.post("/api/v1/weeks/tick", dependencies=[Depends(public_read)])
     async def tick_weeks(slice: float | None = None) -> dict[str, Any]:
         """Advance the oldest unfinished collection by one time slice (cron and open pages call this)."""
+        import os
+
+        if os.environ.get("MARKET_REPLAY_WEEKS_RESUME") != "1":
+            # Collection is paused until the operator sets MARKET_REPLAY_WEEKS_RESUME=1: no RPC call is made.
+            return {"advanced": None, "paused": True, "pending": 0}
         w = weeks_or_503()
         s = None if slice is None else max(5.0, min(float(slice), w.slice_seconds))
         return await run_in_threadpool(w.tick, s)
