@@ -196,6 +196,18 @@ def test_provider_errors_persisted_and_chunk_halved(tmp_path: Path):
     assert any("chunk reduced" in s for s in res["decision_log"])
 
 
+def test_backoff_never_sleeps_past_the_slice_deadline(tmp_path: Path):
+    import time
+
+    fake = FakeBase(rate_limit_once=True)
+    cfg = write_cfg(tmp_path)
+    slept: list[float] = []
+    res = run_collection(cfg, tmp_path, transport=httpx.MockTransport(fake.handle), rpc_url_override="http://fake-rpc.local", sleep=slept.append, deadline=time.monotonic() - 1)
+    assert res["status"] == "in_progress_resumable" and "backing off" in res["reason"] and slept == []
+    res = run_collection(cfg, tmp_path, transport=httpx.MockTransport(fake.handle), rpc_url_override="http://fake-rpc.local", sleep=slept.append)
+    assert res["status"] == "pack_built"
+
+
 def test_missing_endpoint_is_blocked_not_guessed(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("TEST_BASE_RPC_URL", raising=False)
     cfg = write_cfg(tmp_path)

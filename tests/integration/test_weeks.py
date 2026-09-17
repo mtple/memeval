@@ -103,7 +103,71 @@ def test_a_tick_during_a_running_slice_reports_busy_instead_of_waiting(tmp_path:
     mgr.store.update_week_job(job["job_id"], status="collecting", lease_until="2999-01-01T00:00:00Z")
     out = mgr.weeks.tick(slice_seconds=0.001)
     assert out["advanced"] is None and out["busy"] is True
+    # a lease that expired while the holder is still inside its slice: the lock says busy, nobody waits
+    mgr.store.update_week_job(job["job_id"], lease_until="2000-01-01T00:00:00Z")
+    other = make(tmp_path / "other", fake, str(tmp_path / "s.sqlite"), slice_seconds=100)
+    with other.store.run_lock("weekjob:" + job["job_id"]):
+        out = mgr.weeks.tick(slice_seconds=0.001)
+    assert out["advanced"] is None and out["busy"] is True
+    other.close()
     mgr.close()
+
+
+def test_work_state_syncs_per_file_and_only_changed_files_travel(tmp_path: Path):
+    fake = FakeBase()
+    store = str(tmp_path / "s.sqlite")
+    mgr = make(tmp_path, fake, store)
+    job = mgr.weeks.request(PERIOD_START, PERIOD_END)
+    out = mgr.weeks.tick(slice_seconds=0.001)
+    assert out["advanced"]["status"] == "collecting"
+    index = mgr.store.week_job_file_index(job["job_id"])
+    assert "checkpoints.json" in index and not any(p.startswith("receipts/") for p in index)
+    assert mgr.store.week_job_archive(job["job_id"]) is None  # no monolithic archive any more
+    # nothing changed on disk -> nothing re-uploaded
+    work = next(p for p in (tmp_path / "data" / "packs" / "historical").iterdir() if p.name.endswith("_work"))
+    assert mgr.weeks._save_work(job["job_id"], work)["uploaded"] == 0
+    # a fresh instance restores the same bytes and continues
+    fresh = make(tmp_path / "fresh", fake, store)
+    for _ in range(60):
+        out = fresh.weeks.tick(slice_seconds=0.001)
+        if out["advanced"]["status"] in ("built", "failed"):
+            break
+    assert out["advanced"]["status"] == "built", out
+    assert fresh.store.week_job_file_index(job["job_id"]) == {}  # cleaned up once the pack exists
+    fresh.close()
+    mgr.close()
+
+
+def test_a_legacy_archive_is_restored_and_pool_logs_migrate_out_of_checkpoints(tmp_path: Path):
+    from market_replay.service.weeks import _targz
+
+    fake = FakeBase()
+    store = str(tmp_path / "s.sqlite")
+    mgr = make(tmp_path, fake, store)
+    job = mgr.weeks.request(PERIOD_START, PERIOD_END)
+    # run until the pool scan has started, then rewrite the work dir in the old layout (logs inside checkpoints.json)
+    work = None
+    for _ in range(60):
+        out = mgr.weeks.tick(slice_seconds=0.001)
+        work = next((p for p in (tmp_path / "data" / "packs" / "historical").iterdir() if p.name.endswith("_work")), None)
+        if work and (work / "logs").exists():
+            break
+    assert work is not None and (work / "logs").exists()
+    ck = json.loads((work / "checkpoints.json").read_text())
+    for f in (work / "logs").glob("*.jsonl"):
+        ck[f"pairlogs:{f.stem}:logs"] = [json.loads(line) for line in f.read_text().splitlines() if line.strip()]
+        f.unlink()
+    (work / "checkpoints.json").write_text(json.dumps(ck))
+    mgr.store.delete_week_job_files(job["job_id"])
+    mgr.store.set_week_job_archive(job["job_id"], _targz(work))
+    mgr.close()
+    fresh = make(tmp_path / "fresh", fake, store)
+    for _ in range(60):
+        out = fresh.weeks.tick(slice_seconds=0.001)
+        if out["advanced"]["status"] in ("built", "failed"):
+            break
+    assert out["advanced"]["status"] == "built", out
+    fresh.close()
 
 
 def test_rpc_urls_never_reach_the_logs(caplog, tmp_path: Path):

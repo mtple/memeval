@@ -27,6 +27,10 @@ class BudgetExhausted(RuntimeError):
     pass
 
 
+class TimeSliceExpired(RuntimeError):
+    """The caller's time slice ran out; everything done so far is checkpointed and the run resumes later."""
+
+
 class ProviderError(RuntimeError):
     def __init__(self, message: str, *, retryable: bool = False, status: int | None = None) -> None:
         super().__init__(message)
@@ -175,6 +179,7 @@ class HttpCollector:
     max_retries: int = 4
     backoff_base_s: float = 0.5
     sleep: Any = time.sleep
+    deadline: float | None = None  # time.monotonic(); backoff never sleeps past it
     headers: dict[str, str] = field(default_factory=dict)
     _client: httpx.Client | None = None
 
@@ -182,6 +187,12 @@ class HttpCollector:
         if self._client is None:
             self._client = httpx.Client(timeout=30, transport=self.transport, headers=self.headers)
         return self._client
+
+    def _backoff(self, attempt: int) -> None:
+        wait = self.backoff_base_s * (2**attempt)
+        if self.deadline is not None and time.monotonic() + wait >= self.deadline:
+            raise TimeSliceExpired("time slice expired while backing off from a provider error; the request is retried next slice")
+        self.sleep(wait)
 
     def _persist_error(self, kind: str, detail: str, request: dict[str, Any]) -> None:
         self.budget.failures += 1
@@ -204,7 +215,7 @@ class HttpCollector:
                 if attempt < self.max_retries:
                     attempt += 1
                     self.budget.retries += 1
-                    self.sleep(self.backoff_base_s * (2**attempt))
+                    self._backoff(attempt)
                     continue
                 raise ProviderError(f"transport failure after retries: {e}", retryable=True) from e
             received = now_ms()
@@ -224,7 +235,7 @@ class HttpCollector:
                 if attempt < self.max_retries:
                     attempt += 1
                     self.budget.retries += 1
-                    self.sleep(self.backoff_base_s * (2**attempt))
+                    self._backoff(attempt)
                     continue
                 raise ProviderError(f"provider limit persisted: status {r.status_code} {app_err}", retryable=True, status=r.status_code)
             if r.status_code >= 400:

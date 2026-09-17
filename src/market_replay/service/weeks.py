@@ -9,6 +9,8 @@ and it appears as a leaderboard category.
 
 from __future__ import annotations
 
+import gzip
+import hashlib
 import io
 import json
 import shutil
@@ -26,6 +28,7 @@ from .runs import ApiError, RunManager, now_iso
 
 RESUMABLE = ("queued", "collecting")
 MAX_PROVIDER_RETRIES = 6
+LEASE_GRACE_SECONDS = 90  # a slice may overrun its deadline by one request plus the save
 
 
 class WeekJobs:
@@ -158,10 +161,14 @@ class WeekJobs:
         row = pending[0]
         if self._slice_in_flight(row):
             return {"advanced": None, "busy": True, "pending": len(pending), "job_id": row["job_id"]}
-        with self.m.store.run_lock("weekjob:" + row["job_id"]):
+        # Never queue behind a running slice: a function that waits for the lock would only burn its
+        # own duration limit. Whoever holds the lock reports progress; everyone else says "busy".
+        with self.m.store.try_run_lock("weekjob:" + row["job_id"]) as held:
+            if not held:
+                return {"advanced": None, "busy": True, "pending": len(pending), "job_id": row["job_id"]}
             row = self.m.store.week_job(row["job_id"]) or row
-            if row["status"] not in RESUMABLE:
-                return {"advanced": None, "pending": len(pending) - 1}
+            if row["status"] not in RESUMABLE or self._slice_in_flight(row):
+                return {"advanced": None, "busy": True, "pending": len(pending), "job_id": row["job_id"]}
             return {"advanced": self._run_slice(row, slice_seconds or self.slice_seconds), "pending": len(pending)}
 
     def _slice_in_flight(self, row: dict[str, Any]) -> bool:
@@ -181,14 +188,12 @@ class WeekJobs:
         data_dir = self.m.data_dir
         out_dir = data_dir / cfg["out_dir"]
         work = out_dir.parent / (out_dir.name + "_work")
-        archive = self.m.store.week_job_archive(row["job_id"])
-        if archive and not (work / "checkpoints.json").exists():
-            _restore(archive, work)
+        self._restore_work(row["job_id"], work)
         cfg_dir = data_dir / "collection" / "weeks"
         cfg_dir.mkdir(parents=True, exist_ok=True)
         cfg_path = cfg_dir / f"{name}.yaml"
         cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
-        lease = (datetime.now(UTC) + timedelta(seconds=slice_seconds + 45)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        lease = (datetime.now(UTC) + timedelta(seconds=slice_seconds + LEASE_GRACE_SECONDS)).strftime("%Y-%m-%dT%H:%M:%SZ")
         self.m.store.update_week_job(row["job_id"], status="collecting", updated_at=now_iso(), lease_until=lease)
         res = run_collection(cfg_path, data_dir, transport=self.transport, rpc_url_override=self.rpc_url, sleep=self.sleep, deadline=time.monotonic() + slice_seconds, store_bodies=False, budget_used=int(row["requests_used"]))
         status = res["status"]
@@ -201,18 +206,61 @@ class WeekJobs:
             view = self.m.upload_pack(pack_archive, name)
             fields.update(status="built", pack_id=view["pack_id"], note=f"pack built: {res['tape_events']} events in {res['pools']} pools; qualification {res['qualification']}")
             shutil.rmtree(work, ignore_errors=True)
+            self.m.store.delete_week_job_files(row["job_id"])
+            self.m.store.set_week_job_archive(row["job_id"], None)
         elif status == "in_progress_resumable":
             fields.update(status="collecting")
-            self.m.store.set_week_job_archive(row["job_id"], _targz(work))
+            self._save_work(row["job_id"], work)
         elif status == "provider_error_resumable":
             attempts = int(row["attempts"]) + 1
             fields.update(attempts=attempts, status="collecting" if attempts < MAX_PROVIDER_RETRIES else "failed", error=str(res.get("reason"))[:400])
-            self.m.store.set_week_job_archive(row["job_id"], _targz(work))
+            self._save_work(row["job_id"], work)
         else:  # budget_exhausted_resumable, blocked
             fields.update(status="failed", error=f"{status}: {res.get('reason')}"[:400])
-            self.m.store.set_week_job_archive(row["job_id"], _targz(work))
+            self._save_work(row["job_id"], work)
         self.m.store.update_week_job(row["job_id"], **fields)
         return self.view(self.m.store.week_job(row["job_id"]))
+
+    # ------------------------------------------------------------------ work directory sync
+    # The collector's working state (checkpoints, coverage ledger, one raw-log file per pool) lives in
+    # the store between slices so any instance can continue. Only files whose content changed since the
+    # last slice travel: a week's worth of logs is written once, not re-uploaded every three minutes.
+    def _restore_work(self, job_id: str, work: Path) -> None:
+        if (work / "checkpoints.json").exists():
+            return  # same instance (or a warm filesystem) still has it
+        index = self.m.store.week_job_file_index(job_id)
+        if not index:
+            legacy = self.m.store.week_job_archive(job_id)
+            if legacy:
+                _restore(legacy, work)
+            return
+        for rel in index:
+            body = self.m.store.week_job_file(job_id, rel)
+            if body is None:
+                continue
+            dest = work / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(gzip.decompress(body))
+
+    def _save_work(self, job_id: str, work: Path) -> dict[str, int]:
+        index = self.m.store.week_job_file_index(job_id)
+        seen: set[str] = set()
+        uploaded = 0
+        for path in sorted(p for p in work.rglob("*") if p.is_file()):
+            rel = path.relative_to(work).as_posix()
+            if rel.startswith("receipts/") or rel.endswith(".tmp"):
+                continue  # receipts are bodies-off in hosted mode and never needed to resume
+            raw = path.read_bytes()
+            digest = hashlib.sha256(raw).hexdigest()
+            seen.add(rel)
+            if index.get(rel) == digest:
+                continue
+            self.m.store.put_week_job_file(job_id, rel, digest, gzip.compress(raw, 6))
+            uploaded += 1
+        for rel in index:
+            if rel not in seen:
+                self.m.store.delete_week_job_file(job_id, rel)
+        return {"uploaded": uploaded, "kept": len(seen) - uploaded}
 
 
 def week_label(name: str, chain: str) -> str:

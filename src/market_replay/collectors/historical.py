@@ -41,6 +41,7 @@ from .base import (
     HttpCollector,
     ProviderError,
     ReceiptStore,
+    TimeSliceExpired,
     now_ms,
 )
 from .evm_rpc import (
@@ -135,8 +136,34 @@ def normalize_pair_logs(logs: list[dict[str, Any]], *, pool_key: str, token0: st
 
 
 # ---------------------------------------------------------------------- pipeline
-class TimeSliceExpired(RuntimeError):
-    """The wall-clock slice given to this invocation is over; everything so far is checkpointed."""
+class LogFile:
+    """Append-only JSON lines of raw logs for one pool. One file per pool keeps checkpoint writes small
+    and lets the work directory sync incrementally: only the pool being scanned changes between slices."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def append(self, logs: list[dict[str, Any]]) -> None:
+        if not logs:
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("a") as f:
+            for lg in logs:
+                f.write(json.dumps(lg, sort_keys=True) + "\n")
+
+    def replace(self, logs: list[dict[str, Any]]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_suffix(".tmp")
+        with tmp.open("w") as f:
+            for lg in logs:
+                f.write(json.dumps(lg, sort_keys=True) + "\n")
+        tmp.replace(self.path)
+
+    def read(self) -> list[dict[str, Any]]:
+        if not self.path.exists():
+            return []
+        with self.path.open() as f:
+            return [json.loads(line) for line in f if line.strip()]
 
 
 def run_collection(
@@ -174,6 +201,7 @@ def run_collection(
     http = HttpCollector(provider="evm_rpc", budget=budget, receipts=receipts, errors_path=work / "errors.jsonl", transport=transport)
     if sleep is not None:
         http.sleep = sleep
+    http.deadline = deadline
     rpc = RpcClient(rpc_url or "", http)
     ck = Checkpoints(work / "checkpoints.json")
     ledger = CoverageLedger(work / "coverage_ledger.json")
@@ -331,7 +359,12 @@ def run_collection(
             pk = f"pairlogs:{addr}"
             from_b = max(meta["created_block"], blocks["prehistory_start"])
             cur = ck.get(pk + ":cursor", from_b)
-            pair_logs: list[dict[str, Any]] = ck.get(pk + ":logs", [])
+            logs_file = LogFile(work / "logs" / f"{addr}.jsonl")
+            legacy = ck.get(pk + ":logs")
+            if legacy is not None:  # work directories written before logs moved out of the checkpoint file
+                logs_file.replace(legacy)
+                del ck.data[pk + ":logs"]
+                ck.flush()
             pchunk = chunk
             while cur < blocks["period_end"]:
                 slice_check()
@@ -345,12 +378,12 @@ def run_collection(
                         pchunk //= 2
                         continue
                     raise
-                pair_logs.extend(logs)
+                logs_file.append(logs)
                 ledger.set(pool_key, "events", cur, to_b, CoverageState.COMPLETED_AND_CHECKED, f"{len(logs)} logs")
                 cur = to_b + 1
                 ck.set(pk + ":cursor", cur)
-                ck.set(pk + ":logs", pair_logs)
                 progress["chunks"] += 1
+            pair_logs: list[dict[str, Any]] = logs_file.read()
             # Initial state at the block before the prehistory window (pairs created inside the window start empty).
             init = None
             init_basis = None

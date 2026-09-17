@@ -137,6 +137,15 @@ CREATE TABLE IF NOT EXISTS week_jobs (
   lease_until TEXT,
   work_archive BYTEA
 );
+CREATE TABLE IF NOT EXISTS week_job_files (
+  job_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  body BYTEA NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (job_id, path)
+);
 CREATE TABLE IF NOT EXISTS rate_events (
   kind TEXT NOT NULL,
   key TEXT NOT NULL,
@@ -145,7 +154,7 @@ CREATE TABLE IF NOT EXISTS rate_events (
 CREATE INDEX IF NOT EXISTS rate_events_kind_key_ts ON rate_events (kind, key, ts);
 """
 
-TABLES = ("packs", "agents", "runs", "traces", "docs", "usage", "comparisons", "studies", "suite_runs", "attempts", "rate_events", "pack_archives", "week_jobs")
+TABLES = ("packs", "agents", "runs", "traces", "docs", "usage", "comparisons", "studies", "suite_runs", "attempts", "rate_events", "pack_archives", "week_jobs", "week_job_files")
 
 
 def today_key() -> str:
@@ -164,6 +173,10 @@ class BaseStore:
 
     @contextmanager
     def run_lock(self, run_id: str) -> Iterator[None]:
+        raise NotImplementedError
+
+    def try_run_lock(self, run_id: str) -> Iterator[bool]:
+        """Like run_lock but never waits: yields False when another holder has it."""
         raise NotImplementedError
 
     def close(self) -> None:
@@ -328,8 +341,29 @@ class BaseStore:
         row = self.one("SELECT work_archive FROM week_jobs WHERE job_id=?", (job_id,))
         return bytes(row["work_archive"]) if row and row["work_archive"] is not None else None
 
-    def set_week_job_archive(self, job_id: str, archive: bytes) -> None:
+    def set_week_job_archive(self, job_id: str, archive: bytes | None) -> None:
         self.execute("UPDATE week_jobs SET work_archive=? WHERE job_id=?", (archive, job_id))
+
+    def week_job_file_index(self, job_id: str) -> dict[str, str]:
+        """path -> sha256 of every synced work file (bodies stay in the store until asked for)."""
+        return {r["path"]: r["sha256"] for r in self.query("SELECT path, sha256 FROM week_job_files WHERE job_id=?", (job_id,))}
+
+    def week_job_file(self, job_id: str, path: str) -> bytes | None:
+        row = self.one("SELECT body FROM week_job_files WHERE job_id=? AND path=?", (job_id, path))
+        return bytes(row["body"]) if row else None
+
+    def put_week_job_file(self, job_id: str, path: str, sha256: str, body: bytes) -> None:
+        self.execute(
+            "INSERT INTO week_job_files (job_id, path, sha256, size, body, updated_at) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(job_id, path) DO UPDATE SET sha256=excluded.sha256, size=excluded.size, body=excluded.body, updated_at=excluded.updated_at",
+            (job_id, path, sha256, len(body), body, datetime.now(UTC).isoformat()),
+        )
+
+    def delete_week_job_file(self, job_id: str, path: str) -> None:
+        self.execute("DELETE FROM week_job_files WHERE job_id=? AND path=?", (job_id, path))
+
+    def delete_week_job_files(self, job_id: str) -> None:
+        self.execute("DELETE FROM week_job_files WHERE job_id=?", (job_id,))
 
     def week_jobs_created_since(self, iso: str) -> int:
         row = self.one("SELECT COUNT(*) AS n FROM week_jobs WHERE created_at>=?", (iso,))
@@ -439,6 +473,34 @@ class SqliteStore(BaseStore):
                 fcntl.flock(fd.fileno(), fcntl.LOCK_UN)
                 fd.close()
 
+    @contextmanager
+    def try_run_lock(self, run_id: str) -> Iterator[bool]:
+        import fcntl
+        import hashlib
+
+        with self._lock:
+            lk = self._run_locks.setdefault(run_id, threading.RLock())
+        if not lk.acquire(blocking=False):
+            yield False
+            return
+        lock_dir = self._path.parent / "locks"
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        lock_file = lock_dir / (hashlib.sha256(run_id.encode()).hexdigest()[:24] + ".lock")
+        fd = open(lock_file, "a+")
+        try:
+            try:
+                fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                yield False
+                return
+            try:
+                yield True
+            finally:
+                fcntl.flock(fd.fileno(), fcntl.LOCK_UN)
+        finally:
+            fd.close()
+            lk.release()
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()
@@ -512,6 +574,18 @@ class PgStore(BaseStore):
         try:
             conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (run_id,))
             yield
+        finally:
+            try:
+                conn.commit()
+            finally:
+                conn.close()
+
+    @contextmanager
+    def try_run_lock(self, run_id: str) -> Iterator[bool]:
+        conn = self._psycopg.connect(self.url, autocommit=False)
+        try:
+            got = conn.execute("SELECT pg_try_advisory_xact_lock(hashtext(%s))", (run_id,)).fetchone()[0]
+            yield bool(got)
         finally:
             try:
                 conn.commit()
