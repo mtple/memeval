@@ -31,3 +31,6 @@ test-results/
 
 # Vercel local build output
 .vercel/
+
+# Subagent worktrees
+.claude/worktrees/
