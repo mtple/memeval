@@ -444,6 +444,7 @@ export type Report = {
     capacity_profile: LatencyAssumptions["capacity_profile"];
     availability_model: string | Record<string, unknown>;
     reconciliation_mismatches_in_run: number;
+    reserve_adjustments_in_run?: Record<string, number>;
     limitations: string[];
   };
   versions: Record<string, string>;

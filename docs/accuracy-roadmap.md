@@ -116,9 +116,24 @@ eth_getLogs limits, OP Stack derivation spec, Goldsky and The Graph docs.
 
 ## Build order
 
-1. Concentrated-liquidity engine (Uniswap v3/v4 math and pool state, exact integers) with
-   reconciliation against Swap events; v4 PoolManager and v3 factory collectors with Clanker
-   pool discovery. This is what puts Bankr and Clanker tokens in scope.
+Done so far (September 17):
+
+- Concentrated-liquidity engine: exact v3 math (`venues/clmm`, verified against the v3-core
+  spec vectors), `ClPoolState` with the word-boundary tick search, engine replay of
+  `cl_init` / `cl_modify` / `cl_swap` rows with every swap a checkpoint, quotes, fills,
+  valuation and session views on virtual depth; v4 PoolManager and v3 factory collectors with
+  dynamic-fee resolution; real weeks can be requested per venue.
+- v2 reconciliation hardened after the first real week came out diagnostic: every Sync is kept
+  (orphan Syncs are explained adjustments), multi-input swaps become net reserve adjustments,
+  every checkpoint re-anchors the model to the chain, and pools that still do not reconcile
+  leave the executable set with the reason on record. Diagnostic weeks from an older collector
+  are rebuilt once, automatically.
+
+Still open, in order:
+
+1. Clanker hook fee model for agent fills on v4 pools (static per-direction fee, the 20%
+   protocol cut, the two-minute MEV module window) so an agent's own fill on a hooked pool
+   is priced the way the hook would price it; today the pool fee is the last observed hook fee.
 2. Fidelity harness: replay real wallets' recorded trades from a week through the simulator
    and measure fill and PnL error per model. Every later change must reduce that error.
 3. Gas from block headers plus per-venue calibrated constants; charged to every fill.

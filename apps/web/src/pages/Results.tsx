@@ -186,6 +186,14 @@ export default function Results() {
                     ],
                     ["Availability model", typeof R.coverage_and_assumptions.availability_model === "string" ? humanize(R.coverage_and_assumptions.availability_model) : <code>{JSON.stringify(R.coverage_and_assumptions.availability_model)}</code>],
                     ["Reconciliation mismatches in run", R.coverage_and_assumptions.reconciliation_mismatches_in_run],
+                    [
+                      "Reserve checkpoints re-anchored",
+                      R.coverage_and_assumptions.reserve_adjustments_in_run && Object.keys(R.coverage_and_assumptions.reserve_adjustments_in_run).length > 0
+                        ? Object.entries(R.coverage_and_assumptions.reserve_adjustments_in_run)
+                            .map(([k, v]) => `${v} ${k}`)
+                            .join(", ")
+                        : "none",
+                    ],
                   ]}
                 />
                 <h3>Limitations</h3>
