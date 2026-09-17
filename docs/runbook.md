@@ -119,19 +119,27 @@ historical collection (run `make collect` locally and import the pack into a loc
 Set `BASE_RPC_URL` (or `RPC_URL`) on the server to a read-only EVM RPC endpoint for Base. Then
 the Episodes page offers "Add this week" to everyone:
 
-1. `POST /api/v1/weeks {week_start}` queues the week (idempotent per period; at most
-   `MARKET_REPLAY_MAX_WEEKS_PER_DAY` new weeks a day, default 3).
+1. `POST /api/v1/weeks {week_start, protocol}` queues the week (idempotent per period and
+   venue; at most `MARKET_REPLAY_MAX_WEEKS_PER_DAY` new weeks a day, default 3). `protocol` is
+   `uniswap_v4` (where Clanker and Bankr launches trade), `uniswap_v3` or `uniswap_v2`.
 2. The server collects it in time slices (`MARKET_REPLAY_WEEK_SLICE_SECONDS`, default 200) so it
-   fits a serverless invocation. After each slice the collector's checkpoints are archived in
-   the database; the next slice can run on any instance. Slices are triggered by a Vercel cron
-   every minute (`/api/v1/weeks/tick`) and by any open Episodes page.
+   fits a serverless invocation. A tick that finds a slice already running anywhere returns
+   `busy` at once (a non-blocking database lock plus a lease); it never queues. After each
+   slice the collector's working files (checkpoints, coverage ledger, one raw-log file per
+   pool) sync to the `week_job_files` table, uploading only the files that changed, and the
+   next slice can run on any instance. Slices are triggered by a Vercel cron every minute
+   (`/api/v1/weeks/tick`), by the `weeks-watch` GitHub workflow every ten minutes, and by any
+   open Episodes page.
 3. The frozen universe is `MARKET_REPLAY_WEEK_MAX_PAIRS` pools (default 16) that were already
    trading before the week; the request budget is `MARKET_REPLAY_WEEK_MAX_REQUESTS` (default
-   20,000); log ranges start at `MARKET_REPLAY_WEEK_LOG_CHUNK` blocks (default 10,000) and
-   halve on provider errors.
-4. When the collector finishes, the pack is validated (every on-chain reserve checkpoint must
-   reconcile), imported, archived in the database, and appears on the leaderboard as
-   "Base week of YYYY-MM-DD". Failures show their reason on the Episodes page.
+   20,000); log ranges start at `MARKET_REPLAY_WEEK_LOG_CHUNK` blocks (capped to the provider's
+   `eth_getLogs` limit: 1,000 on Coinbase Developer Platform, 2,000 on Alchemy) and halve on
+   provider errors. Retry backoff never sleeps past the slice deadline.
+4. When the collector finishes, the pack is validated (every on-chain checkpoint must
+   reconcile: v2 Sync reserves, or the price, tick and liquidity after every v3/v4 swap),
+   imported, archived in the database, and appears on the leaderboard as "Base week N" (plus
+   the venue for v3/v4, e.g. "Base week 2, v4 pools"). Dates stay sealed: only the signed-in
+   operator's views carry the calendar. Failures show their reason on the Episodes page.
 
 Cost: collection is I/O-bound (Fluid compute bills active CPU), so a week costs mostly RPC
 requests on your provider plan. `collect-week` (GitHub Actions) remains as an alternative for
