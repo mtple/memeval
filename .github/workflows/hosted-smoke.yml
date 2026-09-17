@@ -17,7 +17,7 @@ jobs:
   smoke:
     if: github.event_name == 'workflow_dispatch' || github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 30
     env:
       BASE: ${{ inputs.base_url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
     steps:
@@ -104,9 +104,11 @@ jobs:
           print(start.isoformat())")
           echo "requesting week starting $week"
           curl -sS -m 60 -X POST "$BASE/api/v1/weeks" -H 'content-type: application/json' -d "{\"week_start\":\"$week\"}" | jq -c 'del(.note)' || true
-          for i in $(seq 1 6); do
-            curl -sS -m 290 -X POST "$BASE/api/v1/weeks/tick?slice=200" | jq -c '.advanced | {label, status, requests_used, request_budget, attempts, note: (.note // "" | .[0:160]), error}' || true
-            st=$(curl -sS -m 60 "$BASE/api/v1/weeks" | jq -r '.items[0].status')
-            [ "$st" = "collecting" ] || [ "$st" = "queued" ] || break
+          for i in $(seq 1 4); do
+            out=$(curl -sS -m 290 -X POST "$BASE/api/v1/weeks/tick?slice=200") || true
+            echo "$out" | jq -c '{busy, advanced: (.advanced | if . then {label, status, requests_used, request_budget, attempts, note: (.note // "" | .[0:160]), error} else null end)}' || echo "$out" | head -c 300
+            [ "$(echo "$out" | jq -r '.busy // false')" = "true" ] && sleep 60
+            st=$(curl -sS -m 60 "$BASE/api/v1/weeks" | jq -r '[.items[] | select(.status=="queued" or .status=="collecting")] | length')
+            [ "$st" -gt 0 ] || break
           done
           curl -sS -m 60 "$BASE/api/v1/weeks" | jq '.items[] | {label, status, requests_used, request_budget, attempts, note, error}'

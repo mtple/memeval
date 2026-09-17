@@ -23,7 +23,9 @@ jobs:
           pending=$(echo "$list" | jq '[.items[] | select(.status=="queued" or .status=="collecting")] | length')
           [ "$pending" -gt 0 ] || { echo "nothing pending"; exit 0; }
           for i in $(seq 1 7); do
-            curl -sS -m 290 -X POST "$BASE/api/v1/weeks/tick?slice=200" | jq -c '.advanced | {label, status, requests_used, attempts, note: (.note // "" | .[0:200]), error}' || true
+            out=$(curl -sS -m 290 -X POST "$BASE/api/v1/weeks/tick?slice=200") || true
+            echo "$out" | jq -c '{busy, advanced: (.advanced | if . then {label, status, requests_used, attempts, note: (.note // "" | .[0:200]), error} else null end)}' || echo "$out" | head -c 300
+            [ "$(echo "$out" | jq -r '.busy // false')" = "true" ] && sleep 60
             st=$(curl -sS -m 60 "$BASE/api/v1/weeks" | jq -r '[.items[] | select(.status=="queued" or .status=="collecting")] | length')
             [ "$st" -gt 0 ] || break
           done
