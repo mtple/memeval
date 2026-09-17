@@ -39,7 +39,7 @@ from ..observations.store import CoverageSpan, PoolObservations, TradeObs
 from ..venues.clmm.math import ClMathError, get_tick_at_sqrt_ratio
 from ..venues.clmm.pool import SUPPORTED_CLMM_MODELS, ClPoolState
 from ..venues.cpmm.math import CpmmMathError
-from ..venues.cpmm.pool import CpmmPoolState, FidelityLimit
+from ..venues.cpmm.pool import CpmmPoolState, FidelityLimit, classify_checkpoint_delta
 from .blocks import BlockSchedule, BlockScheduleError, FixedIntervalSchedule, TableSchedule
 from .tape import RelEvent, to_relative
 
@@ -229,6 +229,7 @@ class Simulation:
             if ev.kind == "cl_init" and ev.pool not in self.cl_init_ms:
                 self.cl_init_ms[ev.pool] = ev.time_ms
         self.reconciliation_mismatches: list[dict[str, Any]] = []
+        self.reserve_adjustments: dict[str, int] = defaultdict(int)  # explained / material checkpoint corrections
         self.fidelity_flags: list[FidelityFlag] = []
 
         # Broker
@@ -388,14 +389,28 @@ class Simulation:
                 except FidelityLimit as e:
                     self.fidelity_failed[ev.pool] = "ENVIRONMENT_FIDELITY_LIMIT"
                     self._flag(ev, "ENVIRONMENT_FIDELITY_LIMIT", str(e))
-        elif ev.kind == "sync":
-            if not isinstance(ref, CpmmPoolState) or ev.reserve0 is None or ev.reserve1 is None:
+        elif ev.kind == "adjust":
+            if not isinstance(pool, CpmmPoolState) or not isinstance(ref, CpmmPoolState):
                 return
-            d0, d1 = ref.reconcile_sync(ev.reserve0, ev.reserve1)
-            if d0 != 0 or d1 != 0:
-                self.reconciliation_mismatches.append(
-                    {"seq": ev.seq, "pool": ev.pool, "block": ev.block, "delta0": d0, "delta1": d1}
-                )
+            d0, d1 = ev.amount0 or 0, ev.amount1 or 0
+            try:
+                ref.apply_adjust(d0, d1)
+            except FidelityLimit as e:
+                self._flag(ev, "REFERENCE_ADJUST_OVERDRAW", str(e))
+            self._adjust_private(ev, pool, d0, d1)
+        elif ev.kind == "sync":
+            if not isinstance(pool, CpmmPoolState) or not isinstance(ref, CpmmPoolState) or ev.reserve0 is None or ev.reserve1 is None:
+                return
+            # The chain is the truth: the reference re-anchors to every Sync and the private state
+            # takes the same correction, so one unrecorded transfer never compounds into drift.
+            d0, d1 = ref.anchor_to_sync(ev.reserve0, ev.reserve1)
+            cls = classify_checkpoint_delta(d0, d1, ev.reserve0, ev.reserve1, explained=bool(ev.payload.get("orphan")))
+            if cls == "match":
+                return
+            self.reserve_adjustments[cls] += 1
+            if cls == "material":
+                self.reconciliation_mismatches.append({"seq": ev.seq, "pool": ev.pool, "block": ev.block, "delta0": d0, "delta1": d1})
+            self._adjust_private(ev, pool, -d0, -d1)
         elif ev.kind == "cl_init":
             self._apply_cl_init(ev)
         elif ev.kind == "cl_modify":
@@ -510,6 +525,16 @@ class Simulation:
         self.state_version += 1
         if ev.available_ms is not None:
             self._record_trade(ev, pool, pool.asset0 if zero_for_one else pool.asset1, actual_in, actual_out, origin="external")
+
+    def _adjust_private(self, ev: RelEvent, pool: CpmmPoolState, d0: int, d1: int) -> None:
+        if ev.pool in self.fidelity_failed or (d0 == 0 and d1 == 0):
+            return
+        try:
+            pool.apply_adjust(d0, d1)
+            self.state_version += 1
+        except FidelityLimit as e:
+            self.fidelity_failed[ev.pool] = "ENVIRONMENT_FIDELITY_LIMIT"
+            self._flag(ev, "ENVIRONMENT_FIDELITY_LIMIT", str(e))
 
     @staticmethod
     def _apply_recorded_to_ref(ref: CpmmPoolState, asset_in: str, amount_in: int, out: int) -> None:

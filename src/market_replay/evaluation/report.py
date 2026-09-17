@@ -187,6 +187,7 @@ def build_report(session: Session, *, run_meta: dict[str, Any], role: str = "adm
             "capacity_profile": pack.params.capacity.model_dump(),
             "availability_model": m.data.availability_model,
             "reconciliation_mismatches_in_run": len(sim.reconciliation_mismatches),
+            "reserve_adjustments_in_run": dict(sim.reserve_adjustments),
             "limitations": [
                 "Historical-flow-based simulation: external intents fixed, outputs counterfactual.",
                 "Blinded interface, not contamination-proof.",

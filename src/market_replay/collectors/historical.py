@@ -153,6 +153,34 @@ def normalize_pair_logs(logs: list[dict[str, Any]], *, pool_key: str, token0: st
     return rows, unsupported
 
 
+def demote_unreconciled_pools(pools_out: list[dict[str, Any]], tape: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Run the no-agent reconciliation on the rows about to become a pack and mark every CPMM pool that
+    does not reconcile as not executable. Returns the demotion records (pool, reason, counts)."""
+    from ..datasets.validator import reconcile_rows
+    from ..domain.models import Pool
+
+    probe = {p["key"]: Pool.model_validate(p) for p in pools_out if p.get("supported_by_cpmm")}
+    if not probe:
+        return []
+    recon = reconcile_rows(probe, tape)
+    flags_by_pool: dict[str, list[str]] = {}
+    for f in recon["fidelity_flags"]:
+        flags_by_pool.setdefault(f["pool"], []).append(f["code"])
+    demoted: list[dict[str, Any]] = []
+    for p in pools_out:
+        if not p.get("supported_by_cpmm"):
+            continue
+        material = int(recon["reserve_adjustments_by_pool"].get(p["key"], {}).get("material", 0))
+        codes = sorted(set(flags_by_pool.get(p["key"], [])))
+        if material == 0 and not codes:
+            continue
+        reason = f"reserve checkpoints did not reconcile under the CPMM model: {material} material unexplained deltas; fidelity flags {codes or 'none'}"
+        p["supported_by_cpmm"] = False
+        p["unsupported_reason"] = reason
+        demoted.append({"pool": p["key"], "reason": reason, "material_deltas": material, "fidelity_flags": codes, "explained": int(recon["reserve_adjustments_by_pool"].get(p["key"], {}).get("explained", 0))})
+    return demoted
+
+
 # ---------------------------------------------------------------------- pipeline
 class LogFile:
     """Append-only JSON lines of raw logs for one pool. One file per pool keeps checkpoint writes small
@@ -498,10 +526,17 @@ def run_collection(
                     "unsupported_reason": None if init is not None else "initial state unavailable",
                 }
             )
-        # 7-10. Build pack (validator runs the no-agent reconciliation and decides qualification)
         tape.sort(key=lambda r: (r["block"], r["log_index"], r["seq"]))
         for i, r in enumerate(tape, start=1):
             r["seq"] = i
+        # 6b. Pre-build reconciliation. Every Sync re-anchors the model to the chain; a pool whose
+        # checkpoints still show unexplained material deltas, or whose recorded outputs exceed what the
+        # model allows, is not a plain v2 pair as far as this model knows. It stays in the pack as data
+        # but leaves the executable set, with the reason on record.
+        demoted = demote_unreconciled_pools(pools_out, tape)
+        for d in demoted:
+            note(f"{d['pool']}: demoted from execution: {d['reason']}")
+        # 7-10. Build pack (validator runs the no-agent reconciliation and decides qualification)
         assets_rows = []
         for tok, a in assets.items():
             assets_rows.append({"key": f"{dep['chain_id']}:{tok}", "chain_id": dep["chain_id"], "address": tok, "decimals": a["decimals"] if a["decimals"] is not None else 18, "symbol": None, "name": None, "is_numeraire": tok == wn, "created_block": None, "created_time_utc_ms": None, "discovery_available_utc_ms": block_time_ms(blocks["discovery_start"]), "fixture_rules": {"decimals_basis": "eth_call decimals()" if a["decimals"] is not None else "unknown"}})
@@ -530,7 +565,7 @@ def run_collection(
                 quote_asset=f"{dep['chain_id']}:{wn}",
                 selection_rule_version=rule,
                 indexed_block_ranges=[[blocks["discovery_start"], blocks["period_end"] - 1]],
-                excluded_or_unsupported_counts={"no_wrapped_native_leg": len(excluded), "beyond_max_pairs": len(sampled_out), "missing_state": len(missing)},
+                excluded_or_unsupported_counts={"no_wrapped_native_leg": len(excluded), "beyond_max_pairs": len(sampled_out), "missing_state": len(missing), "demoted_after_reconciliation": len(demoted)},
                 candidate_count=len(candidates),
                 selected_count=len(selected),
                 unsupported_count=len(excluded),
@@ -549,7 +584,7 @@ def run_collection(
             availability_model={"kind": "constant_delay_from_block_time", "delay_ms": int(cfg.get("availability_delay_ms", 4000)), "acquisition_utc_ms": now_ms(), "note": "acquired later than the events; original provider availability not established"},
             rights=Rights(storage_basis="public_chain_data_via_configured_rpc; endpoint terms not reviewed here", local_processing_basis="research", redistribution="not_cleared", simulator_serving="local_only", notes=cfg["authorization_note"]),
             qualification=UseStatus.RESEARCH,
-            inventory={"unsupported": excluded, "excluded_by_sampling": sampled_out, "missing": missing, "candidate_count": len(candidates), "selected_count": len(selected)},
+            inventory={"unsupported": excluded, "excluded_by_sampling": sampled_out, "missing": missing, "demoted": demoted, "candidate_count": len(candidates), "selected_count": len(selected)},
             provenance_notes=["HISTORICAL RECONSTRUCTION from eth_getLogs. Token sellability/restrictions unknown (assumed standard transfer). Not a full week unless the period says so."],
             decision_log=log,
         )

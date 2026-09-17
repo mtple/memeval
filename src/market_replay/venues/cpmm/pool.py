@@ -134,6 +134,33 @@ class CpmmPoolState:
         """Return (delta0, delta1) between this state and a recorded Sync checkpoint. Never mutates."""
         return (self.reserve0 - reserve0, self.reserve1 - reserve1)
 
+    def apply_adjust(self, delta0: int, delta1: int) -> None:
+        """Apply signed reserve deltas of an event the model has no primitive for (a multi-input swap,
+        a donation followed by sync(), a skim). Raises FidelityLimit if a reserve would go negative."""
+        if self.reserve0 + delta0 < 0 or self.reserve1 + delta1 < 0:
+            raise FidelityLimit(f"reserve adjustment ({delta0},{delta1}) would overdraw reserves of {self.key} ({self.reserve0},{self.reserve1})")
+        self.reserve0 += delta0
+        self.reserve1 += delta1
+
+    def anchor_to_sync(self, reserve0: int, reserve1: int) -> tuple[int, int]:
+        """Set the reserves to a recorded Sync checkpoint (the chain is the truth). Returns the
+        (delta0, delta1) that the modelled state was off by, so the caller can classify it and apply
+        the same correction to any diverged copy."""
+        d0, d1 = self.reconcile_sync(reserve0, reserve1)
+        self.reserve0, self.reserve1 = reserve0, reserve1
+        return d0, d1
+
+
+def classify_checkpoint_delta(d0: int, d1: int, reserve0: int, reserve1: int, *, explained: bool) -> str:
+    """'match', 'explained' (an orphan Sync announced the change) or 'material'.
+
+    A v2 pair's reserves change only through its own events (a donation shows up inside the next
+    Swap's amountIn), so any unexplained delta, even one wei, means an event this model did not
+    see. There is no rounding tolerance."""
+    if d0 == 0 and d1 == 0:
+        return "match"
+    return "explained" if explained else "material"
+
     def spot_price_fraction(self, base_asset: str) -> Fraction | None:
         """Indicative marginal price of ``base_asset`` in the other asset (reserve ratio). Not executable."""
         rin, rout = self.reserves_for(base_asset)

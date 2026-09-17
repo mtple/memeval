@@ -124,6 +124,30 @@ def test_a_finished_week_can_be_rebuilt_under_the_same_sealed_name(tmp_path: Pat
     mgr.close()
 
 
+def test_a_diagnostic_week_from_an_older_collector_is_rebuilt_once_on_an_idle_tick(tmp_path: Path, monkeypatch):
+    import market_replay.service.weeks as weeks_mod
+
+    fake = FakeBase(hidden_drift=True)  # this chain never reconciles: the pack comes out diagnostic_only
+    mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))
+    job = mgr.weeks.request(PERIOD_START, PERIOD_END)
+    for _ in range(60):
+        out = mgr.weeks.tick(slice_seconds=0.001)
+        if out["advanced"]["status"] in ("built", "failed"):
+            break
+    assert mgr.weeks.job(job["job_id"])["qualification"] == "diagnostic_only"
+    assert mgr.weeks.tick()["advanced"] is None  # same collector version: nothing to redo
+    monkeypatch.setattr(weeks_mod, "COLLECTOR_VERSION", "9999.1")
+    out = mgr.weeks.tick(slice_seconds=0.001)
+    assert out.get("rebuilt") is True and out["advanced"]["status"] == "queued"
+    for _ in range(60):
+        out = mgr.weeks.tick(slice_seconds=0.001)
+        if out["advanced"]["status"] in ("built", "failed"):
+            break
+    assert out["advanced"]["status"] == "built"
+    assert mgr.weeks.tick()["advanced"] is None  # rebuilt under this version: not again
+    mgr.close()
+
+
 def test_week_requests_are_validated_capped_and_public_over_http(tmp_path: Path):
     fake = FakeBase()
     mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))

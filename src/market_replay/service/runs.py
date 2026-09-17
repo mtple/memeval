@@ -215,7 +215,7 @@ class RunManager:
 
     def _pack_summary(self, pack: Pack, report: dict[str, Any]) -> dict[str, Any]:
         m = pack.manifest
-        supported = sum(1 for p in pack.pools.values() if p.supported_by_cpmm and p.initial_reserve0 is not None)
+        supported = sum(1 for p in pack.pools.values() if _pool_executable(p))
         cov = pack.coverage or {}
         states: dict[str, int] = {}
         for i in cov.get("intervals", []):
@@ -315,7 +315,7 @@ class RunManager:
 
     def public_descriptor(self, pack: Pack, row: dict[str, Any], isolation: str) -> PublicDescriptor:
         m = pack.manifest
-        supported = any(p.supported_by_cpmm and p.initial_reserve0 is not None for p in pack.pools.values())
+        supported = any(_pool_executable(p) for p in pack.pools.values())
         return PublicDescriptor(
             episode_id=row["episode_id"],
             origin=m.origin,
@@ -351,7 +351,7 @@ class RunManager:
             seen.add(k)
         unpublished = sum(1 for r in pack.tape if r["kind"] == "swap" and r.get("available_utc_ms") is None)
         conflicts = [r.model_dump() for r in pack.restrictions if r.conflicts]
-        pools_missing_state = [p.key for p in pack.pools.values() if p.supported_by_cpmm and p.initial_reserve0 is None]
+        pools_missing_state = [p.key for p in pack.pools.values() if (p.supported_by_cpmm and p.initial_reserve0 is None) or (p.supported_by_clmm and p.initial_sqrt_price_x96 is None and not _initialized_on_tape(pack, p.key))]
         attempts = self.store.query("SELECT * FROM attempts WHERE pack_id=?", (m.pack_id,))
         exposed = self.store.query("SELECT COUNT(*) AS n FROM runs WHERE pack_id=? AND exposed=1", (m.pack_id,))[0]["n"]
         return {
@@ -1221,6 +1221,16 @@ class RunManager:
 
     def studies(self) -> list[dict[str, Any]]:
         return [json.loads(r["record_json"]) for r in self.store.studies()]
+
+
+def _pool_executable(p: Any) -> bool:
+    """A pool the engine can trade: a CPMM pool with reserves, or a concentrated-liquidity pool (its
+    state comes from the record or from its cl_init row inside the window)."""
+    return bool((p.supported_by_cpmm and p.initial_reserve0 is not None) or p.supported_by_clmm)
+
+
+def _initialized_on_tape(pack: Pack, key: str) -> bool:
+    return any(r["kind"] == "cl_init" and r["pool"] == key for r in pack.tape)
 
 
 def _episode_label(row: dict[str, Any]) -> str:

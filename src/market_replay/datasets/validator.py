@@ -15,7 +15,7 @@ from ..domain.status import SUPPORTED_CPMM_MODELS, DataOrigin, GateStatus, PoolM
 from ..venues.clmm.math import ClMathError, get_tick_at_sqrt_ratio
 from ..venues.clmm.pool import SUPPORTED_CLMM_MODELS, ClPoolState
 from ..venues.cpmm.math import CpmmMathError
-from ..venues.cpmm.pool import CpmmPoolState, FidelityLimit
+from ..venues.cpmm.pool import CpmmPoolState, FidelityLimit, classify_checkpoint_delta
 from .builder import VALIDATOR_VERSION
 from .pack import Pack
 
@@ -62,10 +62,16 @@ def reconcile_no_agent(pack: Pack, max_events: int | None = None) -> dict[str, A
     replaying the recorded swap with the v3 swap loop); ``cl_modify`` rows are applied to the tick map
     and ``cl_init`` rows create pools initialized inside the window.
     """
+    return reconcile_rows(pack.pools, pack.tape, max_events)
+
+
+def reconcile_rows(pool_records: dict[str, Pool], tape: list[dict[str, Any]], max_events: int | None = None) -> dict[str, Any]:
+    """The reconciliation itself, on pool records and raw tape rows (the collector calls it before a
+    pack exists to decide which pools stay executable)."""
     pools: dict[str, CpmmPoolState | ClPoolState] = {}
     cl_meta: dict[str, Pool] = {}
     fidelity: list[dict[str, Any]] = []
-    for key, p in pack.pools.items():
+    for key, p in pool_records.items():
         if _cpmm_supported(p):
             if p.initial_reserve0 is None or p.initial_reserve1 is None:
                 continue
@@ -82,7 +88,9 @@ def reconcile_no_agent(pack: Pack, max_events: int | None = None) -> dict[str, A
     checkpoints = 0
     mismatches: list[dict[str, Any]] = []
     ratio_deviations = 0
-    rows = pack.tape if max_events is None else pack.tape[:max_events]
+    adjustments: Counter[str] = Counter()
+    per_pool: dict[str, Counter[str]] = {}
+    rows = tape if max_events is None else tape[:max_events]
     for r in rows:
         kind = r["kind"]
         if kind == "cl_init":
@@ -145,11 +153,21 @@ def reconcile_no_agent(pack: Pack, max_events: int | None = None) -> dict[str, A
                 pool.apply_burn(int(r.get("amount0") or 0), int(r.get("amount1") or 0))
             except FidelityLimit as e:
                 fidelity.append({"seq": r["seq"], "pool": r["pool"], "code": "REFERENCE_BURN_OVERDRAW", "message": str(e)})
+        elif kind == "adjust":
+            try:
+                pool.apply_adjust(int(r.get("amount0") or 0), int(r.get("amount1") or 0))
+            except FidelityLimit as e:
+                fidelity.append({"seq": r["seq"], "pool": r["pool"], "code": "REFERENCE_ADJUST_OVERDRAW", "message": str(e)})
         elif kind == "sync":
             checkpoints += 1
-            d0, d1 = pool.reconcile_sync(int(r["reserve0"]), int(r["reserve1"]))
-            if d0 or d1:
-                mismatches.append({"seq": r["seq"], "pool": r["pool"], "block": r["block"], "delta0": d0, "delta1": d1})
+            r0, r1 = int(r["reserve0"]), int(r["reserve1"])
+            d0, d1 = pool.anchor_to_sync(r0, r1)
+            cls = classify_checkpoint_delta(d0, d1, r0, r1, explained=bool((r.get("payload") or {}).get("orphan")))
+            if cls != "match":
+                adjustments[cls] += 1
+                per_pool.setdefault(r["pool"], Counter())[cls] += 1
+                if cls == "material":
+                    mismatches.append({"seq": r["seq"], "pool": r["pool"], "block": r["block"], "delta0": d0, "delta1": d1})
     final_reserves = {k: {"reserve0": str(v.reserve0), "reserve1": str(v.reserve1)} for k, v in pools.items() if isinstance(v, CpmmPoolState)}
     final_cl_state = {
         k: {"sqrt_price_x96": str(v.sqrt_price_x96), "tick": v.tick, "liquidity": str(v.liquidity), "initialized_ticks": len(v.ticks)}
@@ -161,6 +179,9 @@ def reconcile_no_agent(pack: Pack, max_events: int | None = None) -> dict[str, A
         "checkpoints": checkpoints,
         "mismatches": mismatches[:50],
         "mismatch_count": len(mismatches),
+        "reserve_adjustments": dict(adjustments),
+        "reserve_adjustments_by_pool": {k: dict(v) for k, v in per_pool.items()},
+        "adjustment_rule": "every Sync re-anchors the reference to the chain; an orphan Sync (direct transfer followed by sync()) is an explained adjustment; any other non-zero delta, even one wei, is a material mismatch",
         "fidelity_flags": fidelity[:50],
         "fidelity_flag_count": len(fidelity),
         "recorded_output_below_model_max": ratio_deviations,
@@ -259,6 +280,8 @@ def validate_pack(pack: Pack) -> dict[str, Any]:
     else:
         status = GateStatus.PASSED if exec_ok else GateStatus.FAILED
         detail = f"executable pools={len(exec_pools)} (cpmm={len(cpmm_pools)} cl={len(cl_pools)}) missing_initial_state={len(missing_state)} checkpoints={recon['checkpoints']} mismatches={recon['mismatch_count']} fidelity_flags={recon['fidelity_flag_count']}"
+        if recon.get("reserve_adjustments"):
+            detail += f"; reserve checkpoints re-anchored: {recon['reserve_adjustments']}"
         if exec_ok and recon["checkpoints"] == 0:
             status = GateStatus.WARNING
             detail += "; no checkpoints were reconciled (reconciliation untested for this pack: no external flow in the window)"

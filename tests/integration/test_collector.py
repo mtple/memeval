@@ -38,7 +38,7 @@ def topic_addr(a: str) -> str:
 class FakeBase:
     """A tiny v2 world: one factory, one WETH pair created before the window, deterministic swaps."""
 
-    def __init__(self, *, fail_first_logs: bool = False, rate_limit_once: bool = False) -> None:
+    def __init__(self, *, fail_first_logs: bool = False, rate_limit_once: bool = False, donation: bool = False, hidden_drift: bool = False) -> None:
         self.fail_first_logs = fail_first_logs
         self.rate_limit_once = rate_limit_once
         self.calls = 0
@@ -53,6 +53,12 @@ class FakeBase:
         # swaps every 10 blocks from A-1000 to A+1800 (period is [A, A+1800))
         for i, b in enumerate(range(ANCHOR_BLOCK - 1000, ANCHOR_BLOCK + 1800, 10)):
             tx = "0x" + f"{i:064x}"
+            if donation and i == 120:
+                # tokens sent straight to the pair, then sync(): a Sync with no economic partner
+                r0 += 10**21
+                self.logs.append({"address": PAIR, "blockNumber": hex(b - 5), "logIndex": hex(0), "transactionHash": "0x" + "d0" * 32, "topics": [TOPIC_SYNC], "data": "0x" + w(r0) + w(r1)})
+            if hidden_drift and i == 130:
+                r1 += 10**18  # the chain moved without any log this model reads (not a plain v2 pair)
             if i % 3 == 0:
                 a_in = 10**17  # buy token with 0.1 WETH
                 out = get_amount_out(a_in, r1, r0)
@@ -168,6 +174,38 @@ def test_collection_builds_research_pack_and_reconciles(tmp_path: Path):
     receipts = [json.loads(l) for l in (Path(res["work_dir"]) / "receipts" / "receipts.jsonl").read_text().splitlines()]
     assert receipts and all(r["body_sha256"] for r in receipts if r["http_status"] == 200)
     assert all(r["integrity_hash_basis"] == "sha256_of_stored_bytes" for r in receipts)
+
+
+def test_orphan_sync_is_an_explained_adjustment_and_the_engine_follows_it(tmp_path: Path):
+    from market_replay.engine.simulation import Simulation
+
+    fake = FakeBase(donation=True)
+    res = run_collection(write_cfg(tmp_path), tmp_path, transport=httpx.MockTransport(fake.handle), rpc_url_override="http://fake-rpc.local", sleep=lambda s: None)
+    assert res["status"] == "pack_built", res
+    pack = Pack.load(res["pack_dir"])
+    assert pack.validation["resulting_qualification"] == "research"
+    ex = next(g for g in pack.validation["gates"] if g["gate"] == "execution_state")
+    assert ex["status"] == "passed" and ex["reconciliation"]["mismatch_count"] == 0
+    assert ex["reconciliation"]["reserve_adjustments"] == {"explained": 1}
+    assert not pack.inventory.get("demoted")
+    sim = Simulation(pack, bankroll_raw=10**18, engine_seed="x")
+    sim.process_until(sim.end_ms)
+    assert dict(sim.reserve_adjustments) == {"explained": 1} and not sim.reconciliation_mismatches and not sim.fidelity_failed
+    key = next(iter(sim.pools))
+    assert (sim.pools[key].reserve0, sim.pools[key].reserve1) == (sim.ref_pools[key].reserve0, sim.ref_pools[key].reserve1)
+
+
+def test_a_pool_that_drifts_without_events_is_demoted_not_papered_over(tmp_path: Path):
+    fake = FakeBase(hidden_drift=True)
+    res = run_collection(write_cfg(tmp_path), tmp_path, transport=httpx.MockTransport(fake.handle), rpc_url_override="http://fake-rpc.local", sleep=lambda s: None)
+    assert res["status"] == "pack_built", res
+    pack = Pack.load(res["pack_dir"])
+    demoted = pack.inventory["demoted"]
+    assert len(demoted) == 1 and demoted[0]["material_deltas"] >= 1 and "did not reconcile" in demoted[0]["reason"]
+    pool = next(iter(pack.pools.values()))
+    assert pool.supported_by_cpmm is False and "did not reconcile" in (pool.unsupported_reason or "")
+    assert any("demoted from execution" in line for line in res["decision_log"])
+    assert pack.validation["resulting_qualification"] == "diagnostic_only"  # the only pool left the executable set
 
 
 def test_collection_is_resumable_after_budget_exhaustion(tmp_path: Path):

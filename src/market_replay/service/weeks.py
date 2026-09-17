@@ -27,6 +27,9 @@ from ..collectors.historical import run_collection
 from .runs import ApiError, RunManager, now_iso
 
 RESUMABLE = ("queued", "collecting")
+# Bump when the collector or the reconciliation changes what a built week contains. A week that came
+# out diagnostic_only under an older version is collected again once, automatically, on an idle tick.
+COLLECTOR_VERSION = "2026-09-17.2"
 # Venues a week can be recorded from. v2 pairs are constant-product; v3/v4 pools are concentrated
 # liquidity (v4 is where Clanker/Bankr launches trade, behind hooks).
 PROTOCOLS = {
@@ -117,6 +120,7 @@ class WeekJobs:
             "max_requests": self.max_requests,
             "log_chunk_blocks": self.log_chunk_blocks,
             "initial_state_lookback_blocks": 20000,
+            "collector_version": COLLECTOR_VERSION,
             "availability_delay_ms": 4000,
             "out_dir": f"packs/historical/{name}",
             "authorization_note": "Operator-configured read-only RPC endpoint with a fixed request budget; public chain data; redistribution not cleared.",
@@ -133,6 +137,18 @@ class WeekJobs:
         if row is None:
             raise ApiError(404, f"unknown week job {job_id}", "NOT_FOUND")
         return self.view(row, role)
+
+    def _stale_diagnostic_job(self) -> dict[str, Any] | None:
+        """A built week whose pack is diagnostic_only and which an older collector produced."""
+        for row in self.m.store.week_jobs():
+            if row["status"] != "built" or not row.get("pack_id"):
+                continue
+            cfg = json.loads(row["config_json"])
+            if cfg.get("collector_version") == COLLECTOR_VERSION:
+                continue
+            if self._qualification(row["pack_id"]) == "diagnostic_only":
+                return row
+        return None
 
     def rebuild(self, job_id: str) -> dict[str, Any]:
         """Collect a finished (built or failed) week again with the current collector. The old pack is
@@ -151,7 +167,8 @@ class WeekJobs:
         cfg = json.loads(row["config_json"])
         shutil.rmtree(self.m.data_dir / cfg["out_dir"], ignore_errors=True)
         shutil.rmtree(self.m.data_dir / (cfg["out_dir"] + "_work"), ignore_errors=True)
-        self.m.store.update_week_job(job_id, status="queued", requests_used=0, attempts=0, note="queued for a rebuild; the next tick starts collecting", error=None, pack_id=None, updated_at=now_iso(), lease_until=None)
+        cfg["collector_version"] = COLLECTOR_VERSION
+        self.m.store.update_week_job(job_id, status="queued", requests_used=0, attempts=0, note="queued for a rebuild; the next tick starts collecting", error=None, pack_id=None, updated_at=now_iso(), lease_until=None, config_json=json.dumps(cfg, sort_keys=True))
         return self.view(self.m.store.week_job(job_id))
 
     def view(self, row: dict[str, Any], role: str = "public") -> dict[str, Any]:
@@ -193,7 +210,11 @@ class WeekJobs:
         """Advance the oldest unfinished job by one time slice. Safe to call from anywhere, any time."""
         pending = [r for r in self.m.store.week_jobs() if r["status"] in RESUMABLE]
         if not pending:
-            return {"advanced": None, "pending": 0}
+            stale = self._stale_diagnostic_job()
+            if stale is None:
+                return {"advanced": None, "pending": 0}
+            view = self.rebuild(stale["job_id"])
+            return {"advanced": view, "pending": 1, "rebuilt": True}
         pending.sort(key=lambda r: r["created_at"])
         row = pending[0]
         if self._slice_in_flight(row):
