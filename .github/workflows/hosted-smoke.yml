@@ -102,8 +102,10 @@ jobs:
           while (dt.datetime.now(dt.timezone.utc).date() - (start + dt.timedelta(days=7))).days < 1:
               start -= dt.timedelta(days=7)
           print(start.isoformat())")
-          echo "requesting week starting $week"
-          curl -sS -m 60 -X POST "$BASE/api/v1/weeks" -H 'content-type: application/json' -d "{\"week_start\":\"$week\"}" | jq -c 'del(.note)' || true
+          for proto in uniswap_v2 uniswap_v4; do
+            echo "requesting week starting $week on $proto"
+            curl -sS -m 60 -X POST "$BASE/api/v1/weeks" -H 'content-type: application/json' -d "{\"week_start\":\"$week\",\"protocol\":\"$proto\"}" | jq -c 'del(.note)' || true
+          done
           for i in $(seq 1 4); do
             out=$(curl -sS -m 290 -X POST "$BASE/api/v1/weeks/tick?slice=200") || true
             echo "$out" | jq -c '{busy, advanced: (.advanced | if . then {label, status, requests_used, request_budget, attempts, note: (.note // "" | .[0:160]), error} else null end)}' || echo "$out" | head -c 300
