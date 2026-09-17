@@ -134,6 +134,7 @@ CREATE TABLE IF NOT EXISTS week_jobs (
   requested_by TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  lease_until TEXT,
   work_archive BYTEA
 );
 CREATE TABLE IF NOT EXISTS rate_events (
@@ -294,7 +295,15 @@ class BaseStore:
         return self.one("SELECT pack_id, name, sha256, size, created_at FROM pack_archives WHERE pack_id=?", (pack_id,))
 
     # ------------------------------------------------------------------ week collection jobs
-    WEEK_JOB_COLS = "job_id, name, chain, period_start_utc, period_end_utc, status, config_json, requests_used, attempts, note, error, pack_id, requested_by, created_at, updated_at"
+    WEEK_JOB_COLS = "job_id, name, chain, period_start_utc, period_end_utc, status, config_json, requests_used, attempts, note, error, pack_id, requested_by, created_at, updated_at, lease_until"
+
+    def ensure_columns(self) -> None:
+        """Additive migrations for tables created by earlier versions (both backends)."""
+        for table, col, decl in (("week_jobs", "lease_until", "TEXT"),):
+            try:
+                self.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+            except Exception:
+                pass  # already there
 
     def insert_week_job(self, row: dict[str, Any]) -> None:
         cols = self.WEEK_JOB_COLS.split(", ")
@@ -399,6 +408,7 @@ class SqliteStore(BaseStore):
         self._conn.execute("PRAGMA synchronous=NORMAL")
         with self._lock:
             self._conn.executescript(SCHEMA.replace("DOUBLE PRECISION", "REAL").replace("BIGINT", "INTEGER"))
+        self.ensure_columns()
 
     def execute(self, sql: str, params: tuple | dict = ()) -> None:
         with self._lock:
@@ -448,6 +458,7 @@ class PgStore(BaseStore):
             for stmt in SCHEMA.split(";"):
                 if stmt.strip():
                     self._conn.execute(stmt)
+        self.ensure_columns()
 
     def _connect(self):
         return self._psycopg.connect(self.url, autocommit=True, connect_timeout=15)

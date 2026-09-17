@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -13,6 +14,10 @@ from typing import Any
 import httpx
 
 from ..domain.status import CoverageState
+
+# Endpoint URLs carry provider keys; the HTTP client must never echo them into logs.
+for _n in ("httpx", "httpcore"):
+    logging.getLogger(_n).setLevel(logging.WARNING)
 
 SECRET_QUERY_KEYS = {"apikey", "api_key", "key", "token", "x_cg_pro_api_key"}
 SECRET_HEADER_KEYS = {"authorization", "x-api-key", "x-cg-pro-api-key", "x-cg-demo-api-key"}

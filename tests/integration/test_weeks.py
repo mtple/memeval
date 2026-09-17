@@ -93,3 +93,35 @@ def test_weeks_are_disabled_without_an_endpoint(tmp_path: Path):
     assert c.post("/api/v1/weeks", json={"week_start": "2025-09-01"}).status_code == 503
     assert c.get("/api/v1/meta").json()["weeks_enabled"] is False
     mgr.close()
+
+
+def test_a_tick_during_a_running_slice_reports_busy_instead_of_waiting(tmp_path: Path):
+    fake = FakeBase()
+    mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"), slice_seconds=100)
+    job = mgr.weeks.request(PERIOD_START, PERIOD_END)
+    # simulate a slice that started moments ago on another instance (it holds a lease)
+    mgr.store.update_week_job(job["job_id"], status="collecting", lease_until="2999-01-01T00:00:00Z")
+    out = mgr.weeks.tick(slice_seconds=0.001)
+    assert out["advanced"] is None and out["busy"] is True
+    mgr.close()
+
+
+def test_rpc_urls_never_reach_the_logs(caplog, tmp_path: Path):
+    import logging
+
+    fake = FakeBase()
+    mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))
+    mgr.weeks.rpc_url = "http://fake-rpc.local/rpc/v1/base/SECRETKEY123"
+    mgr.weeks.request(PERIOD_START, PERIOD_END)
+    with caplog.at_level(logging.DEBUG):
+        mgr.weeks.tick(slice_seconds=0.001)
+    assert "SECRETKEY123" not in caplog.text
+    mgr.close()
+
+
+def test_log_chunk_follows_the_provider_cap(tmp_path: Path):
+    mgr = RunManager(data_dir=tmp_path / "data")
+    assert WeekJobs(mgr, rpc_url="https://api.developer.coinbase.com/rpc/v1/base/KEY", log_chunk_blocks=10000).log_chunk_blocks == 1000
+    assert WeekJobs(mgr, rpc_url="https://base-mainnet.g.alchemy.com/v2/KEY", log_chunk_blocks=10000).log_chunk_blocks == 2000
+    assert WeekJobs(mgr, rpc_url="https://example-node.quiknode.pro/KEY/", log_chunk_blocks=10000).log_chunk_blocks == 10000
+    mgr.close()

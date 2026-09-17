@@ -47,6 +47,13 @@ class WeekJobs:
         self.rpc_url = rpc_url
         self.slice_seconds = slice_seconds
         self.max_requests = max_requests
+        # Provider caps on eth_getLogs block ranges (research, Sept 2026): Coinbase Developer Platform 1,000;
+        # QuickNode paid 10,000; Alchemy 2,000 with no result cap. Start at the cap instead of halving into it.
+        host = (rpc_url or "").split("//")[-1].split("/")[0].lower()
+        if "coinbase.com" in host:
+            log_chunk_blocks = min(log_chunk_blocks, 1000)
+        elif "alchemy.com" in host:
+            log_chunk_blocks = min(log_chunk_blocks, 2000)
         self.log_chunk_blocks = log_chunk_blocks
         self.max_pairs = max_pairs
         self.max_jobs_per_day = max_jobs_per_day
@@ -149,11 +156,24 @@ class WeekJobs:
             return {"advanced": None, "pending": 0}
         pending.sort(key=lambda r: r["created_at"])
         row = pending[0]
+        if self._slice_in_flight(row):
+            return {"advanced": None, "busy": True, "pending": len(pending), "job_id": row["job_id"]}
         with self.m.store.run_lock("weekjob:" + row["job_id"]):
             row = self.m.store.week_job(row["job_id"]) or row
             if row["status"] not in RESUMABLE:
                 return {"advanced": None, "pending": len(pending) - 1}
             return {"advanced": self._run_slice(row, slice_seconds or self.slice_seconds), "pending": len(pending)}
+
+    def _slice_in_flight(self, row: dict[str, Any]) -> bool:
+        """Another instance holds a lease on this job (set at slice start, cleared at slice end)."""
+        lease = row.get("lease_until")
+        if not lease:
+            return False
+        try:
+            until = datetime.fromisoformat(str(lease).replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return datetime.now(UTC) < until
 
     def _run_slice(self, row: dict[str, Any], slice_seconds: float) -> dict[str, Any]:
         cfg = json.loads(row["config_json"])
@@ -168,13 +188,14 @@ class WeekJobs:
         cfg_dir.mkdir(parents=True, exist_ok=True)
         cfg_path = cfg_dir / f"{name}.yaml"
         cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
-        self.m.store.update_week_job(row["job_id"], status="collecting", updated_at=now_iso())
+        lease = (datetime.now(UTC) + timedelta(seconds=slice_seconds + 45)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.m.store.update_week_job(row["job_id"], status="collecting", updated_at=now_iso(), lease_until=lease)
         res = run_collection(cfg_path, data_dir, transport=self.transport, rpc_url_override=self.rpc_url, sleep=self.sleep, deadline=time.monotonic() + slice_seconds, store_bodies=False, budget_used=int(row["requests_used"]))
         status = res["status"]
         used = int(res.get("budget", {}).get("requests", row["requests_used"]))
         log = res.get("decision_log") or []
         note = log[-1] if log else status
-        fields: dict[str, Any] = {"requests_used": used, "note": note[:400], "updated_at": now_iso()}
+        fields: dict[str, Any] = {"requests_used": used, "note": note[:400], "updated_at": now_iso(), "lease_until": None}
         if status == "pack_built":
             pack_archive = _targz(Path(res["pack_dir"]))
             view = self.m.upload_pack(pack_archive, name)

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import tempfile
@@ -29,6 +30,9 @@ from .runs import RunManager
 
 
 def build_hosted_app() -> tuple[FastAPI, RunManager]:
+    # httpx logs every request URL at INFO; an RPC URL carries the provider key in its path. Never log it.
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
     db_url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL") or None
     data_dir = Path(os.environ.get("MARKET_REPLAY_DATA_DIR") or (Path(tempfile.gettempdir()) / "market-replay"))
     admin = os.environ.get("MARKET_REPLAY_ADMIN_TOKEN")
