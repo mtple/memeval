@@ -112,3 +112,12 @@ jobs:
             [ "$st" -gt 0 ] || break
           done
           curl -sS -m 60 "$BASE/api/v1/weeks" | jq '.items[] | {label, status, requests_used, request_budget, attempts, note, error}'
+      - name: Validation report of every built week
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event.deployment.environment == 'Production' }}
+        run: |
+          set -u
+          for pid in $(curl -sS -m 60 "$BASE/api/v1/weeks" | jq -r '.items[] | select(.status=="built") | .pack_id'); do
+            echo "== $pid"
+            curl -sS -m 120 "$BASE/api/v1/packs/$pid/validation" | jq '{resulting_qualification, gates: [.gates[] | {gate, status, detail}], reconciliation: (.gates[] | select(.gate=="execution_state") | .reconciliation | {checkpoints, mismatch_count, fidelity_flag_count, recorded_output_below_model_max, mismatches: (.mismatches[0:8]), fidelity_flags: (.fidelity_flags[0:8])})}'
+            curl -sS -m 120 "$BASE/api/v1/packs/$pid" | jq '{use_status, summary: {pools_total: .summary.pools_total, pools_executable: .summary.pools_executable, tape_events: .summary.tape_events, coverage_states: .summary.coverage_states, executable_failure: .summary.executable_failure, unsupported: (.summary.unsupported_inventory[0:5])}}'
+          done
