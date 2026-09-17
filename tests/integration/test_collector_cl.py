@@ -390,3 +390,26 @@ def test_tick_map_fold_and_active_liquidity():
     ticks = fold_tick_map(rows)
     assert ticks == [["-100", "10", "10"], ["100", "-10", "10"]]
     assert active_liquidity(ticks, 0) == 10 and active_liquidity(ticks, -101) == 0 and active_liquidity(ticks, 100) == 0
+
+
+def test_activity_scan_batches_pool_ids_so_no_filter_exceeds_the_request_body_cap(tmp_path: Path, monkeypatch):
+    import market_replay.collectors.uniswap_cl as cl
+
+    monkeypatch.setattr(cl, "ACTIVITY_BATCH", 1)
+    fake = FakePoolManager(protocol="uniswap_v4")
+    seen: list[int] = []
+    orig = fake.handle
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["method"] == "eth_getLogs":
+            topics = body["params"][0].get("topics") or []
+            if len(topics) > 1 and isinstance(topics[1], list):
+                seen.append(len(topics[1]))
+        return orig(request)
+
+    cfg = write_cfg(tmp_path, selection_rule="active_before_window_earliest_created_v1", activity_lookback_blocks=3000)
+    res = run_collection(cfg, tmp_path, transport=httpx.MockTransport(handle), rpc_url_override="http://fake-rpc.local", sleep=lambda s: None)
+    assert res["status"] == "pack_built", res
+    assert seen and max(seen) == 1  # every activity filter carried a single pool id
+    assert any("activity scan before the window" in line for line in res["decision_log"])

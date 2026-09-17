@@ -58,6 +58,7 @@ from .evm_rpc import (
     word,
 )
 
+ACTIVITY_BATCH = 400  # addresses per eth_getLogs filter in the activity scan (request-body caps)
 DEPLOYMENTS = yaml.safe_load((Path(__file__).parent / "deployments.yaml").read_text())
 BLOCK_INTERVAL_MS = 2000
 SUPPORTED_PROTOCOLS = frozenset({"uniswap_v2", "uniswap_v3", "uniswap_v4"})
@@ -358,24 +359,29 @@ def run_collection(
                 addrs = [a for a, _ in in_scope]
                 lookback = int(cfg.get("activity_lookback_blocks", 0))
                 first = blocks["discovery_start"] if lookback <= 0 else max(blocks["discovery_start"], blocks["prehistory_start"] - lookback)
-                cur_a = int(ck.get(act_key + ":cursor", first))
-                achunk = chunk
-                while cur_a < blocks["prehistory_start"] and addrs:
-                    slice_check()
-                    to_a = min(cur_a + achunk - 1, blocks["prehistory_start"] - 1)
-                    try:
-                        logs = rpc.get_logs(address=addrs, topics=[TOPIC_SWAP], from_block=cur_a, to_block=to_a)
-                    except ProviderError:
-                        if achunk > 100:
-                            achunk //= 2
-                            continue
-                        raise
-                    for lg in logs:
-                        found.add(lg["address"].lower())
-                    cur_a = to_a + 1
-                    ck.set(act_key + ":found", sorted(found))
-                    ck.set(act_key + ":cursor", cur_a)
-                    progress["chunks"] += 1
+                # Providers cap the request body: thousands of addresses in one filter come back as
+                # HTTP 413. Scan the address list in batches, each with its own checkpointed cursor.
+                for bi in range(0, len(addrs), ACTIVITY_BATCH):
+                    batch = addrs[bi : bi + ACTIVITY_BATCH]
+                    bkey = f"{act_key}:b{bi // ACTIVITY_BATCH}"
+                    cur_a = int(ck.get(bkey + ":cursor", first))
+                    achunk = chunk
+                    while cur_a < blocks["prehistory_start"]:
+                        slice_check()
+                        to_a = min(cur_a + achunk - 1, blocks["prehistory_start"] - 1)
+                        try:
+                            logs = rpc.get_logs(address=batch, topics=[TOPIC_SWAP], from_block=cur_a, to_block=to_a)
+                        except ProviderError:
+                            if achunk > 100:
+                                achunk //= 2
+                                continue
+                            raise
+                        for lg in logs:
+                            found.add(lg["address"].lower())
+                        cur_a = to_a + 1
+                        ck.set(act_key + ":found", sorted(found))
+                        ck.set(bkey + ":cursor", cur_a)
+                        progress["chunks"] += 1
                 active = sorted(found)
                 ck.set(act_key, active)
                 note(f"activity scan before the window (lookback_blocks={lookback or 'full discovery range'}): {len(active)} of {len(in_scope)} in-scope pairs had at least one swap before prehistory start")

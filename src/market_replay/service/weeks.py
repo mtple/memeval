@@ -29,7 +29,7 @@ from .runs import ApiError, RunManager, now_iso
 RESUMABLE = ("queued", "collecting")
 # Bump when the collector or the reconciliation changes what a built week contains. A week that came
 # out diagnostic_only under an older version is collected again once, automatically, on an idle tick.
-COLLECTOR_VERSION = "2026-09-17.2"
+COLLECTOR_VERSION = "2026-09-17.3"
 # Venues a week can be recorded from. v2 pairs are constant-product; v3/v4 pools are concentrated
 # liquidity (v4 is where Clanker/Bankr launches trade, behind hooks).
 PROTOCOLS = {
@@ -138,17 +138,30 @@ class WeekJobs:
             raise ApiError(404, f"unknown week job {job_id}", "NOT_FOUND")
         return self.view(row, role)
 
-    def _stale_diagnostic_job(self) -> dict[str, Any] | None:
-        """A built week whose pack is diagnostic_only and which an older collector produced."""
+    def _stale_job(self) -> dict[str, Any] | None:
+        """A week an older collector left diagnostic_only (rebuilt from scratch) or failed (resumed
+        from its checkpoints), each at most once per collector version."""
         for row in self.m.store.week_jobs():
-            if row["status"] != "built" or not row.get("pack_id"):
-                continue
             cfg = json.loads(row["config_json"])
             if cfg.get("collector_version") == COLLECTOR_VERSION:
                 continue
-            if self._qualification(row["pack_id"]) == "diagnostic_only":
+            if row["status"] == "failed":
+                return row
+            if row["status"] == "built" and row.get("pack_id") and self._qualification(row["pack_id"]) == "diagnostic_only":
                 return row
         return None
+
+    def resume_failed(self, job_id: str) -> dict[str, Any]:
+        """Give a failed week another run of attempts under the current collector, keeping its checkpoints."""
+        row = self.m.store.week_job(job_id)
+        if row is None:
+            raise ApiError(404, f"unknown week job {job_id}", "NOT_FOUND")
+        if row["status"] != "failed":
+            raise ApiError(409, "only a failed week can be resumed", "BUSY")
+        cfg = json.loads(row["config_json"])
+        cfg["collector_version"] = COLLECTOR_VERSION
+        self.m.store.update_week_job(job_id, status="collecting", attempts=0, error=None, note="resumed under a newer collector; the next tick continues from the last checkpoint", updated_at=now_iso(), lease_until=None, config_json=json.dumps(cfg, sort_keys=True))
+        return self.view(self.m.store.week_job(job_id))
 
     def rebuild(self, job_id: str) -> dict[str, Any]:
         """Collect a finished (built or failed) week again with the current collector. The old pack is
@@ -210,9 +223,12 @@ class WeekJobs:
         """Advance the oldest unfinished job by one time slice. Safe to call from anywhere, any time."""
         pending = [r for r in self.m.store.week_jobs() if r["status"] in RESUMABLE]
         if not pending:
-            stale = self._stale_diagnostic_job()
+            stale = self._stale_job()
             if stale is None:
                 return {"advanced": None, "pending": 0}
+            if stale["status"] == "failed":
+                view = self.resume_failed(stale["job_id"])
+                return {"advanced": view, "pending": 1, "resumed": True}
             view = self.rebuild(stale["job_id"])
             return {"advanced": view, "pending": 1, "rebuilt": True}
         pending.sort(key=lambda r: r["created_at"])

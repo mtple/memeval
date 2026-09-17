@@ -64,6 +64,7 @@ from .historical import (
     CL_PROTOCOLS,
     DEPLOYMENTS,
     CollectionBlocked,
+    LogFile,
     TimeSliceExpired,
     iso_ms,
     load_config,
@@ -71,6 +72,7 @@ from .historical import (
 
 CL_MODELS = {"uniswap_v3": PoolModel.UNISWAP_V3_CL, "uniswap_v4": PoolModel.UNISWAP_V4_CL}
 FEE_DENOMINATOR_PIPS = 1_000_000
+ACTIVITY_BATCH = 400  # pool ids / addresses per eth_getLogs filter in the activity scan (request-body caps)
 DYNAMIC_FEE_FLAG = 0x800000  # v4 LPFeeLibrary.DYNAMIC_FEE_FLAG: the hook sets the fee per swap
 
 
@@ -244,7 +246,12 @@ def run_cl_collection(
         def scan(ref: str, field_name: str, key: str, *, address: str | list[str] | None, topics: list[Any], start: int, end_exclusive: int) -> list[dict[str, Any]]:
             """Forward log scan over [start, end_exclusive), chunked, halved on provider error, checkpointed per chunk."""
             cur = int(ck.get(key + ":cursor", start))
-            acc: list[dict[str, Any]] = ck.get(key + ":logs", [])
+            logs_file = LogFile(work / "logs" / f"{key.replace(':', '_')}.jsonl")
+            legacy = ck.get(key + ":logs")
+            if legacy is not None:  # work directories written before logs moved out of the checkpoint file
+                logs_file.replace(legacy)
+                del ck.data[key + ":logs"]
+                ck.flush()
             c = chunk
             while cur < end_exclusive:
                 slice_check()
@@ -259,13 +266,12 @@ def run_cl_collection(
                         note(f"{field_name} chunk reduced to {c} after provider error")
                         continue
                     raise
-                acc.extend(logs)
+                logs_file.append(logs)
                 ledger.set(ref, field_name, cur, to_b, CoverageState.COMPLETED_AND_CHECKED, f"{len(logs)} logs; range returned without provider truncation error")
                 cur = to_b + 1
                 ck.set(key + ":cursor", cur)
-                ck.set(key + ":logs", acc)
                 progress["chunks"] += 1
-            return acc
+            return logs_file.read()
 
         # 4. Pool creation / initialization logs over the discovery window, chunked and checkpointed
         pools: dict[str, dict[str, Any]] = {}
@@ -308,13 +314,17 @@ def run_cl_collection(
                 lookback = int(cfg.get("activity_lookback_blocks", 0))
                 first = blocks["discovery_start"] if lookback <= 0 else max(blocks["discovery_start"], blocks["prehistory_start"] - lookback)
                 found: set[str] = set()
-                if ids:
+                # Providers cap the request body, not just the block range: thousands of pool ids in one
+                # filter come back as HTTP 413. Scan the id list in batches, each checkpointed on its own.
+                for bi in range(0, len(ids), ACTIVITY_BATCH):
+                    batch = ids[bi : bi + ACTIVITY_BATCH]
+                    key = f"{act_key}:b{bi // ACTIVITY_BATCH}"
                     if is_v4:
-                        logs = scan("pool_manager", "activity", act_key, address=emitter, topics=[TOPIC_V4_SWAP, ids], start=first, end_exclusive=blocks["prehistory_start"])
-                        found = {lg["topics"][1].lower() for lg in logs}
+                        logs = scan("pool_manager", "activity", key, address=emitter, topics=[TOPIC_V4_SWAP, batch], start=first, end_exclusive=blocks["prehistory_start"])
+                        found |= {lg["topics"][1].lower() for lg in logs}
                     else:
-                        logs = scan("factory", "activity", act_key, address=ids, topics=[TOPIC_V3_SWAP], start=first, end_exclusive=blocks["prehistory_start"])
-                        found = {lg["address"].lower() for lg in logs}
+                        logs = scan("factory", "activity", key, address=batch, topics=[TOPIC_V3_SWAP], start=first, end_exclusive=blocks["prehistory_start"])
+                        found |= {lg["address"].lower() for lg in logs}
                 active = sorted(found)
                 ck.set(act_key, active)
                 note(f"activity scan before the window (lookback_blocks={lookback or 'full discovery range'}): {len(active)} of {len(in_scope)} in-scope pools had at least one swap before prehistory start")
