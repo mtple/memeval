@@ -413,7 +413,9 @@ class PgStore(BaseStore):
                     self._conn.execute(stmt)
 
     def _connect(self):
-        return self._psycopg.connect(self.url, autocommit=True, connect_timeout=15)
+        # prepare_threshold=None: no server-side prepared statements, so a transaction-mode pooler
+        # (Supabase Supavisor, Neon, PgBouncer) can hand each statement to any backend.
+        return self._psycopg.connect(self.url, autocommit=True, connect_timeout=15, prepare_threshold=None)
 
     def _live(self):
         """The connection, reopened if the server dropped it (Neon suspends idle compute; warm serverless
@@ -460,7 +462,7 @@ class PgStore(BaseStore):
     @contextmanager
     def run_lock(self, run_id: str) -> Iterator[None]:
         """Cluster-wide serialization: a transaction-scoped advisory lock on a dedicated connection."""
-        conn = self._psycopg.connect(self.url, autocommit=False)
+        conn = self._psycopg.connect(self.url, autocommit=False, prepare_threshold=None)
         try:
             conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (run_id,))
             yield
@@ -472,7 +474,7 @@ class PgStore(BaseStore):
 
     @contextmanager
     def try_run_lock(self, run_id: str) -> Iterator[bool]:
-        conn = self._psycopg.connect(self.url, autocommit=False)
+        conn = self._psycopg.connect(self.url, autocommit=False, prepare_threshold=None)
         try:
             got = conn.execute("SELECT pg_try_advisory_xact_lock(hashtext(%s))", (run_id,)).fetchone()[0]
             yield bool(got)
