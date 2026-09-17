@@ -29,7 +29,7 @@ from .runs import ApiError, RunManager, now_iso
 RESUMABLE = ("queued", "collecting")
 # Bump when the collector or the reconciliation changes what a built week contains. A week that came
 # out diagnostic_only under an older version is collected again once, automatically, on an idle tick.
-COLLECTOR_VERSION = "2026-09-17.3"
+COLLECTOR_VERSION = "2026-09-17.4"
 # Venues a week can be recorded from. v2 pairs are constant-product; v3/v4 pools are concentrated
 # liquidity (v4 is where Clanker/Bankr launches trade, behind hooks).
 PROTOCOLS = {

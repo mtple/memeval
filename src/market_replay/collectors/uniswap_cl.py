@@ -368,15 +368,14 @@ def run_cl_collection(
                 continue
             pk = f"poollogs:{addr}"
             pre_start = blocks["prehistory_start"]
-            # Liquidity events from creation (the tick map needs every one), swaps only from the prehistory start.
+            # One scan per pool from its creation: liquidity events (the tick map needs every one) and swaps
+            # together, so a range is requested once. Swaps before the window also give the last price before
+            # it without a second, backward search.
             if is_v4:
-                liq_logs = scan(pool_key, "liquidity", pk + ":liq", address=emitter, topics=[[TOPIC_V4_MODIFY_LIQUIDITY], addr], start=meta["created_block"], end_exclusive=blocks["period_end"])
-                swap_logs = scan(pool_key, "swaps", pk + ":swaps", address=emitter, topics=[[TOPIC_V4_SWAP], addr], start=max(meta["created_block"], pre_start), end_exclusive=blocks["period_end"])
-                raw_logs = [meta["init_log"]] + liq_logs + swap_logs
+                pool_logs = scan(pool_key, "events", pk + ":events", address=emitter, topics=[[TOPIC_V4_MODIFY_LIQUIDITY, TOPIC_V4_SWAP], addr], start=meta["created_block"], end_exclusive=blocks["period_end"])
+                raw_logs = [meta["init_log"]] + pool_logs
             else:
-                liq_logs = scan(pool_key, "liquidity", pk + ":liq", address=addr, topics=[[TOPIC_V3_INITIALIZE, TOPIC_V3_MINT, TOPIC_V3_BURN]], start=meta["created_block"], end_exclusive=blocks["period_end"])
-                swap_logs = scan(pool_key, "swaps", pk + ":swaps", address=addr, topics=[[TOPIC_V3_SWAP]], start=max(meta["created_block"], pre_start), end_exclusive=blocks["period_end"])
-                raw_logs = liq_logs + swap_logs
+                raw_logs = scan(pool_key, "events", pk + ":events", address=addr, topics=[[TOPIC_V3_INITIALIZE, TOPIC_V3_MINT, TOPIC_V3_BURN, TOPIC_V3_SWAP]], start=meta["created_block"], end_exclusive=blocks["period_end"])
             rows = normalize_cl_logs(raw_logs, protocol=protocol, pool_key=pool_key, fee_pips=int(meta["fee"]), block_time_ms=block_time_ms)
             # v4 pools may carry the dynamic-fee flag (0x800000) instead of a fee: the hook sets the fee per swap
             # and every Swap event reports it. The pool's own fee for agent fills is then the last fee observed
@@ -423,34 +422,11 @@ def run_cl_collection(
                         except (ProviderError, ValueError) as e:
                             note(f"{addr}: slot0 at {state_block} unavailable ({str(e)[:80]}); scanning back for the last Swap")
                     if price_basis is None:
-                        # Backward scan for the last Swap before the window, down to the Initialize block; cursor checkpointed.
-                        hi = int(ck.get(pk + ":lastswap:hi", state_block))
-                        lchunk = chunk
-                        last_swap = ck.get(pk + ":lastswap")
-                        while hi >= init_block and last_swap is None:
-                            slice_check()
-                            fb = max(init_block, hi - lchunk + 1)
-                            try:
-                                if is_v4:
-                                    swaps = rpc.get_logs(address=emitter, topics=[[TOPIC_V4_SWAP], addr], from_block=fb, to_block=hi)
-                                else:
-                                    swaps = rpc.get_logs(address=addr, topics=[[TOPIC_V3_SWAP]], from_block=fb, to_block=hi)
-                            except ProviderError:
-                                if lchunk > 100:
-                                    lchunk //= 2
-                                    note(f"last-swap scan chunk reduced to {lchunk} after provider error")
-                                    continue
-                                raise
-                            if swaps:
-                                last = max(swaps, key=lambda l: (hex_to_int(l["blockNumber"]), hex_to_int(l["logIndex"])))
-                                # Both Swap layouts carry sqrtPriceX96 at word 2 and tick at word 4.
-                                last_swap = {"sqrt_price_x96": str(word(last["data"], 2)), "tick": sword(last["data"], 4), "block": hex_to_int(last["blockNumber"])}
-                                ck.set(pk + ":lastswap", last_swap)
-                            hi = fb - 1
-                            ck.set(pk + ":lastswap:hi", hi)
-                            progress["chunks"] += 1
-                        if last_swap is not None:
-                            init_sqrt, init_tick, price_basis = last_swap["sqrt_price_x96"], int(last_swap["tick"]), f"last_swap_before_prehistory_at_block_{last_swap['block']}"
+                        # The last Swap before the window is already in the pool's own scan (from creation).
+                        before = [r for r in rows if r["kind"] == "cl_swap" and r["block"] < pre_start]
+                        if before:
+                            last = before[-1]
+                            init_sqrt, init_tick, price_basis = str(last["sqrt_price_x96_after"]), int(last["tick_after"]), f"last_swap_before_prehistory_at_block_{last['block']}"
                         else:
                             init_sqrt, init_tick, price_basis = init_rows[0]["sqrt_price_x96"], int(init_rows[0]["tick"]), f"initialize_at_block_{init_block}_no_swap_before_prehistory"
                         note(f"{addr}: initial price basis {price_basis}")
