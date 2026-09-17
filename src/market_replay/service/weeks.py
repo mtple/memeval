@@ -134,6 +134,26 @@ class WeekJobs:
             raise ApiError(404, f"unknown week job {job_id}", "NOT_FOUND")
         return self.view(row, role)
 
+    def rebuild(self, job_id: str) -> dict[str, Any]:
+        """Collect a finished (built or failed) week again with the current collector. The old pack is
+        forgotten (reports of runs on it survive); the sealed name and sequence number stay."""
+        row = self.m.store.week_job(job_id)
+        if row is None:
+            raise ApiError(404, f"unknown week job {job_id}", "NOT_FOUND")
+        if row["status"] in RESUMABLE:
+            raise ApiError(409, "this week is still being collected", "BUSY")
+        if self._slice_in_flight(row):
+            raise ApiError(409, "a slice is still finishing; try again in a minute", "BUSY")
+        if row.get("pack_id"):
+            self.m.forget_pack(row["pack_id"])
+        self.m.store.delete_week_job_files(job_id)
+        self.m.store.set_week_job_archive(job_id, None)
+        cfg = json.loads(row["config_json"])
+        shutil.rmtree(self.m.data_dir / cfg["out_dir"], ignore_errors=True)
+        shutil.rmtree(self.m.data_dir / (cfg["out_dir"] + "_work"), ignore_errors=True)
+        self.m.store.update_week_job(job_id, status="queued", requests_used=0, attempts=0, note="queued for a rebuild; the next tick starts collecting", error=None, pack_id=None, updated_at=now_iso(), lease_until=None)
+        return self.view(self.m.store.week_job(job_id))
+
     def view(self, row: dict[str, Any], role: str = "public") -> dict[str, Any]:
         """Public views never carry the calendar; the operator's view does."""
         cfg = json.loads(row["config_json"])
@@ -154,12 +174,19 @@ class WeekJobs:
             "note": row["note"],
             "error": row["error"],
             "pack_id": row["pack_id"],
+            "qualification": self._qualification(row["pack_id"]),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
         if role == "admin":
             out.update(period_start_utc=row["period_start_utc"], period_end_utc=row["period_end_utc"], requested_by=row["requested_by"], dates_sealed=False)
         return out
+
+    def _qualification(self, pack_id: str | None) -> str | None:
+        if not pack_id:
+            return None
+        pack = self.m.store.pack(pack_id)
+        return str(pack["use_status"]) if pack else None
 
     # ------------------------------------------------------------------ slices
     def tick(self, slice_seconds: float | None = None) -> dict[str, Any]:

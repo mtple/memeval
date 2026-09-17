@@ -285,6 +285,7 @@ export type WeekJob = {
   note: string | null;
   error: string | null;
   pack_id: string | null;
+  qualification?: string | null;
   created_at: string;
   updated_at: string;
 };

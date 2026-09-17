@@ -98,6 +98,32 @@ def test_a_v4_period_is_collected_and_labelled_by_venue(tmp_path: Path):
     mgr.close()
 
 
+def test_a_finished_week_can_be_rebuilt_under_the_same_sealed_name(tmp_path: Path):
+    fake = FakeBase()
+    store = str(tmp_path / "store.sqlite")
+    mgr = make(tmp_path, fake, store)
+    job = mgr.weeks.request(PERIOD_START, PERIOD_END)
+    for _ in range(60):
+        out = mgr.weeks.tick(slice_seconds=0.001)
+        if out["advanced"]["status"] in ("built", "failed"):
+            break
+    first = mgr.weeks.job(job["job_id"])
+    assert first["status"] == "built" and first["qualification"] == "research"
+    c = TestClient(create_app(mgr, "adm_w"))
+    r = c.post(f"/api/v1/weeks/{job['job_id']}/rebuild")
+    assert r.status_code == 200 and r.json()["status"] == "queued" and r.json()["pack_id"] is None
+    assert all(p["pack_id"] != first["pack_id"] for p in mgr.packs())  # the old pack is forgotten
+    assert c.post(f"/api/v1/weeks/{job['job_id']}/rebuild").status_code == 409  # already collecting
+    for _ in range(60):
+        out = mgr.weeks.tick(slice_seconds=0.001)
+        if out["advanced"]["status"] in ("built", "failed"):
+            break
+    again = mgr.weeks.job(job["job_id"])
+    assert again["status"] == "built" and again["name"] == first["name"] and again["label"] == first["label"]
+    assert sum(1 for p in mgr.packs() if p["name"] == first["name"]) == 1
+    mgr.close()
+
+
 def test_week_requests_are_validated_capped_and_public_over_http(tmp_path: Path):
     fake = FakeBase()
     mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))

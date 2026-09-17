@@ -468,6 +468,24 @@ function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
                         <Link to="/new">Run it</Link>
                       </>
                     )}
+                    {(j.status === "failed" || (j.status === "built" && j.qualification === "diagnostic_only")) && (
+                      <>
+                        {" "}
+                        <button
+                          className="btn btn-small"
+                          onClick={async () => {
+                            try {
+                              await post<WeekJob>(`/weeks/${j.job_id}/rebuild`, {});
+                              weeks.reload();
+                            } catch (x) {
+                              setErr(x);
+                            }
+                          }}
+                        >
+                          Rebuild
+                        </button>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}

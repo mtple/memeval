@@ -310,6 +310,11 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     def get_week(job_id: str, role: str = Depends(public_read)) -> dict[str, Any]:
         return weeks_or_503().job(job_id, role)
 
+    @app.post("/api/v1/weeks/{job_id}/rebuild", dependencies=[Depends(public_write("weeks"))])
+    def rebuild_week(job_id: str) -> dict[str, Any]:
+        """Collect a built or failed week again with the current collector (same sealed name)."""
+        return weeks_or_503().rebuild(job_id)
+
     @app.get("/api/v1/leaderboard", dependencies=[Depends(public_read)])
     def leaderboard(suite_id: str | None = None, pack_id: str | None = None, all: bool = False) -> dict[str, Any]:
         """Default: the practice suite when it has results, otherwise the first category that does."""

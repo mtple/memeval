@@ -201,6 +201,11 @@ class BaseStore:
             row,
         )
 
+    def delete_pack(self, pack_id: str) -> None:
+        """Forget a pack and its archive (runs that referenced it keep their reports)."""
+        self.execute("DELETE FROM pack_archives WHERE pack_id=?", (pack_id,))
+        self.execute("DELETE FROM packs WHERE pack_id=?", (pack_id,))
+
     def packs(self) -> list[dict[str, Any]]:
         return self.query("SELECT * FROM packs ORDER BY imported_at")
 

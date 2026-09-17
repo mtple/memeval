@@ -91,14 +91,25 @@ def normalize_pair_logs(logs: list[dict[str, Any]], *, pool_key: str, token0: st
 
     Uniswap v2 emits ``Sync`` *before* the economic event in the same transaction. The Sync is a
     checkpoint of the state after that event, so it is re-ordered to follow its partner and is
-    never applied as an economic action. Unsupported shapes (two inputs, two outputs) are
-    reported and excluded.
+    never applied as an economic action. Every Sync is kept: one without a partner (a ``sync()``
+    call after a direct transfer, a ``skim()``) becomes an orphan checkpoint whose reserve delta
+    the engine applies as an explained adjustment. A swap with two inputs or two outputs is not a
+    single-input primitive; it becomes an ``adjust`` row carrying its net reserve deltas (so the
+    state never drifts) and is reported in ``unsupported``.
     """
     rows: list[dict[str, Any]] = []
     unsupported: list[dict[str, Any]] = []
     ordered = sorted(logs, key=lambda l: (hex_to_int(l["blockNumber"]), hex_to_int(l["logIndex"])))
     pending_sync: dict[str, Any] | None = None
     seq = 0
+
+    def flush_orphan() -> None:
+        nonlocal pending_sync, seq
+        if pending_sync is not None:
+            seq += 1
+            rows.append({**pending_sync, "seq": seq, "payload": {"orphan": True, "reason": "sync without an economic event in its transaction (direct transfer, sync() or skim())"}})
+            pending_sync = None
+
     for lg in ordered:
         topic0 = lg["topics"][0].lower()
         block = hex_to_int(lg["blockNumber"])
@@ -106,6 +117,7 @@ def normalize_pair_logs(logs: list[dict[str, Any]], *, pool_key: str, token0: st
         tx = lg.get("transactionHash")
         base = {"block": block, "time_utc_ms": block_time_ms(block), "pool": pool_key, "tx": tx, "available_utc_ms": None, "availability_basis": str(AvailabilityBasis.RECONSTRUCTED_WITH_DELAY_MODEL), "received_utc_ms": now_ms()}
         if topic0 == TOPIC_SYNC:
+            flush_orphan()
             pending_sync = {**base, "kind": "sync", "log_index": log_index, "reserve0": str(word(lg["data"], 0)), "reserve1": str(word(lg["data"], 1))}
             continue
         econ: dict[str, Any] | None = None
@@ -113,10 +125,9 @@ def normalize_pair_logs(logs: list[dict[str, Any]], *, pool_key: str, token0: st
             a0in, a1in, a0out, a1out = (word(lg["data"], i) for i in range(4))
             sender = topic_address(lg["topics"][1]) if len(lg["topics"]) > 1 else None
             if (a0in > 0 and a1in > 0) or (a0out > 0 and a1out > 0) or (a0in == 0 and a1in == 0):
-                unsupported.append({"block": block, "log_index": log_index, "tx": tx, "reason": "multi-input or multi-output swap shape is not a supported primitive"})
-                pending_sync = None
-                continue
-            if a0in > 0:
+                unsupported.append({"block": block, "log_index": log_index, "tx": tx, "reason": "multi-input or multi-output swap shape is not a supported primitive; applied as a reserve adjustment"})
+                econ = {**base, "kind": "adjust", "log_index": log_index, "amount0": str(a0in - a0out), "amount1": str(a1in - a1out), "wallet": sender, "payload": {"reason": "multi_input_or_multi_output_swap"}}
+            elif a0in > 0:
                 econ = {**base, "kind": "swap", "log_index": log_index, "asset_in": token0, "amount_in": str(a0in), "amount_out_recorded": str(a1out), "wallet": sender}
             else:
                 econ = {**base, "kind": "swap", "log_index": log_index, "asset_in": token1, "amount_in": str(a1in), "amount_out_recorded": str(a0out), "wallet": sender}
@@ -126,16 +137,19 @@ def normalize_pair_logs(logs: list[dict[str, Any]], *, pool_key: str, token0: st
             econ = {**base, "kind": "burn", "log_index": log_index, "amount0": str(word(lg["data"], 0)), "amount1": str(word(lg["data"], 1)), "wallet": topic_address(lg["topics"][1]) if len(lg["topics"]) > 1 else None}
         else:
             continue
+        if pending_sync is not None and not (pending_sync["block"] == block and pending_sync["tx"] == tx):
+            flush_orphan()
         seq += 1
         econ["seq"] = seq
         rows.append(econ)
-        if pending_sync is not None and pending_sync["block"] == block and pending_sync["tx"] == tx:
+        if pending_sync is not None:
             seq += 1
             # Place the checkpoint immediately after the economic event it describes.
             sync_row = {**pending_sync, "seq": seq, "log_index": log_index}
             econ["log_index"] = pending_sync["log_index"]  # keep original relative order: econ takes the sync's slot
             rows.append(sync_row)
         pending_sync = None
+    flush_orphan()
     return rows, unsupported
 
 

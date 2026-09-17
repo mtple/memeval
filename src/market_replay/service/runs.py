@@ -241,6 +241,12 @@ class RunManager:
             "scenario": (m.generator or {}).get("scenario_description"),
         }
 
+    def forget_pack(self, pack_id: str) -> None:
+        """Drop a pack from the catalogue and the archive store; cached objects go too."""
+        with self._global:
+            self._packs.pop(pack_id, None)
+        self.store.delete_pack(pack_id)
+
     def load_pack(self, pack_ref: str) -> tuple[dict[str, Any], Pack]:
         row = self.store.pack(pack_ref)
         if row is None:

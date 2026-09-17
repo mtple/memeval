@@ -238,8 +238,24 @@ def test_normalizer_orders_sync_after_event_and_rejects_multi_shapes():
         {"blockNumber": hex(11), "logIndex": hex(1), "transactionHash": "0x" + "bb" * 32, "topics": [TOPIC_SWAP, topic_addr(TOKEN), topic_addr(WETH)], "data": "0x" + w(5) + w(5) + w(1) + w(0)},
     ]
     rows, unsupported = normalize_pair_logs(logs, pool_key="p", token0="t0", token1="t1", block_time_ms=lambda b: b * 2000)
-    assert [r["kind"] for r in rows] == ["swap", "sync"]
+    assert [r["kind"] for r in rows] == ["swap", "sync", "adjust", "sync"]
+    assert rows[2]["amount0"] == "4" and rows[2]["amount1"] == "5" and rows[2]["payload"]["reason"] == "multi_input_or_multi_output_swap"
+    assert rows[3]["reserve0"] == "1" and "orphan" not in rows[3].get("payload", {})
     assert rows[0]["asset_in"] == "t1" and rows[0]["amount_in"] == "10" and rows[0]["amount_out_recorded"] == "10"
     assert (rows[0]["block"], rows[0]["log_index"]) < (rows[1]["block"], rows[1]["log_index"])
     assert unsupported and "multi-input" in unsupported[0]["reason"]
     assert all(r["received_utc_ms"] > r["time_utc_ms"] for r in rows)  # acquisition time kept separate, never contemporaneous
+
+
+def test_normalizer_keeps_orphan_syncs_as_explained_checkpoints():
+    tx_a, tx_b, tx_c = ("0x" + c * 32 for c in ("aa", "bb", "cc"))
+    logs = [
+        {"blockNumber": hex(10), "logIndex": hex(0), "transactionHash": tx_a, "topics": [TOPIC_SYNC], "data": "0x" + w(90) + w(110)},  # sync() after a donation: no partner
+        {"blockNumber": hex(12), "logIndex": hex(0), "transactionHash": tx_b, "topics": [TOPIC_SYNC], "data": "0x" + w(100) + w(100)},
+        {"blockNumber": hex(12), "logIndex": hex(1), "transactionHash": tx_b, "topics": [TOPIC_SWAP, topic_addr(TOKEN), topic_addr(WETH)], "data": "0x" + w(10) + w(0) + w(0) + w(9)},
+        {"blockNumber": hex(12), "logIndex": hex(4), "transactionHash": tx_c, "topics": [TOPIC_SYNC], "data": "0x" + w(101) + w(99)},  # same block, other tx, no partner
+    ]
+    rows, unsupported = normalize_pair_logs(logs, pool_key="p", token0="t0", token1="t1", block_time_ms=lambda b: b * 2000)
+    assert [r["kind"] for r in rows] == ["sync", "swap", "sync", "sync"]
+    assert rows[0]["payload"]["orphan"] is True and rows[3]["payload"]["orphan"] is True and "payload" not in rows[2]
+    assert [r["seq"] for r in rows] == [1, 2, 3, 4] and not unsupported

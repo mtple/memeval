@@ -82,7 +82,7 @@ class Pool(StrictModel):
         return None if v is None else _validate_raw_str(v)
 
 
-TapeKind = Literal["swap", "mint", "burn", "sync", "restriction", "halt", "unhalt", "discovery", "cl_init", "cl_modify", "cl_swap"]
+TapeKind = Literal["swap", "mint", "burn", "sync", "adjust", "restriction", "halt", "unhalt", "discovery", "cl_init", "cl_modify", "cl_swap"]
 
 
 class TapeEvent(StrictModel):
@@ -100,7 +100,7 @@ class TapeEvent(StrictModel):
     asset_in: str | None = None
     amount_in: str | None = None
     amount_out_recorded: str | None = None
-    # mint/burn
+    # mint/burn (non-negative); adjust (signed net reserve deltas of an event the model has no primitive for)
     amount0: str | None = None
     amount1: str | None = None
     # sync checkpoint
