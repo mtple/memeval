@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useEffect, useRef } from "react";
-import { list, post, get, type Pack, type Validation, type WeekJob } from "../api";
+import { list, post, get, type Pack, type Validation } from "../api";
 import { fmtDuration, fmtMs, fmtDate, humanize } from "../format";
 import { useRole } from "../role";
 import { Badge, Card, EmptyState, ErrorState, GateList, GateSummary, JsonView, KV, Loading, StrList, toneForStatus, useLoad } from "../ui";
@@ -36,12 +35,11 @@ export default function Episodes() {
   return (
     <main className="stack">
       <h1>Weeks</h1>
-      <RealWeeks onBuilt={reload} />
       {error && <ErrorState error={error} retry={reload} />}
       {loading && !packs && <Loading what="weeks" />}
       {packs && role !== "admin" && (
         <Card title="Weeks agents can play">
-          <p className="small muted">Real weeks are recorded from Base for the dates shown. Practice weeks are artificial markets with known rules, useful for testing an agent before it plays a real week.</p>
+          <p className="small muted">Real weeks are recorded from Base for the dates shown; the weeks listed here are all there are. Practice weeks are artificial markets with known rules, useful for testing an agent before it plays a real week.</p>
           {packs.filter((p) => p.runnable).length === 0 ? (
             <p className="muted">No week is ready yet.</p>
           ) : (
@@ -391,161 +389,3 @@ function ImportForm({ onImported }: { onImported: () => void }) {
   );
 }
 
-
-function lastMonday(minAgeDays = 8): string {
-  const d = new Date();
-  d.setUTCHours(0, 0, 0, 0);
-  d.setUTCDate(d.getUTCDate() - minAgeDays);
-  while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
-}
-
-/** Anyone can ask for a real past week. The server collects it in slices; this panel shows progress. */
-function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
-  const { role, meta } = useRole();
-  const enabled = meta?.weeks_enabled === true;
-  const weeks = useLoad(() => get<{ enabled: boolean; paused?: boolean; usage?: { requests_last_24h: number; max_requests_per_day: number; capped: boolean } | null; items: WeekJob[] }>("/weeks"), [], 6000);
-  const [date, setDate] = useState(lastMonday());
-  const [protocol, setProtocol] = useState("all");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<unknown>(null);
-  const items = weeks.data?.items ?? [];
-  const paused = weeks.data?.paused === true;
-  const usage = weeks.data?.usage ?? null;
-  const active = !paused && !usage?.capped && items.some((j) => j.status === "queued" || j.status === "collecting");
-  const builtCount = useRef(0);
-  useEffect(() => {
-    const n = items.filter((j) => j.status === "built").length;
-    if (n > builtCount.current) onBuilt();
-    builtCount.current = n;
-  }, [items, onBuilt]);
-  // While a page is open and a week is in progress, keep the collection moving without waiting for the cron.
-  useEffect(() => {
-    if (!active) return;
-    let stop = false;
-    const kick = () => post("/weeks/tick?slice=50").catch(() => undefined).finally(() => !stop && setTimeout(kick, 2000));
-    kick();
-    return () => {
-      stop = true;
-    };
-  }, [active]);
-  if (!enabled && items.length === 0) {
-    return role === "admin" ? <p className="muted small">Real weeks are off: set BASE_RPC_URL on the server to let anyone add a past week.</p> : null;
-  }
-  return (
-    <Card title="Add a past week">
-      <p>
-        Pick a Monday. The server records what actually happened on Base that week, straight from the chain, across Uniswap v2 pairs and v4 pools (where Clanker and Bankr tokens trade), so agents can replay it. Recording takes two to three hours; the week appears on the leaderboard when it is done.
-      </p>
-      <p className="small muted">
-        Weeks are labelled by their dates. Inside a session the pools and tokens carry generic names, so an agent cannot look a token's history up; the dates are for you, not for the agent.
-      </p>
-      {usage && (
-        <p className="small muted">
-          Spending guard: {usage.requests_last_24h.toLocaleString()} of {usage.max_requests_per_day.toLocaleString()} RPC requests used in the last 24 hours
-          {usage.capped ? "; the daily cap is reached, collection resumes when it clears" : ""}
-          {paused ? ". Collection is paused by the operator (MARKET_REPLAY_WEEKS_PAUSED=1)." : "."}
-        </p>
-      )}
-      {enabled && (
-        <form
-          className="row"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            setErr(null);
-            try {
-              await post<WeekJob>("/weeks", { week_start: date, protocol });
-              weeks.reload();
-            } catch (x) {
-              setErr(x);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <label className="field">
-            Week starting (UTC, a Monday)
-            <input id="week-start" type="date" value={date} max={lastMonday()} onChange={(e) => setDate(e.target.value)} />
-          </label>
-          {role === "admin" && (
-            <label className="field">
-              Venue (operator option)
-              <select id="week-protocol" value={protocol} onChange={(e) => setProtocol(e.target.value)}>
-                <option value="all">All venues (default)</option>
-                <option value="uniswap_v4">Uniswap v4 pools only</option>
-                <option value="uniswap_v3">Uniswap v3 pools only</option>
-                <option value="uniswap_v2">Uniswap v2 pairs only</option>
-              </select>
-            </label>
-          )}
-          <button id="week-add" className="btn btn-primary" disabled={busy || !date} style={{ alignSelf: "end" }}>
-            {busy ? "Adding…" : "Add this week"}
-          </button>
-        </form>
-      )}
-      {err !== null && <ErrorState error={err} />}
-      {weeks.error && <ErrorState error={weeks.error} retry={weeks.reload} />}
-      {items.length > 0 && (
-        <div className="table-wrap" style={{ marginTop: 8 }}>
-          <table>
-            <thead>
-              <tr>
-                <th>Week</th>
-                <th>Status</th>
-                <th className="num">Requests</th>
-                <th>Progress</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((j) => (
-                <tr key={j.job_id}>
-                  <td>
-                    {j.label}
-                    <div className="muted small">{j.period_start_utc ? `${j.period_start_utc.slice(0, 10)} to ${j.period_end_utc?.slice(0, 10)} UTC` : `${j.duration_hours >= 168 ? "7 days" : `${j.duration_hours}h`}`}</div>
-                  </td>
-                  <td>
-                    <Badge tone={j.status === "built" ? "ok" : j.status === "failed" ? "bad" : "info"}>{j.status}</Badge>
-                  </td>
-                  <td className="num">
-                    {j.requests_used}/{j.request_budget}
-                  </td>
-                  <td className="small">
-                    {j.status === "failed" ? <span className="muted">{j.error}</span> : j.note}
-                    {j.status === "built" && j.pack_id && (
-                      <>
-                        {" "}
-                        <Link to="/new">Run it</Link>
-                      </>
-                    )}
-                    {(j.status === "failed" || (j.status === "built" && j.qualification === "diagnostic_only")) && (
-                      <>
-                        {" "}
-                        <button
-                          className="btn btn-small"
-                          onClick={async () => {
-                            try {
-                              await post<WeekJob>(`/weeks/${j.job_id}/rebuild`, {});
-                              weeks.reload();
-                            } catch (x) {
-                              setErr(x);
-                            }
-                          }}
-                        >
-                          Rebuild
-                        </button>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <p className="muted small" style={{ marginBottom: 0 }}>
-        What a real week does not model: gas (assumed zero), token transfer taxes (assumed standard), MEV and routing. Provider completeness is not independently verified. Every report on it says so.
-      </p>
-    </Card>
-  );
-}

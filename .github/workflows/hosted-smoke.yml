@@ -53,7 +53,6 @@ jobs:
           probe "skill: served"           GET  /skill.md               200
           probe "skill: join link"        GET  /join                   200
           probe "leaderboard"             GET  /api/v1/leaderboard     200
-          probe "real weeks (enabled?)"   GET  /api/v1/weeks           200
           probe "skill: script"           GET  /skill/market_replay_agent.py 200
           probe "ui: index"               GET  /                       200
           probe "ui: client route"        GET  /agents                 200
@@ -85,50 +84,22 @@ jobs:
           python3 market_replay_agent.py --server "$BASE" --agent smoke-skill-bot --version 1 --suite generated-dev-v1 | tee out.txt
           grep -q "finished at" out.txt
 
-      # First real week: on a production deployment with an RPC endpoint configured, ask for the most
-      # recent complete Monday-to-Monday week (idempotent) and push the collection along for a while.
-      - name: Request and advance a real week
-        if: ${{ github.event_name == 'workflow_dispatch' || github.event.deployment.environment == 'Production' }}
-        run: |
-          set -u
-          listing=$(curl -sS -m 60 "$BASE/api/v1/weeks")
-          echo "$listing" | jq -c '{enabled, paused, usage}'
-          [ "$(echo "$listing" | jq -r .enabled)" = "true" ] || { echo "RPC_URL not visible to the function; skipping"; exit 0; }
-          [ "$(echo "$listing" | jq -r .paused)" = "false" ] || { echo "collection is paused (MARKET_REPLAY_WEEKS_PAUSED=1); not requesting anything"; exit 0; }
-          week=$(python3 -c "
-          import datetime as dt
-          today = dt.datetime.now(dt.timezone.utc).date()
-          monday = today - dt.timedelta(days=today.weekday())
-          start = monday - dt.timedelta(days=7)
-          while (dt.datetime.now(dt.timezone.utc).date() - (start + dt.timedelta(days=7))).days < 1:
-              start -= dt.timedelta(days=7)
-          print(start.isoformat())")
-          echo "requesting week starting $week (all venues)"
-          curl -sS -m 60 -X POST "$BASE/api/v1/weeks" -H 'content-type: application/json' -d "{\"week_start\":\"$week\"}" | jq -c 'del(.note)' || true
-          for i in $(seq 1 4); do
-            out=$(curl -sS -m 290 -X POST "$BASE/api/v1/weeks/tick?slice=200") || true
-            echo "$out" | jq -c '{busy, advanced: (.advanced | if . then {label, status, requests_used, request_budget, attempts, note: (.note // "" | .[0:160]), error} else null end)}' || echo "$out" | head -c 300
-            [ "$(echo "$out" | jq -r '.busy // false')" = "true" ] && sleep 60
-            st=$(curl -sS -m 60 "$BASE/api/v1/weeks" | jq -r '[.items[] | select(.status=="queued" or .status=="collecting")] | length')
-            [ "$st" -gt 0 ] || break
-          done
-          curl -sS -m 60 "$BASE/api/v1/weeks" | jq '.items[] | {label, status, requests_used, request_budget, attempts, note, error}'
-      # Only on demand: every run downloads the week packs to a fresh instance (database transfer).
-      - name: Agent runs every built real week through the skill script
+      # Only on demand: a full run per recorded week takes a while.
+      - name: Agent runs every recorded week through the skill script
         if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           set -u
           curl -sSfO "$BASE/skill/market_replay_agent.py"
-          for pid in $(curl -sS -m 60 "$BASE/api/v1/weeks" | jq -r '.items[] | select(.status=="built" and .qualification=="research") | .pack_id'); do
+          for pid in $(curl -sS -m 60 "$BASE/api/v1/packs" | jq -r '.items[] | select(.origin=="historical_reconstruction" and .use_status=="research") | .pack_id'); do
             echo "== running on $pid"
             python3 market_replay_agent.py --server "$BASE" --agent smoke-real-week-bot --version 1 --pack "$pid" | tee "run_$pid.txt"
             grep -q "finished at" "run_$pid.txt" || { echo "run on $pid did not finish"; exit 1; }
           done
-      - name: Validation report of every built week
+      - name: Validation report of every recorded week
         if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           set -u
-          for pid in $(curl -sS -m 60 "$BASE/api/v1/weeks" | jq -r '.items[] | select(.status=="built") | .pack_id'); do
+          for pid in $(curl -sS -m 60 "$BASE/api/v1/packs" | jq -r '.items[] | select(.origin=="historical_reconstruction") | .pack_id'); do
             echo "== $pid"
             curl -sS -m 120 "$BASE/api/v1/packs/$pid/validation" | jq '{resulting_qualification, gates: [.gates[] | {gate, status, detail}], reconciliation: (.gates[] | select(.gate=="execution_state") | .reconciliation | {checkpoints, mismatch_count, fidelity_flag_count, recorded_output_below_model_max, mismatches: (.mismatches[0:8]), fidelity_flags: (.fidelity_flags[0:8])})}'
             curl -sS -m 120 "$BASE/api/v1/packs/$pid" | jq '{use_status, summary: {pools_total: .summary.pools_total, pools_executable: .summary.pools_executable, tape_events: .summary.tape_events, coverage_states: .summary.coverage_states, executable_failure: .summary.executable_failure, unsupported: (.summary.unsupported_inventory[0:5])}}'

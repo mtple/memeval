@@ -20,6 +20,10 @@ sdk/typescript/dist/
 data/
 !data/README.md
 
+# Recorded weeks are committed; a recording in progress is not
+weeks/*_work/
+collection/generated/
+
 # Env
 .env
 .env.local

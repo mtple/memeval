@@ -110,48 +110,6 @@ CREATE TABLE IF NOT EXISTS attempts (
   count INTEGER NOT NULL,
   PRIMARY KEY (pack_id, agent_id)
 );
-CREATE TABLE IF NOT EXISTS pack_archives (
-  pack_id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  sha256 TEXT NOT NULL,
-  size INTEGER NOT NULL,
-  archive BYTEA NOT NULL,
-  created_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS week_jobs (
-  job_id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  chain TEXT NOT NULL,
-  period_start_utc TEXT NOT NULL,
-  period_end_utc TEXT NOT NULL,
-  status TEXT NOT NULL,
-  config_json TEXT NOT NULL,
-  requests_used INTEGER NOT NULL DEFAULT 0,
-  attempts INTEGER NOT NULL DEFAULT 0,
-  note TEXT,
-  error TEXT,
-  pack_id TEXT,
-  requested_by TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  lease_until TEXT,
-  work_archive BYTEA
-);
-CREATE TABLE IF NOT EXISTS week_job_files (
-  job_id TEXT NOT NULL,
-  path TEXT NOT NULL,
-  sha256 TEXT NOT NULL,
-  size INTEGER NOT NULL,
-  body BYTEA NOT NULL,
-  updated_at TEXT NOT NULL,
-  PRIMARY KEY (job_id, path)
-);
-CREATE TABLE IF NOT EXISTS week_request_log (
-  job_id TEXT NOT NULL,
-  ts DOUBLE PRECISION NOT NULL,
-  requests INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS week_request_log_ts ON week_request_log (ts);
 CREATE TABLE IF NOT EXISTS rate_events (
   kind TEXT NOT NULL,
   key TEXT NOT NULL,
@@ -160,7 +118,7 @@ CREATE TABLE IF NOT EXISTS rate_events (
 CREATE INDEX IF NOT EXISTS rate_events_kind_key_ts ON rate_events (kind, key, ts);
 """
 
-TABLES = ("packs", "agents", "runs", "traces", "docs", "usage", "comparisons", "studies", "suite_runs", "attempts", "rate_events", "pack_archives", "week_jobs", "week_job_files", "week_request_log")
+TABLES = ("packs", "agents", "runs", "traces", "docs", "usage", "comparisons", "studies", "suite_runs", "attempts", "rate_events")
 
 
 def today_key() -> str:
@@ -209,7 +167,6 @@ class BaseStore:
 
     def delete_pack(self, pack_id: str) -> None:
         """Forget a pack and its archive (runs that referenced it keep their reports)."""
-        self.execute("DELETE FROM pack_archives WHERE pack_id=?", (pack_id,))
         self.execute("DELETE FROM packs WHERE pack_id=?", (pack_id,))
 
     def packs(self) -> list[dict[str, Any]]:
@@ -304,96 +261,6 @@ class BaseStore:
         row = self.one("SELECT COALESCE(SUM(runs),0) AS runs, COALESCE(SUM(cpu_seconds),0) AS cpu FROM usage WHERE day LIKE ?", (prefix,))
         return {"runs": int(row["runs"]), "cpu_seconds": float(row["cpu"])} if row else {"runs": 0, "cpu_seconds": 0.0}
 
-    # ------------------------------------------------------------------ pack archives (packs that are not regenerable fixtures)
-    def put_pack_archive(self, pack_id: str, name: str, archive: bytes, sha256: str, created_at: str) -> None:
-        self.execute(
-            "INSERT INTO pack_archives (pack_id, name, sha256, size, archive, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(pack_id) DO UPDATE SET name=excluded.name, sha256=excluded.sha256, size=excluded.size, archive=excluded.archive",
-            (pack_id, name, sha256, len(archive), archive, created_at),
-        )
-
-    def get_pack_archive(self, pack_id: str) -> bytes | None:
-        row = self.one("SELECT archive FROM pack_archives WHERE pack_id=?", (pack_id,))
-        return bytes(row["archive"]) if row else None
-
-    def pack_archive_meta(self, pack_id: str) -> dict[str, Any] | None:
-        return self.one("SELECT pack_id, name, sha256, size, created_at FROM pack_archives WHERE pack_id=?", (pack_id,))
-
-    # ------------------------------------------------------------------ week collection jobs
-    WEEK_JOB_COLS = "job_id, name, chain, period_start_utc, period_end_utc, status, config_json, requests_used, attempts, note, error, pack_id, requested_by, created_at, updated_at, lease_until, protocol"
-
-    def ensure_columns(self) -> None:
-        """Additive migrations for tables created by earlier versions (both backends)."""
-        for table, col, decl in (("week_jobs", "lease_until", "TEXT"), ("week_jobs", "protocol", "TEXT")):
-            try:
-                self.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
-            except Exception:
-                pass  # already there
-
-    def insert_week_job(self, row: dict[str, Any]) -> None:
-        cols = self.WEEK_JOB_COLS.split(", ")
-        self.execute(f"INSERT INTO week_jobs ({self.WEEK_JOB_COLS}) VALUES ({', '.join('?' for _ in cols)})", tuple(row.get(c) for c in cols))
-
-    def week_job(self, job_id: str) -> dict[str, Any] | None:
-        return self.one(f"SELECT {self.WEEK_JOB_COLS} FROM week_jobs WHERE job_id=?", (job_id,))
-
-    def week_job_by_period(self, chain: str, start: str, end: str, protocol: str = "uniswap_v2") -> dict[str, Any] | None:
-        return self.one(
-            f"SELECT {self.WEEK_JOB_COLS} FROM week_jobs WHERE chain=? AND period_start_utc=? AND period_end_utc=? AND COALESCE(protocol, 'uniswap_v2')=?",
-            (chain, start, end, protocol),
-        )
-
-    def week_jobs(self) -> list[dict[str, Any]]:
-        return self.query(f"SELECT {self.WEEK_JOB_COLS} FROM week_jobs ORDER BY period_start_utc DESC")
-
-    def update_week_job(self, job_id: str, **fields: Any) -> None:
-        if not fields:
-            return
-        sets = ", ".join(f"{k}=?" for k in fields)
-        self.execute(f"UPDATE week_jobs SET {sets} WHERE job_id=?", (*fields.values(), job_id))
-
-    def week_job_archive(self, job_id: str) -> bytes | None:
-        row = self.one("SELECT work_archive FROM week_jobs WHERE job_id=?", (job_id,))
-        return bytes(row["work_archive"]) if row and row["work_archive"] is not None else None
-
-    def set_week_job_archive(self, job_id: str, archive: bytes | None) -> None:
-        self.execute("UPDATE week_jobs SET work_archive=? WHERE job_id=?", (archive, job_id))
-
-    def delete_week_job(self, job_id: str) -> None:
-        self.execute("DELETE FROM week_jobs WHERE job_id=?", (job_id,))
-
-    def week_job_file_index(self, job_id: str) -> dict[str, str]:
-        """path -> sha256 of every synced work file (bodies stay in the store until asked for)."""
-        return {r["path"]: r["sha256"] for r in self.query("SELECT path, sha256 FROM week_job_files WHERE job_id=?", (job_id,))}
-
-    def week_job_file(self, job_id: str, path: str) -> bytes | None:
-        row = self.one("SELECT body FROM week_job_files WHERE job_id=? AND path=?", (job_id, path))
-        return bytes(row["body"]) if row else None
-
-    def put_week_job_file(self, job_id: str, path: str, sha256: str, body: bytes) -> None:
-        self.execute(
-            "INSERT INTO week_job_files (job_id, path, sha256, size, body, updated_at) VALUES (?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(job_id, path) DO UPDATE SET sha256=excluded.sha256, size=excluded.size, body=excluded.body, updated_at=excluded.updated_at",
-            (job_id, path, sha256, len(body), body, datetime.now(UTC).isoformat()),
-        )
-
-    def delete_week_job_file(self, job_id: str, path: str) -> None:
-        self.execute("DELETE FROM week_job_files WHERE job_id=? AND path=?", (job_id, path))
-
-    def delete_week_job_files(self, job_id: str) -> None:
-        self.execute("DELETE FROM week_job_files WHERE job_id=?", (job_id,))
-
-    def log_week_requests(self, job_id: str, ts: float, requests: int) -> None:
-        if requests > 0:
-            self.execute("INSERT INTO week_request_log (job_id, ts, requests) VALUES (?, ?, ?)", (job_id, ts, requests))
-
-    def week_requests_since(self, ts: float) -> int:
-        row = self.one("SELECT COALESCE(SUM(requests), 0) AS n FROM week_request_log WHERE ts >= ?", (ts,))
-        return int(row["n"]) if row else 0
-
-    def week_jobs_created_since(self, iso: str) -> int:
-        row = self.one("SELECT COUNT(*) AS n FROM week_jobs WHERE created_at>=?", (iso,))
-        return int(row["n"]) if row else 0
-
     # ------------------------------------------------------------------ per-key rate limiting (shared across instances)
     def count_rate_events(self, kind: str, key: str, since_ts: float) -> int:
         row = self.one("SELECT COUNT(*) AS n FROM rate_events WHERE kind=? AND key=? AND ts>=?", (kind, key, float(since_ts)))
@@ -467,7 +334,6 @@ class SqliteStore(BaseStore):
         self._conn.execute("PRAGMA synchronous=NORMAL")
         with self._lock:
             self._conn.executescript(SCHEMA.replace("DOUBLE PRECISION", "REAL").replace("BIGINT", "INTEGER"))
-        self.ensure_columns()
 
     def execute(self, sql: str, params: tuple | dict = ()) -> None:
         with self._lock:
@@ -545,7 +411,6 @@ class PgStore(BaseStore):
             for stmt in SCHEMA.split(";"):
                 if stmt.strip():
                     self._conn.execute(stmt)
-        self.ensure_columns()
 
     def _connect(self):
         return self._psycopg.connect(self.url, autocommit=True, connect_timeout=15)

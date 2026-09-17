@@ -7,11 +7,9 @@
     MARKET_REPLAY_BOOTSTRAP                "all" | "dev" | "none": fixture packs registered on first start (hosted default: all)
     MARKET_REPLAY_MAX_RUNS_PER_DAY, MARKET_REPLAY_MAX_CPU_SECONDS_PER_MONTH   cost caps (raise when you buy usage)
     MARKET_REPLAY_CORS_ORIGINS             comma-separated browser origins (same-origin needs none)
-    BASE_RPC_URL / RPC_URL                 read-only EVM RPC endpoint; when set, anyone can request a real past week
-    MARKET_REPLAY_MAX_WEEKS_PER_DAY, MARKET_REPLAY_WEEK_MAX_REQUESTS, MARKET_REPLAY_WEEK_MAX_PAIRS,
-    MARKET_REPLAY_WEEK_MAX_REQUESTS_PER_DAY (rolling daily RPC request cap, default 25000),
-    MARKET_REPLAY_WEEKS_PAUSED=1 (stops every tick; no RPC call is made),
-    MARKET_REPLAY_WEEK_LOG_CHUNK, MARKET_REPLAY_WEEK_SLICE_SECONDS   collection caps and slice length
+
+Recorded weeks are not configured here: every pack directory committed under ``weeks/`` is
+registered on the first request (the repository checkout is the store for weeks).
 """
 
 from __future__ import annotations
@@ -48,25 +46,10 @@ def build_hosted_app() -> tuple[FastAPI, RunManager]:
         public = "https://" + os.environ["VERCEL_PROJECT_PRODUCTION_URL"]
     if public:
         mgr.gateway_url = public.rstrip("/")
-    rpc = os.environ.get("BASE_RPC_URL") or os.environ.get("RPC_URL") or None
-    from .weeks import WeekJobs
-
-    mgr.weeks = WeekJobs(
-        mgr,
-        rpc_url=rpc,
-        slice_seconds=float(os.environ.get("MARKET_REPLAY_WEEK_SLICE_SECONDS", "200")),
-        max_requests=int(os.environ.get("MARKET_REPLAY_WEEK_MAX_REQUESTS", "40000")),
-        log_chunk_blocks=int(os.environ.get("MARKET_REPLAY_WEEK_LOG_CHUNK", "10000")),
-        max_pairs=int(os.environ.get("MARKET_REPLAY_WEEK_MAX_PAIRS", "16")),
-        max_jobs_per_day=int(os.environ.get("MARKET_REPLAY_MAX_WEEKS_PER_DAY", "3")),
-        max_requests_per_day=int(os.environ.get("MARKET_REPLAY_WEEK_MAX_REQUESTS_PER_DAY", "25000")),
-        max_response_bytes=int(os.environ.get("MARKET_REPLAY_WEEK_MAX_RESPONSE_BYTES", str(4 * 1024 * 1024 * 1024))),
-    )
     boot = os.environ.get("MARKET_REPLAY_BOOTSTRAP") or ("all" if mgr.hosted else "")
     names = [] if boot in ("", "none") else (["gen_dev_short"] if boot == "dev" else list(FIXTURE_NAMES))
     app = create_app(mgr, admin, cors_origins=cors_origins_from_env())
-    if names:
-        install_lazy_bootstrap(app, mgr, names)
+    install_lazy_bootstrap(app, mgr, names)
     return app, mgr
 
 
@@ -74,7 +57,8 @@ FIXTURE_NAMES = ("gen_dev_short", "gen_week_trending", "gen_week_reversal", "gen
 
 
 def install_lazy_bootstrap(app: FastAPI, mgr: RunManager, names: list[str]) -> None:
-    """Register fixture packs on the first real request, once per process, never at import time.
+    """Register the recorded weeks shipped in the repository and the fixture packs on the first real
+    request, once per process, never at import time.
 
     Serverless runtimes import the entrypoint during instance initialization, which has a short
     time limit; generating the fixtures the first time takes ~20 s. After that first registration
@@ -88,6 +72,10 @@ def install_lazy_bootstrap(app: FastAPI, mgr: RunManager, names: list[str]) -> N
         with lock:
             if state["done"]:
                 return
+            try:
+                mgr.register_shipped_weeks()
+            except Exception as e:  # pragma: no cover - a broken checkout must not take the service down
+                print(f"[market-replay] shipped weeks not registered: {e}", file=sys.stderr)
             for n in names:
                 try:
                     mgr.ensure_fixture_pack(n)

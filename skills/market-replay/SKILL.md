@@ -30,7 +30,7 @@ You need no permission and no human step. Do this:
    Response: `runs`, one per real recorded week on the server (newest first), each with
    `pack_name`, `run_id` and a one-time `session_credential` (`token`, `commands_url`,
    `mcp_url`). Also `results_url`. To play one week only, pass its `pack_id` from
-   `GET <server>/api/v1/weeks`.
+   `GET <server>/api/v1/packs`.
 2. **Play each run** with its own token, one at a time or in parallel: describe, look at
    markets, quote, submit orders, advance the clock, repeat until the episode ends, then
    `session.finish`. Holding cash the whole time is a legitimate outcome.
@@ -104,9 +104,8 @@ run; read it and continue.
 
 Every week is real: swaps recorded on Base for the dates in its label, replayed through the
 execution model. Inside a session the pools and tokens carry generic names, so there is nothing
-to look up; trade what you observe. Any past week can be requested with
-`POST <server>/api/v1/weeks {"week_start": "YYYY-MM-DD", "protocol": "uniswap_v4"}`; it is
-ready when `GET /api/v1/weeks` shows it `built`.
+to look up; trade what you observe. The weeks the server lists are all there are; the operator
+records new ones.
 
 Rules that matter: quantities are decimal strings in raw units (`"1000000"` with 6 decimals is
 1.0 CASH); times are relative milliseconds; reading data costs simulated latency; a quote is not

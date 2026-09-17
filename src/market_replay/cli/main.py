@@ -50,6 +50,8 @@ def serve(host: str = "127.0.0.1", port: int = 8000, data_dir: Path = DEFAULT_DA
     token = resolve_admin_token(admin_token)
     mgr = _manager(data_dir)
     mgr.gateway_url = f"http://{host}:{port}"
+    for w in mgr.register_shipped_weeks():
+        typer.echo(f"recorded week: {w['name']} ({w['use_status']})")
     origins = cors_origins_from_env()
     typer.echo(f"admin token: {token}")
     typer.echo(f"listening on http://{host}:{port}  (UI at / if apps/web is built)")
@@ -86,6 +88,28 @@ def packs_validate(path: Path) -> None:
     (path / "validation.json").write_text(json.dumps(report, indent=2, sort_keys=True))
     _echo(report)
     raise typer.Exit(code=0 if not report["executable_failure"] else 2)
+
+
+@packs_app.command("revalidate")
+def packs_revalidate(path: Path) -> None:
+    """Re-run the current validator over a recorded week in place. Pools the current engine cannot
+    reconcile are demoted (the week keeps its data; its pack id changes). Commit the result."""
+    from ..datasets.builder import rebuild_pack
+    from ..datasets.validator import demote_unreconciled_pools
+
+    pack = Pack.load(path)
+    pools = [p.model_dump(mode="json") for p in pack.pools.values()]
+    demoted = demote_unreconciled_pools(pools, pack.tape)
+    if demoted:
+        inventory = dict(pack.inventory or {})
+        inventory["demoted"] = [*inventory.get("demoted", []), *demoted]
+        note = f"revalidated {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}: {len(demoted)} pool(s) demoted from execution under the current validator: " + "; ".join(f"{d['pool']}: {d['reason']}" for d in demoted)
+        pack = rebuild_pack(pack, pools=pools, inventory=inventory, decision_note=note)
+    else:
+        report = validate_pack(pack)
+        (Path(path) / "validation.json").write_text(json.dumps(report, indent=2, sort_keys=True))
+        pack = Pack.load(path)
+    _echo({"pack_id": pack.pack_id, "qualification": pack.validation.get("resulting_qualification"), "demoted": [d["pool"] for d in demoted]})
 
 
 @packs_app.command("import")
@@ -256,6 +280,85 @@ def collect(config: Path = typer.Option(..., help="authorized collection config 
 
     result = run_collection(config, data_dir)
     _echo(result)
+
+
+@app.command()
+def week(
+    start: str = typer.Option(..., "--start", help="week start, UTC date (YYYY-MM-DD)"),
+    end: str | None = typer.Option(None, "--end", help="period end (default: start + 7 days)"),
+    out: Path = typer.Option(REPO_ROOT / "weeks", "--out", help="directory the finished week is written into (committed to the repository)"),
+    max_pairs: int = typer.Option(16, help="pools in the frozen universe (three quarters v4, the rest v2)"),
+    max_requests: int = typer.Option(40000, help="hard RPC request budget"),
+    log_chunk_blocks: int = typer.Option(10000, help="eth_getLogs block range per request (halved on provider errors; capped to the provider's limit)"),
+    rpc_url_env: str = typer.Option("BASE_RPC_URL", help="name of the environment variable holding the read-only RPC endpoint"),
+) -> None:
+    """Record one real week of Base trading (every venue) into weeks/<name>, ready to commit.
+
+    Reads the chain through your own RPC endpoint (about two hours and 12,000 to 16,000 requests for a
+    week), validates the result, and writes the pack only when it qualifies as research data. Commit
+    and push the directory; the deployed site registers it on its next start."""
+    from datetime import UTC, datetime, timedelta
+
+    from ..collectors.historical import run_collection
+
+    if not os.environ.get(rpc_url_env):
+        typer.echo(f"{rpc_url_env} is not set; export your read-only Base RPC endpoint first", err=True)
+        raise typer.Exit(2)
+    t0 = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=UTC)
+    t1 = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=UTC) if end else t0 + timedelta(days=7)
+    if t1 <= t0 or (t1 - t0) > timedelta(days=7, hours=1):
+        typer.echo("the period must be at most one week and end after it starts", err=True)
+        raise typer.Exit(2)
+    if t1 > datetime.now(UTC) - timedelta(hours=12):
+        typer.echo("the period must have ended at least 12 hours ago", err=True)
+        raise typer.Exit(2)
+    is_week = (t1 - t0) >= timedelta(days=7)
+    hours = int((t1 - t0).total_seconds() // 3600)
+    name = f"base_week_{t0:%Y-%m-%d}" if is_week else f"base_period_{t0:%Y-%m-%d}_{hours}h"
+    iso = lambda d: d.strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731
+    cfg = {
+        "rpc_url_env": rpc_url_env,
+        "chain": "base",
+        "protocol": "all",
+        "period_start_utc": iso(t0),
+        "period_end_utc": iso(t1),
+        "discovery_window_start_utc": iso(t0 - timedelta(days=7 if is_week else 1)),
+        "prehistory_hours": 24 if is_week else 1,
+        "selection_rule": "active_before_window_earliest_created_v1",
+        "selection_rule_cl": "active_before_window_plus_window_launches_v1",
+        "venues": ["uniswap_v2", "uniswap_v4"],
+        "max_launches": max_pairs // 2,
+        "launch_min_swaps": 20,
+        "activity_lookback_blocks": 43200 if is_week else 5400,
+        "max_pairs": max_pairs,
+        "max_requests": max_requests,
+        "max_response_bytes": 4 * 1024 * 1024 * 1024,
+        "log_chunk_blocks": log_chunk_blocks,
+        "initial_state_lookback_blocks": 20000,
+        "availability_delay_ms": 4000,
+        "out_dir": str((out / name).resolve()),
+        "authorization_note": "Operator-run read-only collection from the operator's own RPC endpoint with a fixed request budget; public chain data; redistribution not cleared.",
+    }
+    out.mkdir(parents=True, exist_ok=True)
+    work = out / (name + "_work")
+    work.mkdir(exist_ok=True)
+    cfg_path = work / "config.yaml"
+    import yaml
+
+    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
+    typer.echo(f"recording {name}: {cfg['period_start_utc']} to {cfg['period_end_utc']} into {out / name} (working files in {work})", err=True)
+    result = run_collection(cfg_path, out)
+    _echo({k: v for k, v in result.items() if k != "decision_log"})
+    if result.get("status") != "pack_built":
+        typer.echo(f"no pack: {result.get('status')}: {result.get('reason') or result.get('error')}; the working files are kept, run the same command again to resume", err=True)
+        raise typer.Exit(1)
+    if result.get("qualification") != "research":
+        typer.echo(f"the week was recorded but does not qualify ({result.get('qualification')}); see {out / name}/validation.json. Not committing it is the right call.", err=True)
+        raise typer.Exit(1)
+    import shutil
+
+    shutil.rmtree(work, ignore_errors=True)
+    typer.echo(f"done: {out / name} qualifies as research. Commit it: git add {out / name} && git commit -m 'Base week of {t0:%Y-%m-%d}' && git push", err=True)
 
 
 @app.command()

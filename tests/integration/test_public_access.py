@@ -148,38 +148,29 @@ def test_leaderboard_ranks_agents_per_category_and_join_serves_the_skill(tmp_pat
     mgr.close()
 
 
-def _targz(directory: Path) -> bytes:
-    import io
-    import tarfile
-
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
-        tf.add(directory, arcname=directory.name)
-    return buf.getvalue()
-
-
-def test_uploaded_pack_is_kept_in_the_store_and_materialized_on_a_fresh_instance(tmp_path: Path, dev_pack_dir: Path):
+def test_weeks_committed_to_the_repository_are_registered_on_start_and_served_from_disk(tmp_path: Path, dev_pack_dir: Path, monkeypatch):
     import shutil
 
+    import market_replay.service.runs as runs_mod
+
+    weeks = tmp_path / "weeks"
+    shutil.copytree(dev_pack_dir, weeks / "base_week_2026-09-07")
+    (weeks / "not_a_pack").mkdir()
+    monkeypatch.setattr(runs_mod, "WEEKS_DIR", weeks)
     store = str(tmp_path / "store.sqlite")
     mgr = RunManager(data_dir=tmp_path / "a", store_url=store, hosted=True)
+    views = mgr.register_shipped_weeks()
+    assert [v["name"] for v in views] == ["base_week_2026-09-07"] and views[0]["runnable"]
+    assert mgr.register_shipped_weeks()[0]["pack_id"] == views[0]["pack_id"]  # idempotent, no second validation
     c = TestClient(create_app(mgr, "adm_public_test"))
-    archive = _targz(dev_pack_dir)
-    assert c.post("/api/v1/packs/upload?name=uploaded_week", content=archive).status_code == 401  # operator only
-    r = c.post("/api/v1/packs/upload?name=uploaded_week", content=archive, headers={**ADMIN, "content-type": "application/gzip"})
-    assert r.status_code == 201, r.text
-    view = r.json()
-    assert view["name"] == "uploaded_week" and view["runnable"]
-    bad = c.post("/api/v1/packs/upload", content=b"not a tar", headers=ADMIN)
-    assert bad.status_code == 400
+    assert c.post("/api/v1/packs/upload?name=x", content=b"gone").status_code in (404, 405)  # no upload path any more
     mgr.close()
-    # a second instance with an empty filesystem: the pack comes back from the archive and runs
-    shutil.rmtree(tmp_path / "a" / "packs")
-    fresh = RunManager(data_dir=tmp_path / "a", store_url=store, hosted=True)
-    row, pack = fresh.load_pack("uploaded_week")
-    assert pack.pack_id == view["pack_id"]
+    # another instance with an empty scratch dir: the week is read from the checkout, never downloaded
+    fresh = RunManager(data_dir=tmp_path / "b", store_url=store, hosted=True)
+    row, pack = fresh.load_pack("base_week_2026-09-07")
+    assert pack.pack_id == views[0]["pack_id"] and Path(row["path"]) == (weeks / "base_week_2026-09-07").resolve()
     c2 = TestClient(create_app(fresh, "adm_public_test"))
-    run = c2.post("/api/v1/runs", json={"agent": {"name": "u", "version": "1", "runtime": "python"}, "pack_id": "uploaded_week", "launch": {"name": "cash_only", "runtime": "python"}}).json()
+    run = c2.post("/api/v1/runs", json={"agent": {"name": "u", "version": "1", "runtime": "python"}, "pack_id": "base_week_2026-09-07", "launch": {"name": "cash_only", "runtime": "python"}}).json()
     assert run["state"] == "completed"
     fresh.close()
 

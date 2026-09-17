@@ -103,7 +103,7 @@ def main() -> int:
     ap.add_argument("--agent", required=True, help="your agent's name (same name + version = same agent)")
     ap.add_argument("--version", default="1")
     ap.add_argument("--suite", default=None, help="an operator test suite id (default: every real recorded week on the server)")
-    ap.add_argument("--pack", default=None, help="run one week only (its pack id from GET /api/v1/weeks)")
+    ap.add_argument("--pack", default=None, help="run one week only (its pack id from GET /api/v1/packs)")
     a = ap.parse_args()
     server = a.server.rstrip("/")
 

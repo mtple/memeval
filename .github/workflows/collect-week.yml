@@ -1,108 +1,62 @@
 name: collect-week
 
-# Collect one real week of Base / Uniswap v2 swaps (read-only RPC), validate it as a pack, and
-# upload it to the deployed server, where it becomes a leaderboard category.
+# Optional: record one real week from GitHub's runners instead of your own machine, and commit it.
+# The same command works locally: `make week START=YYYY-MM-DD` (see docs/how-a-real-week-is-built.md).
 #
-# Secrets: BASE_RPC_URL (the RPC endpoint; copy the value of your shared Vercel variable),
-#          MARKET_REPLAY_ADMIN_TOKEN (the server's operator token).
-# Variable: MARKET_REPLAY_URL (the deployment, default https://memeval-web.vercel.app).
+# Secret: BASE_RPC_URL (your read-only Base RPC endpoint). Nothing else; the finished week is committed
+# to the default branch and the site registers it on its next deploy.
 
 on:
   workflow_dispatch:
     inputs:
       week_start:
-        description: "Week start (UTC date, YYYY-MM-DD). Empty = the most recent Monday at least 8 days ago."
+        description: "Week start (UTC date, YYYY-MM-DD). Empty = the most recent Monday whose week ended at least a day ago."
         required: false
         default: ""
-      max_pairs:
-        description: "How many pools in the frozen universe"
-        required: false
-        default: "16"
-      max_requests:
-        description: "Hard RPC request budget"
-        required: false
-        default: "20000"
-      log_chunk_blocks:
-        description: "eth_getLogs block range per request (the collector halves it on provider errors)"
-        required: false
-        default: "10000"
-  schedule:
-    - cron: "17 3 * * 1"   # Mondays 03:17 UTC: the previous full week
+
+permissions:
+  contents: write
 
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 330
     env:
       BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
-      ADMIN_TOKEN: ${{ secrets.MARKET_REPLAY_ADMIN_TOKEN }}
-      BASE: ${{ vars.MARKET_REPLAY_URL || 'https://memeval-web.vercel.app' }}
     steps:
       - name: Check secrets
         run: |
-          if [ -z "$BASE_RPC_URL" ]; then echo "BASE_RPC_URL secret is not set; nothing to collect." ; exit 1; fi
-          if [ -z "$ADMIN_TOKEN" ]; then echo "MARKET_REPLAY_ADMIN_TOKEN secret is not set; the pack could not be uploaded." ; exit 1; fi
+          if [ -z "$BASE_RPC_URL" ]; then echo "BASE_RPC_URL secret is not set; nothing to record." ; exit 1; fi
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - name: Install
         run: uv sync --extra dev
-      - name: Write the collection config
-        id: cfg
+      - name: Pick the week
+        id: pick
         env:
           WEEK_START: ${{ inputs.week_start }}
-          MAX_PAIRS: ${{ inputs.max_pairs || '16' }}
-          MAX_REQUESTS: ${{ inputs.max_requests || '20000' }}
-          LOG_CHUNK: ${{ inputs.log_chunk_blocks || '10000' }}
         run: |
-          uv run python - <<'PY'
-          import datetime as dt, os, yaml
-          ws = os.environ.get("WEEK_START") or ""
+          start=$(python3 -c "
+          import datetime as dt, os
+          ws = os.environ.get('WEEK_START') or ''
           if ws:
-              start = dt.datetime.strptime(ws, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc)
+              print(ws)
           else:
               today = dt.datetime.now(dt.timezone.utc).date()
               monday = today - dt.timedelta(days=today.weekday())
-              start = dt.datetime.combine(monday - dt.timedelta(days=7), dt.time(), tzinfo=dt.timezone.utc)
-              while (dt.datetime.now(dt.timezone.utc) - (start + dt.timedelta(days=7))).days < 1:
+              start = monday - dt.timedelta(days=7)
+              while (dt.datetime.now(dt.timezone.utc).date() - (start + dt.timedelta(days=7))).days < 1:
                   start -= dt.timedelta(days=7)
-          end = start + dt.timedelta(days=7)
-          name = f"base_week_{start:%Y-%m-%d}"
-          cfg = {
-              "rpc_url_env": "BASE_RPC_URL", "chain": "base", "protocol": "uniswap_v2",
-              "period_start_utc": start.strftime("%Y-%m-%dT%H:%M:%SZ"), "period_end_utc": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
-              "discovery_window_start_utc": (start - dt.timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-              "prehistory_hours": 24, "selection_rule": "active_before_window_earliest_created_v1", "activity_lookback_blocks": 43200,
-              "max_pairs": int(os.environ["MAX_PAIRS"]), "max_requests": int(os.environ["MAX_REQUESTS"]), "log_chunk_blocks": int(os.environ["LOG_CHUNK"]),
-              "initial_state_lookback_blocks": 20000, "availability_delay_ms": 4000, "out_dir": f"packs/historical/{name}",
-              "authorization_note": "Operator-authorized read-only collection from the operator's own RPC endpoint with a fixed request budget; public chain data; redistribution not cleared.",
-          }
-          os.makedirs("collection/generated", exist_ok=True)
-          path = f"collection/generated/{name}.yaml"
-          with open(path, "w") as f: yaml.safe_dump(cfg, f, sort_keys=False)
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f: f.write(f"name={name}\npath={path}\n")
-          print(open(path).read())
-          PY
-      - name: Collect (read-only, budgeted, resumable)
-        run: |
-          uv run market-replay collect --config "${{ steps.cfg.outputs.path }}" --data-dir data | tee collect.json
-          status=$(python3 -c "import json;print(json.load(open('collect.json'))['status'])")
-          echo "status=$status"
-          [ "$status" = "pack_built" ] || { echo "collection did not produce a pack: $status"; python3 -c "import json;print(json.load(open('collect.json')).get('reason'))"; exit 1; }
-      - name: Upload the pack to the server
+              print(start.isoformat())")
+          echo "start=$start" >> "$GITHUB_OUTPUT"
+          echo "recording the week of $start"
+      - name: Record the week (read-only, budgeted, resumable)
+        run: uv run market-replay week --start "${{ steps.pick.outputs.start }}"
+      - name: Commit the week
         run: |
           set -eu
-          name="${{ steps.cfg.outputs.name }}"
-          dir=$(python3 -c "import json;print(json.load(open('collect.json'))['pack_dir'])")
-          tar czf pack.tgz -C "$(dirname "$dir")" "$(basename "$dir")"
-          ls -la pack.tgz
-          curl -sSf -X POST "$BASE/api/v1/packs/upload?name=$name" -H "Authorization: Bearer $ADMIN_TOKEN" -H 'content-type: application/gzip' --data-binary @pack.tgz | python3 -m json.tool | head -40
-      - name: Keep the collection log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: collection-${{ steps.cfg.outputs.name }}
-          path: |
-            collect.json
-            data/packs/historical/*_work/last_result.json
-            data/packs/historical/*_work/errors.jsonl
-          if-no-files-found: ignore
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add weeks/
+          git commit -m "Base week of ${{ steps.pick.outputs.start }}" || { echo "nothing new to commit"; exit 0; }
+          git push

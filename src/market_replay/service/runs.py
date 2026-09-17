@@ -11,11 +11,10 @@ serialized by a store-level lock, so two instances can never interleave.
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import os
 import secrets
-import tarfile
+import sys
 import threading
 import time
 import traceback
@@ -24,10 +23,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ..datasets.builder import rebuild_pack
 from ..datasets.generator import dev_short_config, generate_pack, standard_suite_configs
 from ..datasets.pack import Pack, PackError
-from ..datasets.validator import demote_unreconciled_pools, validate_pack
+from ..datasets.validator import validate_pack
 from ..domain.envelope import Envelope
 from ..domain.models import PublicDescriptor
 from ..domain.status import ErrorCode, Isolation, RunState
@@ -46,6 +44,25 @@ from .suites import SuiteDef, default_suites_text, load_suites, suite_public
 
 TERMINAL = {str(RunState.ABORTED), str(RunState.COMPLETED), str(RunState.AGENT_FAILED), str(RunState.ENVIRONMENT_FAILED)}
 FIXTURE_CONFIGS = {c.name: c for c in [dev_short_config(), *standard_suite_configs()]}
+# Recorded weeks live in the repository, one pack directory each (see docs/how-a-real-week-is-built.md).
+WEEKS_DIR = Path(os.environ.get("MARKET_REPLAY_WEEKS_DIR") or (Path(__file__).resolve().parents[3] / "weeks"))
+VENUE_NAMES = {"uniswap_v2": "v2 pairs", "uniswap_v3": "v3 pools", "uniswap_v4": "v4 pools"}
+
+
+def week_label(name: str, chain: str, protocol: str | None = None, start_utc: str | None = None, end_utc: str | None = None) -> str:
+    """Real data is labelled by its calendar: 'Base week of 2026-09-07' (a shorter period: 'Base
+    2026-09-04 (1h)'), plus the venue for a single-venue pack ('..., v4 pools')."""
+    parts = name.split("_")
+    venue = VENUE_NAMES.get(protocol or "", "")
+    suffix = f", {venue}" if venue and protocol != "uniswap_v2" else ""
+    head = chain.capitalize()
+    if start_utc:
+        day = str(start_utc)[:10]
+        if len(parts) >= 3 and parts[1] == "week":
+            return f"{head} week of {day}{suffix}"
+        hours = parts[3] if len(parts) >= 4 and parts[1] == "period" else None
+        return f"{head} {day} ({hours}){suffix}" if hours else f"{head} {day}{suffix}"
+    return f"{head}: {name}{suffix}"
 
 
 def now_iso() -> str:
@@ -99,7 +116,6 @@ class RunManager:
         self.max_runs_per_hour_per_ip = int(max_runs_per_hour_per_ip if max_runs_per_hour_per_ip is not None else os.environ.get("MARKET_REPLAY_MAX_RUNS_PER_HOUR_PER_IP", "20"))
         self._packs: dict[str, Pack] = {}
         self._contexts: dict[str, RunContext] = {}
-        self.weeks: Any = None  # WeekJobs, attached by the host when an RPC endpoint is configured
         self._global = threading.RLock()
         self.gateway_url = "http://127.0.0.1:8000"
         if suites_path is None:
@@ -126,8 +142,11 @@ class RunManager:
         report = validate_pack(pack)
         (p / "validation.json").write_text(json.dumps(report, indent=2, sort_keys=True))
         pack = Pack.load(p)
+        return self._register(pack, report, name or p.name)
+
+    def _register(self, pack: Pack, report: dict[str, Any], pack_name: str) -> dict[str, Any]:
+        p = pack.path
         m = pack.manifest
-        pack_name = name or p.name
         existing = self.store.pack(m.pack_id)
         episode_id = existing["episode_id"] if existing else "ep_" + secrets.token_hex(6)
         row = {
@@ -152,50 +171,37 @@ class RunManager:
             self._packs[m.pack_id] = pack
         return self.pack_row(m.pack_id)
 
-    MAX_PACK_ARCHIVE = 80 * 1024 * 1024
+    def register_shipped_weeks(self) -> list[dict[str, Any]]:
+        """Register every recorded week committed under ``weeks/`` (one pack directory each). The
+        repository is the store for weeks: every instance has them on its own disk, so nothing is
+        downloaded. A week already registered from this same path is left alone; a moved or new one
+        is (re)registered from its committed validation report, without replaying it."""
+        out = []
+        if not WEEKS_DIR.is_dir():
+            return out
+        for path in sorted(p for p in WEEKS_DIR.iterdir() if (p / "manifest.yaml").exists()):
+            row = self.store.pack(path.name)
+            if row is not None and row["path"] == str(path.resolve()):
+                out.append(self._pack_view(row))
+                continue
+            try:
+                out.append(self.register_pack(path, path.name))
+            except (PackError, ApiError, ValueError, OSError) as e:  # one broken directory must not take the site down
+                print(f"[market-replay] shipped week {path.name} not registered: {e}", file=sys.stderr)
+        return out
 
-    def upload_pack(self, archive: bytes, name: str | None = None) -> dict[str, Any]:
-        """Import a pack from a gzip tar of its directory and keep the archive in the store, so any
-        instance can materialize it later (historical weeks are not regenerable like fixtures)."""
-        if len(archive) > self.MAX_PACK_ARCHIVE:
-            raise ApiError(413, f"pack archive larger than {self.MAX_PACK_ARCHIVE // (1024 * 1024)} MB", "TOO_LARGE")
-        target = self._extract_archive(archive, name)
-        view = self.import_pack(target, name or target.name)
-        self.store.put_pack_archive(view["pack_id"], view["name"], archive, hashlib.sha256(archive).hexdigest(), now_iso())
-        return view
-
-    def _extract_archive(self, archive: bytes, name: str | None) -> Path:
+    def register_pack(self, path: str | Path, name: str | None = None) -> dict[str, Any]:
+        """Register a pack from its committed validation report (the collector already ran the
+        validator; the hashes are verified on load). ``import_pack`` validates again instead."""
+        p = Path(path)
         try:
-            with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tf:
-                members = [m for m in tf.getmembers() if m.isfile() or m.isdir()]
-                if not members:
-                    raise ApiError(400, "empty archive", "PACK_INVALID")
-                manifests = [m.name for m in members if m.name.endswith("manifest.yaml")]
-                if len(manifests) != 1:
-                    raise ApiError(400, "archive must contain exactly one pack (one manifest.yaml)", "PACK_INVALID")
-                root = manifests[0][: -len("manifest.yaml")].rstrip("/")
-                pack_name = name or (Path(root).name if root else "uploaded_pack")
-                target = self.data_dir / "packs" / "uploaded" / pack_name
-                if target.exists():
-                    import shutil
-
-                    shutil.rmtree(target)
-                target.mkdir(parents=True)
-                for m in members:
-                    rel = m.name[len(root):].lstrip("/") if root else m.name
-                    if not rel or ".." in Path(rel).parts or Path(rel).is_absolute():
-                        continue
-                    dest = target / rel
-                    if m.isdir():
-                        dest.mkdir(parents=True, exist_ok=True)
-                        continue
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    src = tf.extractfile(m)
-                    if src is not None:
-                        dest.write_bytes(src.read())
-                return target
-        except tarfile.TarError as e:
-            raise ApiError(400, f"not a gzip tar archive: {e}", "PACK_INVALID") from e
+            pack = Pack.load(p)
+        except (PackError, FileNotFoundError, ValueError) as e:
+            raise ApiError(400, f"pack registration failed: {e}", "PACK_INVALID") from e
+        report = pack.validation
+        if not report or "resulting_qualification" not in report:
+            return self.import_pack(p, name)
+        return self._register(pack, report, name or p.name)
 
     def ensure_fixture_pack(self, name: str) -> dict[str, Any]:
         """Register one of the shipped generated fixtures by name, generating it only the first time.
@@ -242,36 +248,6 @@ class RunManager:
             "scenario": (m.generator or {}).get("scenario_description"),
         }
 
-    def revalidate_pack(self, pack_ref: str) -> dict[str, Any]:
-        """Run the current validator over an existing pack (data untouched, same pack id) and record the new
-        qualification and archive. A pack that a newer engine can now reconcile qualifies without being
-        collected again."""
-        row, pack = self.load_pack(pack_ref)
-        path = Path(row["path"])
-        with self._global:
-            self._packs.pop(row["pack_id"], None)
-        pools = [p.model_dump(mode="json") for p in pack.pools.values()]
-        demoted = demote_unreconciled_pools(pools, pack.tape)
-        if demoted:
-            inventory = dict(pack.inventory or {})
-            inventory["demoted"] = [*inventory.get("demoted", []), *demoted]
-            rebuild_pack(pack, pools=pools, inventory=inventory, decision_note=f"revalidated {now_iso()}: {len(demoted)} pool(s) demoted from execution under the current validator: " + "; ".join(f"{d['pool']}: {d['reason']}" for d in demoted))
-        view = self.import_pack(path, row["name"])
-        if view["pack_id"] != row["pack_id"]:
-            self.store.delete_pack(row["pack_id"])
-        buf = io.BytesIO()
-        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
-            tf.add(path, arcname=path.name)
-        archive = buf.getvalue()
-        self.store.put_pack_archive(view["pack_id"], view["name"], archive, hashlib.sha256(archive).hexdigest(), now_iso())
-        return view
-
-    def forget_pack(self, pack_id: str) -> None:
-        """Drop a pack from the catalogue and the archive store; cached objects go too."""
-        with self._global:
-            self._packs.pop(pack_id, None)
-        self.store.delete_pack(pack_id)
-
     def load_pack(self, pack_ref: str) -> tuple[dict[str, Any], Pack]:
         row = self.store.pack(pack_ref)
         if row is None:
@@ -282,18 +258,17 @@ class RunManager:
                 path = Path(row["path"])
                 if not (path / "manifest.yaml").exists():
                     # Ephemeral filesystem (serverless) or moved files: shipped fixtures are regenerated
-                    # deterministically and must hash to the same pack id; uploaded packs come back
-                    # from the archive kept in the store.
+                    # deterministically and must hash to the same pack id; recorded weeks are read from
+                    # the repository checkout every instance carries.
                     cfg = FIXTURE_CONFIGS.get(row["name"])
                     if cfg is not None:
                         path = self.data_dir / "packs" / "generated" / row["name"]
                         if not (path / "manifest.yaml").exists():
                             generate_pack(cfg, path)
+                    elif (WEEKS_DIR / row["name"] / "manifest.yaml").exists():
+                        path = WEEKS_DIR / row["name"]
                     else:
-                        archive = self.store.get_pack_archive(row["pack_id"])
-                        if archive is None:
-                            raise ApiError(410, f"pack files for {row['name']} are not available on this instance", "PACK_FILES_MISSING")
-                        path = self._extract_archive(archive, row["name"])
+                        raise ApiError(410, f"pack files for {row['name']} are not available on this instance", "PACK_FILES_MISSING")
                     self.store.execute("UPDATE packs SET path=? WHERE pack_id=?", (str(path.resolve()), row["pack_id"]))
                 pack = Pack.load(path)
                 if pack.pack_id != row["pack_id"]:
@@ -1294,13 +1269,12 @@ def _episode_label(row: dict[str, Any]) -> str:
     """'gen_week_trending' -> 'Week: trending'; real data -> 'Base week of 2026-09-07, v4 pools'."""
     name, is_full_week, duration_ms = row["name"], row["is_full_week"], row["duration_ms"]
     if str(row.get("origin", "")) != "generated_fixture":
-        from .weeks import week_label
-
         try:
             models = json.loads(row.get("summary_json") or "{}").get("universe", {}).get("pool_models") or []
         except (TypeError, ValueError):
             models = []
-        protocol = "uniswap_v4" if any("v4" in str(m) for m in models) else "uniswap_v3" if any("v3" in str(m) for m in models) else "uniswap_v2"
+        kinds = {("v4" if "v4" in str(m) else "v3" if "v3" in str(m) else "v2") for m in models}
+        protocol = "uniswap_v2" if len(kinds) != 1 else f"uniswap_{kinds.pop()}"
         return week_label(name, str(row.get("chain") or ""), protocol, row.get("start_utc"), row.get("end_utc"))
     base = name.replace("gen_week_", "").replace("gen_", "").replace("_", " ")
     scenario = FIXTURE_SCENARIO_NAMES.get(name, base)

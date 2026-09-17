@@ -67,8 +67,9 @@ One-time project settings (Vercel dashboard → project → Settings):
 
 1. **General → Root Directory**: empty (repository root). The root `vercel.json` builds the UI
    from `apps/web` and registers the function.
-2. **Storage → Create → Neon Postgres, Free plan** (or `vercel install neon --plan free`). This
-   injects `DATABASE_URL`/`POSTGRES_URL`. Free tier: 0.5 GB, plenty for traces and reports.
+2. **A Postgres database** for rows (runs, agents, leaderboard): any provider; set `DATABASE_URL`
+   (Vercel's Storage tab injects it for Neon; a Supabase project's pooler URL works the same). The
+   free tiers are plenty: no file ever goes through the database, only small rows.
 3. **Environment Variables** (Production):
    - `MARKET_REPLAY_ADMIN_TOKEN` — a long random string; the only control-plane credential.
    - `MARKET_REPLAY_PUBLIC_URL` — optional; defaults to the project's production URL on Vercel. Set
@@ -114,65 +115,38 @@ Not available in hosted mode: TypeScript reference participants (no Node in the 
 function; run them locally against the hosted URL instead), the restricted local runner, and
 historical collection (run `make collect` locally and import the pack into a local server).
 
-## Real weeks (anyone picks a past week in the app)
+## Real weeks (recorded on your machine, committed to the repository)
 
-The mechanism, step by step and in plain words, is in [how-a-real-week-is-built.md](how-a-real-week-is-built.md). This section is the operator's reference.
+The mechanism, step by step and in plain words, is in [how-a-real-week-is-built.md](how-a-real-week-is-built.md).
 
-Set `BASE_RPC_URL` (or `RPC_URL`) on the server to a read-only EVM RPC endpoint for Base. Then
-the Episodes page offers "Add this week" to everyone:
+Users never request weeks. The weeks on the site are the pack directories committed under
+`weeks/`, and nothing else. To add one:
 
-1. `POST /api/v1/weeks {week_start}` queues the week (idempotent per period; at most
-   `MARKET_REPLAY_MAX_WEEKS_PER_DAY` new weeks a day, default 3). By default a week covers every
-   venue: Uniswap v2 pairs and v4 pools (where Clanker and Bankr launches trade) are collected one
-   after the other and merged into one dataset, so the leaderboard has one tab per week. The
-   operator may pass `protocol` (`uniswap_v2`, `uniswap_v3`, `uniswap_v4`) for a single venue;
-   when a merged week for the same period is built, single-venue weeks of that period are retired.
-2. The server collects it in time slices (`MARKET_REPLAY_WEEK_SLICE_SECONDS`, default 200) so it
-   fits a serverless invocation. A tick that finds a slice already running anywhere returns
-   `busy` at once (a non-blocking database lock plus a lease); it never queues. After each
-   slice the collector's working files (checkpoints, coverage ledger, one raw-log file per
-   pool) sync to the `week_job_files` table, uploading only the files that changed, and the
-   next slice can run on any instance. Uploads happen only every 2,000 requests (database transfer
-   is the scarce resource; RPC work is cheap to redo after a cold start). Slices are triggered by a Vercel cron every minute
-   (`/api/v1/weeks/tick`), by the `weeks-watch` GitHub workflow every ten minutes, and by any
-   open Episodes page.
-3. The frozen universe is `MARKET_REPLAY_WEEK_MAX_PAIRS` pools (default 16). v2 weeks take
-   pools that were already trading before the week (earliest created first). v3/v4 weeks take
-   half of them that way and fill the other half with launches from inside the week, ranked by
-   when they reached 20 swaps; a launch becomes discoverable to agents at that moment, so
-   nothing later than a pool's own first 20 swaps influences the selection; the request budget is `MARKET_REPLAY_WEEK_MAX_REQUESTS` (default
-   40,000; raising it applies to the week in flight); log ranges start at `MARKET_REPLAY_WEEK_LOG_CHUNK` blocks (capped to the provider's
-   `eth_getLogs` limit: 1,000 on Coinbase Developer Platform, 2,000 on Alchemy) and halve on
-   provider errors. Retry backoff never sleeps past the slice deadline.
-4. When the collector finishes, the pack is validated (every on-chain checkpoint must
-   reconcile: v2 Sync reserves, or the price, tick and liquidity after every v3/v4 swap). A pool
-   that does not reconcile is demoted from execution with the reason in the pack's inventory;
-   the week qualifies on the pools that do. The pack is imported, archived in the database, and
-   appears on the leaderboard as "Base week of YYYY-MM-DD" (plus the venue for a single-venue
-   week, e.g. "Base week of 2026-09-07, v4 pools"). Failures show their reason on the Weeks page.
-5. A week an older engine left diagnostic is first revalidated under the current validator on an
-   idle tick (no RPC requests; demotions are applied to the pack in place, which changes its pack
-   id). Only a week that still fails is collected again.
+```bash
+export BASE_RPC_URL=https://...      # your read-only Base endpoint (Coinbase Developer Platform works)
+make week START=2026-09-07           # about two hours; 12,000 to 16,000 RPC requests
+git add weeks/base_week_2026-09-07 && git commit -m "Base week of 2026-09-07" && git push
+```
 
-Spending guard: `MARKET_REPLAY_WEEKS_PAUSED=1` stops every tick without an RPC call, and a rolling cap of `MARKET_REPLAY_WEEK_MAX_REQUESTS_PER_DAY` RPC requests (default
-25,000) stops every tick once reached. Both show on the Episodes page and in `GET /api/v1/weeks`.
-A full v4 week costs roughly 12,000 to 16,000 requests, a v2 week under 1,000; check what your
-RPC provider charges per request before resuming.
+`make week` records every venue (Uniswap v2 pairs and v4 pools, where Clanker and Bankr launches
+trade) into one pack, validates it, and writes it only when it qualifies as research data. A week
+that does not qualify is reported with the failing gate; do not commit it. An interrupted recording
+keeps its working files under `weeks/<name>_work/` (ignored by git) and resumes when the same
+command runs again. The optional `collect-week` GitHub workflow runs the same command on GitHub's
+runners and commits the result, if you would rather not tie up your machine.
 
-Database transfer (Neon's free plan caps network transfer per month): every collection slice that
-lands on a cold instance re-downloads the week's working files, and every cold instance that
-serves a real week downloads that pack's archive once. Keep collection to a few weeks a month
-on the free plan, and avoid CI steps that run agents on real weeks on every deploy (they are
-`workflow_dispatch` only for that reason).
+On deploy, Vercel builds the repository into the function, so every instance has every week on its
+own disk. The server registers the weeks under `weeks/` on its first request (reading the committed
+validation report; the pack's hashes are verified, nothing is replayed). The database holds rows
+only: runs, agents, the leaderboard. No file goes through it.
 
-Watching a collection from outside: push anything to the `status-probe` branch (Vercel never
-deploys it, see `vercel.json`) and read the `status` workflow's log; it prints every week job,
-the validation report of every built week and the leaderboard categories. Every production
-deploy also drives the collection for a few minutes and prints the same (`hosted-smoke`).
+When the validator or the engine changes what a recorded week contains, re-check the committed
+weeks locally with `market-replay packs revalidate weeks/<name>` (pools the current engine cannot
+reconcile are demoted; the pack id changes) and commit the result.
 
-Cost: collection is I/O-bound (Fluid compute bills active CPU), so a week costs mostly RPC
-requests on your provider plan. `collect-week` (GitHub Actions) remains as an alternative for
-operators who prefer to collect outside Vercel and upload with `POST /api/v1/packs/upload`.
+Watching production from outside: push anything to the `status-probe` branch (Vercel never
+deploys it, see `vercel.json`) and read the `status` workflow's log; it prints every recorded week,
+its gate summary and the leaderboard tabs. Every production deploy also runs `hosted-smoke`.
 
 What a real week does not model: gas (assumed zero), token transfer taxes (assumed standard),
 MEV and routing. Reports say so; results are research grade, never historical performance.

@@ -6,7 +6,7 @@ MR := .venv/bin/market-replay
 PNPM ?= pnpm
 DATA ?= data
 
-.PHONY: setup test test-fast test-browser demo verify build serve import-report-fixtures collect validate-pack run-agent export-run fixtures lint schemas clean
+.PHONY: setup test test-fast test-browser demo verify build serve import-report-fixtures week collect validate-pack run-agent export-run fixtures lint schemas clean
 
 setup: ## Create the venv, install pinned Python deps, install web deps
 	$(UV) venv --python 3.12 .venv
@@ -42,6 +42,9 @@ serve: ## Start the HTTP service on 127.0.0.1:8000 (prints the admin token)
 
 import-report-fixtures: ## Build and import the diagnostic-only pack from the supplied report excerpts
 	$(MR) import-report-fixtures --data-dir $(DATA)
+
+week: ## Record one real week into weeks/ (needs BASE_RPC_URL): make week START=2026-09-07
+	$(MR) week --start $(START)
 
 collect: ## Opt-in read-only historical collection: make collect ARGS="--config path/to/authorized-collection.yaml"
 	$(MR) collect $(ARGS) --data-dir $(DATA)

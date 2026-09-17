@@ -269,28 +269,6 @@ export type Meta = {
   hosted?: boolean;
   runtimes_available?: string[];
   store_backend?: string;
-  weeks_enabled?: boolean;
-};
-export type WeekJob = {
-  job_id: string;
-  name: string;
-  label: string;
-  chain: string;
-  protocol?: string;
-  duration_hours: number;
-  dates_sealed: boolean;
-  period_start_utc?: string;
-  period_end_utc?: string;
-  status: "queued" | "collecting" | "built" | "failed" | string;
-  requests_used: number;
-  request_budget: number;
-  attempts: number;
-  note: string | null;
-  error: string | null;
-  pack_id: string | null;
-  qualification?: string | null;
-  created_at: string;
-  updated_at: string;
 };
 export type Usage = { today: { runs: number; cpu_seconds: number }; month: { runs: number; cpu_seconds: number }; caps: { max_runs_per_day: number; max_cpu_seconds_per_month: number; max_runs_per_hour_per_ip?: number }; remaining: { runs_today: number; cpu_seconds_month: number }; note: string };
 

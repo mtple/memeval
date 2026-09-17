@@ -1,8 +1,8 @@
 name: status
 
 # On-demand status of the hosted server: push anything to the `status-probe` branch (Vercel does not
-# deploy that branch, see vercel.json) and read the job log. Prints every real week and the validation
-# report of every built one.
+# deploy that branch, see vercel.json) and read the job log. Prints every recorded week the site
+# serves, the gate summary of each, and the leaderboard tabs.
 
 on:
   push:
@@ -16,18 +16,11 @@ jobs:
     env:
       BASE: ${{ vars.MARKET_REPLAY_URL || 'https://memeval-web.vercel.app' }}
     steps:
-      - name: Weeks
-        run: |
-          set -u
-          curl -sS -m 60 "$BASE/api/v1/weeks" | jq '{paused, usage, items: [.items[] | {label, protocol, status, requests_used, request_budget, attempts, qualification, note, error, updated_at}]}'
-      # The validation report needs the pack itself; reading it through the API downloads the archive from
-      # the database on a cold instance, so it is not part of the routine probe. The gate summary is in
-      # GET /api/v1/packs (summary.gates) without a download.
-      - name: Gate summary of built weeks
+      - name: Recorded weeks and their gate summary
         run: |
           set -u
           curl -sS -m 60 "$BASE/api/v1/packs" | jq '[.items[] | select(.origin=="historical_reconstruction") | {name, use_status, period, pools_executable: .summary.pools_executable, tape_events: .summary.tape_events, gates: [.summary.gates[] | select(.status!="passed")]}]'
-      - name: Validation detail of diagnostic weeks (downloads the pack; only when something failed)
+      - name: Validation detail of weeks that do not qualify
         run: |
           set -u
           for pid in $(curl -sS -m 60 "$BASE/api/v1/packs" | jq -r '.items[] | select(.origin=="historical_reconstruction" and .use_status=="diagnostic_only") | .pack_id'); do
