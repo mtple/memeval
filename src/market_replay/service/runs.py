@@ -270,13 +270,13 @@ class RunManager:
                 self._packs[row["pack_id"]] = pack
         return row, pack
 
-    def pack_row(self, pack_ref: str) -> dict[str, Any]:
+    def pack_row(self, pack_ref: str, reveal_dates: bool = False) -> dict[str, Any]:
         row = self.store.pack(pack_ref)
         if row is None:
             raise ApiError(404, f"unknown pack {pack_ref}", "NOT_FOUND")
-        return self._pack_view(row)
+        return self._pack_view(row, reveal_dates)
 
-    def _pack_view(self, row: dict[str, Any]) -> dict[str, Any]:
+    def _pack_view(self, row: dict[str, Any], reveal_dates: bool = False) -> dict[str, Any]:
         summary = json.loads(row["summary_json"])
         sealed_only = any(row["name"] in s.packs and s.sealed for s in self.suites.values()) and not any(row["name"] in s.packs and not s.sealed for s in self.suites.values())
         view = {
@@ -298,12 +298,14 @@ class RunManager:
             "unsupported_capabilities": UNSUPPORTED_CAPABILITIES,
             "predictive_validity": "not_established",
         }
-        if self.dev_mode and not sealed_only:
-            view["period_dev_mode"] = {"start_utc": row["start_utc"], "end_utc": row["end_utc"], "note": "actual dates shown in development mode only"}
+        # Calendar dates are never public: an agent that knows the period can look history up. The operator
+        # sees them (development mode, non-sealed packs); everyone else sees only the duration.
+        if reveal_dates and self.dev_mode and not sealed_only:
+            view["period_dev_mode"] = {"start_utc": row["start_utc"], "end_utc": row["end_utc"], "note": "actual dates shown to the operator only"}
         return view
 
-    def packs(self) -> list[dict[str, Any]]:
-        return [self._pack_view(r) for r in self.store.packs()]
+    def packs(self, reveal_dates: bool = False) -> list[dict[str, Any]]:
+        return [self._pack_view(r, reveal_dates) for r in self.store.packs()]
 
     def public_descriptor(self, pack: Pack, row: dict[str, Any], isolation: str) -> PublicDescriptor:
         m = pack.manifest
@@ -1216,15 +1218,12 @@ class RunManager:
 
 
 def _episode_label(row: dict[str, Any]) -> str:
-    """'gen_week_trending' -> 'Week: trending'; a real week says its chain and start date."""
+    """'gen_week_trending' -> 'Week: trending'; real data -> 'Base week 3' (the calendar stays sealed)."""
     name, is_full_week, duration_ms = row["name"], row["is_full_week"], row["duration_ms"]
     if str(row.get("origin", "")) != "generated_fixture":
-        start = str(row.get("start_utc") or "")[:10]
-        chain = str(row.get("chain") or "").capitalize()
-        if is_full_week:
-            return f"{chain} week of {start}" if start else f"{chain} week"
-        hours = float(duration_ms or 0) / 3_600_000
-        return f"{chain} {start} ({hours:g}h)"
+        from .weeks import week_label
+
+        return week_label(name, str(row.get("chain") or ""))
     base = name.replace("gen_week_", "").replace("gen_", "").replace("_", " ")
     if is_full_week:
         return f"Week: {base}"
@@ -1233,7 +1232,7 @@ def _episode_label(row: dict[str, Any]) -> str:
 
 
 def _episode_description(row: dict[str, Any]) -> str:
-    """One sentence under the category tab: the scenario for fixtures, provenance for real data."""
+    """One sentence under the category tab: the scenario for fixtures, provenance for real data. Never dates."""
     try:
         summary = json.loads(row.get("summary_json") or "{}")
     except (TypeError, ValueError):
@@ -1241,9 +1240,10 @@ def _episode_description(row: dict[str, Any]) -> str:
     if str(row.get("origin", "")) == "generated_fixture":
         scenario = summary.get("scenario") or ""
         return f"Artificial market with known rules. {scenario}".strip()
-    start, end = str(row.get("start_utc") or "")[:16].replace("T", " "), str(row.get("end_utc") or "")[:16].replace("T", " ")
+    hours = float(row.get("duration_ms") or 0) / 3_600_000
+    span = "7 days" if row.get("is_full_week") else f"{hours:g} hours"
     pools = summary.get("pools_executable")
-    return f"Real swaps recorded on {row.get('chain')} from {start} to {end} UTC, {pools} tradable pools, replayed through the execution model (gas and token taxes assumed standard). Not historical performance."
+    return f"Real swaps recorded on {str(row.get('chain') or '').capitalize()} over {span}, replayed through the execution model with {pools} tradable pools under generic names. The calendar dates are sealed so an agent cannot look the period up. Gas and token taxes assumed standard. Not historical performance."
 
 
 def _suite_label(s: SuiteDef) -> str:

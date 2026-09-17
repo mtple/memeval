@@ -72,11 +72,15 @@ class WeekJobs:
         if (end - start) > timedelta(days=7, hours=1):
             raise ApiError(400, "a period is at most one week", "INVALID")
         is_week = (end - start) >= timedelta(days=7)
-        name = f"{chain}_week_{start:%Y-%m-%d}" if is_week else f"{chain}_{start:%Y-%m-%dT%H%M}_{int((end - start).total_seconds() // 3600)}h"
-        job_id = "wk_" + name
-        existing = self.m.store.week_job(job_id)
+        existing = self.m.store.week_job_by_period(chain, _iso(start), _iso(end))
         if existing:
             return self.view(existing)
+        # Sealed naming: the public name carries a sequence number, never the calendar. Agents (and their
+        # owners' prompts) see "base_week_03"; only the operator can read which dates that is.
+        seq = len(self.m.store.week_jobs()) + 1
+        hours = int((end - start).total_seconds() // 3600)
+        name = f"{chain}_week_{seq:02d}" if is_week else f"{chain}_period_{seq:02d}_{hours}h"
+        job_id = "wk_" + name
         day_ago = (datetime.now(UTC) - timedelta(days=1)).isoformat()
         if self.m.store.week_jobs_created_since(day_ago) >= self.max_jobs_per_day:
             raise ApiError(429, f"at most {self.max_jobs_per_day} new weeks a day on this server; try tomorrow", "USAGE_CAP")
@@ -102,23 +106,27 @@ class WeekJobs:
         self.m.store.insert_week_job({"job_id": job_id, "name": name, "chain": chain, "period_start_utc": cfg["period_start_utc"], "period_end_utc": cfg["period_end_utc"], "status": "queued", "config_json": json.dumps(cfg, sort_keys=True), "requests_used": 0, "attempts": 0, "note": "queued; the next tick starts collecting", "error": None, "pack_id": None, "requested_by": requested_by, "created_at": now, "updated_at": now})
         return self.view(self.m.store.week_job(job_id))
 
-    def jobs(self) -> list[dict[str, Any]]:
-        return [self.view(r) for r in self.m.store.week_jobs()]
+    def jobs(self, role: str = "public") -> list[dict[str, Any]]:
+        return [self.view(r, role) for r in self.m.store.week_jobs()]
 
-    def job(self, job_id: str) -> dict[str, Any]:
+    def job(self, job_id: str, role: str = "public") -> dict[str, Any]:
         row = self.m.store.week_job(job_id)
         if row is None:
             raise ApiError(404, f"unknown week job {job_id}", "NOT_FOUND")
-        return self.view(row)
+        return self.view(row, role)
 
-    def view(self, row: dict[str, Any]) -> dict[str, Any]:
+    def view(self, row: dict[str, Any], role: str = "public") -> dict[str, Any]:
+        """Public views never carry the calendar; the operator's view does."""
         cfg = json.loads(row["config_json"])
-        return {
+        start, end = _parse(row["period_start_utc"]), _parse(row["period_end_utc"])
+        hours = int((end - start).total_seconds() // 3600)
+        out = {
             "job_id": row["job_id"],
             "name": row["name"],
+            "label": week_label(row["name"], row["chain"]),
             "chain": row["chain"],
-            "period_start_utc": row["period_start_utc"],
-            "period_end_utc": row["period_end_utc"],
+            "duration_hours": hours,
+            "dates_sealed": True,
             "status": row["status"],
             "requests_used": row["requests_used"],
             "request_budget": cfg["max_requests"],
@@ -129,6 +137,9 @@ class WeekJobs:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
+        if role == "admin":
+            out.update(period_start_utc=row["period_start_utc"], period_end_utc=row["period_end_utc"], requested_by=row["requested_by"], dates_sealed=False)
+        return out
 
     # ------------------------------------------------------------------ slices
     def tick(self, slice_seconds: float | None = None) -> dict[str, Any]:
@@ -181,6 +192,16 @@ class WeekJobs:
             self.m.store.set_week_job_archive(row["job_id"], _targz(work))
         self.m.store.update_week_job(row["job_id"], **fields)
         return self.view(self.m.store.week_job(row["job_id"]))
+
+
+def week_label(name: str, chain: str) -> str:
+    """'base_week_03' -> 'Base week 3'; 'base_period_02_1h' -> 'Base period 2 (1h)'."""
+    parts = name.split("_")
+    if len(parts) >= 3 and parts[1] == "week" and parts[2].isdigit():
+        return f"{chain.capitalize()} week {int(parts[2])}"
+    if len(parts) >= 4 and parts[1] == "period" and parts[2].isdigit():
+        return f"{chain.capitalize()} period {int(parts[2])} ({parts[3]})"
+    return name.replace("_", " ")
 
 
 def _parse(s: str) -> datetime:

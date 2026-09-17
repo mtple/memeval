@@ -188,7 +188,7 @@ def test_category_labels_and_descriptions_for_real_and_artificial_weeks():
     fixture = {"name": "gen_week_trending", "is_full_week": 1, "duration_ms": 604_800_000, "origin": "generated_fixture", "chain": "generated", "summary_json": '{"scenario": "Sustained directional flow."}'}
     assert _episode_label(fixture) == "Week: trending"
     assert _episode_description(fixture).startswith("Artificial market with known rules. Sustained")
-    real = {"name": "base_week_2026-09-08", "is_full_week": 1, "duration_ms": 604_800_000, "origin": "historical_reconstruction", "chain": "base", "start_utc": "2026-09-08T00:00:00Z", "end_utc": "2026-09-15T00:00:00Z", "summary_json": '{"pools_executable": 16}'}
-    assert _episode_label(real) == "Base week of 2026-09-08"
+    real = {"name": "base_week_03", "is_full_week": 1, "duration_ms": 604_800_000, "origin": "historical_reconstruction", "chain": "base", "start_utc": "2026-09-08T00:00:00Z", "end_utc": "2026-09-15T00:00:00Z", "summary_json": '{"pools_executable": 16}'}
+    assert _episode_label(real) == "Base week 3"
     d = _episode_description(real)
-    assert "Real swaps recorded on base" in d and "16 tradable pools" in d and "Not historical performance" in d
+    assert "Real swaps recorded on Base over 7 days" in d and "16 tradable pools" in d and "sealed" in d and "2026" not in d

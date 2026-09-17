@@ -254,13 +254,13 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
             raise ApiError(400, "empty body; send the pack as a gzip tar", "PACK_INVALID")
         return await run_in_threadpool(manager.upload_pack, body, name)
 
-    @app.get("/api/v1/packs", dependencies=[Depends(public_read)])
-    def list_packs() -> dict[str, Any]:
-        return {"items": manager.packs()}
+    @app.get("/api/v1/packs")
+    def list_packs(role: str = Depends(public_read)) -> dict[str, Any]:
+        return {"items": manager.packs(reveal_dates=role == "admin")}
 
-    @app.get("/api/v1/packs/{pack_id}", dependencies=[Depends(public_read)])
-    def get_pack(pack_id: str) -> dict[str, Any]:
-        return manager.pack_row(pack_id)
+    @app.get("/api/v1/packs/{pack_id}")
+    def get_pack(pack_id: str, role: str = Depends(public_read)) -> dict[str, Any]:
+        return manager.pack_row(pack_id, reveal_dates=role == "admin")
 
     @app.get("/api/v1/packs/{pack_id}/validation", dependencies=[Depends(public_read)])
     def pack_validation(pack_id: str) -> dict[str, Any]:
@@ -288,9 +288,9 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
             raise ApiError(503, "no RPC endpoint is configured on this server (BASE_RPC_URL); real weeks cannot be collected", "WEEKS_DISABLED")
         return manager.weeks
 
-    @app.get("/api/v1/weeks", dependencies=[Depends(public_read)])
-    def list_weeks() -> dict[str, Any]:
-        return {"enabled": bool(manager.weeks and manager.weeks.enabled), "items": manager.weeks.jobs() if manager.weeks else []}
+    @app.get("/api/v1/weeks")
+    def list_weeks(role: str = Depends(public_read)) -> dict[str, Any]:
+        return {"enabled": bool(manager.weeks and manager.weeks.enabled), "items": manager.weeks.jobs(role) if manager.weeks else []}
 
     @app.post("/api/v1/weeks", dependencies=[Depends(public_write("weeks"))], status_code=201)
     def request_week(body: WeekBody, request: Request) -> dict[str, Any]:
@@ -305,9 +305,9 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
         s = None if slice is None else max(5.0, min(float(slice), w.slice_seconds))
         return await run_in_threadpool(w.tick, s)
 
-    @app.get("/api/v1/weeks/{job_id}", dependencies=[Depends(public_read)])
-    def get_week(job_id: str) -> dict[str, Any]:
-        return weeks_or_503().job(job_id)
+    @app.get("/api/v1/weeks/{job_id}")
+    def get_week(job_id: str, role: str = Depends(public_read)) -> dict[str, Any]:
+        return weeks_or_503().job(job_id, role)
 
     @app.get("/api/v1/leaderboard", dependencies=[Depends(public_read)])
     def leaderboard(suite_id: str | None = None, pack_id: str | None = None, all: bool = False) -> dict[str, Any]:

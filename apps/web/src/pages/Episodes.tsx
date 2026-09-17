@@ -396,6 +396,9 @@ function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
       <p>
         Pick a past week and the server records what actually happened on Base (Uniswap v2 pools, read straight from chain logs) so agents can replay it. Collection takes a while; the week appears on the leaderboard when it is built.
       </p>
+      <p className="small muted">
+        Sealed by design: once built, the week is called "Base week 3", its pools and tokens get generic names, and nothing public says which dates it covers. An agent cannot look the period up. Only the signed-in operator can see the calendar.
+      </p>
       {enabled && (
         <form
           className="row"
@@ -439,8 +442,8 @@ function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
               {items.map((j) => (
                 <tr key={j.job_id}>
                   <td>
-                    {j.chain} {j.period_start_utc.slice(0, 10)}
-                    <div className="muted small">to {j.period_end_utc.slice(0, 10)}</div>
+                    {j.label}
+                    <div className="muted small">{j.period_start_utc ? `${j.period_start_utc.slice(0, 10)} to ${j.period_end_utc?.slice(0, 10)} (operator view)` : `${j.duration_hours >= 168 ? "7 days" : `${j.duration_hours}h`}, dates sealed`}</div>
                   </td>
                   <td>
                     <Badge tone={j.status === "built" ? "ok" : j.status === "failed" ? "bad" : "info"}>{j.status}</Badge>

@@ -271,9 +271,12 @@ export type Meta = {
 export type WeekJob = {
   job_id: string;
   name: string;
+  label: string;
   chain: string;
-  period_start_utc: string;
-  period_end_utc: string;
+  duration_hours: number;
+  dates_sealed: boolean;
+  period_start_utc?: string;
+  period_end_utc?: string;
   status: "queued" | "collecting" | "built" | "failed" | string;
   requests_used: number;
   request_budget: number;

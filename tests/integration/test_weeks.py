@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import httpx
@@ -28,7 +29,10 @@ def test_a_period_is_collected_in_slices_across_fresh_instances_and_becomes_a_ca
     store = str(tmp_path / "store.sqlite")
     mgr = make(tmp_path, fake, store)
     job = mgr.weeks.request(PERIOD_START, PERIOD_END)
-    assert job["status"] == "queued" and job["name"].startswith("base_2025-09-04T1453")
+    assert job["status"] == "queued" and job["name"] == "base_period_01_1h" and job["label"] == "Base period 1 (1h)"
+    assert "period_start_utc" not in job and job["dates_sealed"] is True  # public view: no calendar
+    admin_view = mgr.weeks.job(job["job_id"], role="admin")
+    assert admin_view["period_start_utc"] == PERIOD_START and admin_view["dates_sealed"] is False
     assert mgr.weeks.request(PERIOD_START, PERIOD_END)["job_id"] == job["job_id"]  # idempotent
     mgr.close()
     # every tick runs on a brand-new instance with an empty filesystem and a tiny slice
@@ -49,7 +53,11 @@ def test_a_period_is_collected_in_slices_across_fresh_instances_and_becomes_a_ca
     assert view["name"] in packs and packs[view["name"]]["origin"] == "historical_reconstruction"
     cats = final.leaderboard_categories()
     real = [c for c in cats if c["id"] == view["pack_id"]]
-    assert real and real[0]["label"].startswith("Base 2025-09-04 (1h)") and "Real swaps recorded on base" in real[0]["description"]
+    assert real and real[0]["label"] == "Base period 1 (1h)" and "Real swaps recorded on Base" in real[0]["description"]
+    assert "2025" not in real[0]["label"] + real[0]["description"] + view["name"]  # nothing public names the calendar
+    pack_view = next(p for p in final.packs() if p["pack_id"] == view["pack_id"])
+    assert "period_dev_mode" not in pack_view and "2025" not in json.dumps(pack_view)
+    assert "period_dev_mode" in next(p for p in final.packs(reveal_dates=True) if p["pack_id"] == view["pack_id"])
     # the pack materializes on demand from its archive and can be run
     row, pack = final.load_pack(view["name"])
     assert pack.pack_id == view["pack_id"] and len(pack.tape) > 0
@@ -69,7 +77,8 @@ def test_week_requests_are_validated_capped_and_public_over_http(tmp_path: Path)
     assert r.status_code == 201 and r.json()["status"] == "queued"
     assert c.post("/api/v1/weeks", json={"week_start": "2025-08-04"}).status_code == 429  # daily cap
     listing = c.get("/api/v1/weeks").json()
-    assert listing["enabled"] and len(listing["items"]) == 1
+    assert listing["enabled"] and len(listing["items"]) == 1 and "period_start_utc" not in listing["items"][0]
+    assert "period_start_utc" in c.get("/api/v1/weeks", headers={"Authorization": "Bearer adm_w"}).json()["items"][0]
     t = c.post("/api/v1/weeks/tick?slice=5").json()
     assert t["advanced"]["status"] in ("collecting", "built")
     assert c.get(f"/api/v1/weeks/{r.json()['job_id']}").status_code == 200

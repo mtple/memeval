@@ -303,6 +303,9 @@ class BaseStore:
     def week_job(self, job_id: str) -> dict[str, Any] | None:
         return self.one(f"SELECT {self.WEEK_JOB_COLS} FROM week_jobs WHERE job_id=?", (job_id,))
 
+    def week_job_by_period(self, chain: str, start: str, end: str) -> dict[str, Any] | None:
+        return self.one(f"SELECT {self.WEEK_JOB_COLS} FROM week_jobs WHERE chain=? AND period_start_utc=? AND period_end_utc=?", (chain, start, end))
+
     def week_jobs(self) -> list[dict[str, Any]]:
         return self.query(f"SELECT {self.WEEK_JOB_COLS} FROM week_jobs ORDER BY period_start_utc DESC")
 
