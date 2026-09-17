@@ -258,6 +258,11 @@ class WeekJobs:
 
     def _run_slice(self, row: dict[str, Any], slice_seconds: float) -> dict[str, Any]:
         cfg = json.loads(row["config_json"])
+        # An operator who raises MARKET_REPLAY_WEEK_MAX_REQUESTS wants it to apply to the week in flight,
+        # not only to weeks requested later.
+        if int(cfg.get("max_requests", 0)) < self.max_requests:
+            cfg["max_requests"] = self.max_requests
+            self.m.store.update_week_job(row["job_id"], config_json=json.dumps(cfg, sort_keys=True))
         name = row["name"]
         data_dir = self.m.data_dir
         out_dir = data_dir / cfg["out_dir"]

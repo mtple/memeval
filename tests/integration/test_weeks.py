@@ -148,6 +148,17 @@ def test_a_diagnostic_week_from_an_older_collector_is_rebuilt_once_on_an_idle_ti
     mgr.close()
 
 
+def test_a_raised_request_budget_applies_to_the_week_in_flight(tmp_path: Path):
+    fake = FakeBase()
+    mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))
+    job = mgr.weeks.request(PERIOD_START, PERIOD_END)
+    assert job["request_budget"] == 400
+    mgr.weeks.max_requests = 900  # operator raised MARKET_REPLAY_WEEK_MAX_REQUESTS and redeployed
+    out = mgr.weeks.tick(slice_seconds=0.001)
+    assert out["advanced"]["request_budget"] == 900
+    mgr.close()
+
+
 def test_week_requests_are_validated_capped_and_public_over_http(tmp_path: Path):
     fake = FakeBase()
     mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))

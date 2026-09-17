@@ -132,7 +132,7 @@ the Episodes page offers "Add this week" to everyone:
    open Episodes page.
 3. The frozen universe is `MARKET_REPLAY_WEEK_MAX_PAIRS` pools (default 16) that were already
    trading before the week; the request budget is `MARKET_REPLAY_WEEK_MAX_REQUESTS` (default
-   20,000); log ranges start at `MARKET_REPLAY_WEEK_LOG_CHUNK` blocks (capped to the provider's
+   40,000; raising it applies to the week in flight); log ranges start at `MARKET_REPLAY_WEEK_LOG_CHUNK` blocks (capped to the provider's
    `eth_getLogs` limit: 1,000 on Coinbase Developer Platform, 2,000 on Alchemy) and halve on
    provider errors. Retry backoff never sleeps past the slice deadline.
 4. When the collector finishes, the pack is validated (every on-chain checkpoint must
