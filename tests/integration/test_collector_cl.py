@@ -413,3 +413,25 @@ def test_activity_scan_batches_pool_ids_so_no_filter_exceeds_the_request_body_ca
     assert res["status"] == "pack_built", res
     assert seen and max(seen) == 1  # every activity filter carried a single pool id
     assert any("activity scan before the window" in line for line in res["decision_log"])
+
+
+@pytest.mark.parametrize("protocol", ["uniswap_v4", "uniswap_v3"])
+def test_window_launches_join_the_universe_at_their_kth_swap(tmp_path: Path, protocol: str):
+    fake = FakePoolManager(protocol=protocol)
+    # one established pool (active before the window) plus launches from inside the period that reached 1 swap
+    cfg = write_cfg(tmp_path, protocol=protocol, selection_rule="active_before_window_plus_window_launches_v1", activity_lookback_blocks=3000, max_pairs=2, max_launches=1, launch_min_swaps=1)
+    res = run_collection(cfg, tmp_path, transport=httpx.MockTransport(fake.handle), rpc_url_override="http://fake-rpc.local", sleep=lambda s: None)
+    assert res["status"] == "pack_built", res
+    pack = Pack.load(res["pack_dir"])
+    third_addr = POOL_ID3 if protocol == "uniswap_v4" else POOL_V3_3
+    first_addr = POOL_ID if protocol == "uniswap_v4" else POOL_V3
+    keys = {p.address: p for p in pack.pools.values()}
+    assert set(keys) == {first_addr, third_addr}
+    launch = keys[third_addr]
+    activation_block = ANCHOR_BLOCK + 100 + 2  # its first (k=1) swap
+    assert launch.discovery_available_utc_ms == fake.ts(activation_block) * 1000 + 4000
+    assert launch.created_time_utc_ms == fake.ts(ANCHOR_BLOCK + 100) * 1000
+    assert keys[first_addr].discovery_available_utc_ms == fake.ts(fake.created) * 1000 + 4000
+    assert any("window launches: 1 of" in line for line in res["decision_log"])
+    assert pack.manifest.universe.selection_rule_version == "active_before_window_plus_window_launches_v1"
+    assert pack.validation["resulting_qualification"] == "research"

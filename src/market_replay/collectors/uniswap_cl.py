@@ -77,6 +77,30 @@ DYNAMIC_FEE_FLAG = 0x800000  # v4 LPFeeLibrary.DYNAMIC_FEE_FLAG: the hook sets t
 
 
 # ---------------------------------------------------------------------- normalizer
+RULE_EARLIEST = "earliest_created_wrapped_native_pairs_v1"
+RULE_ACTIVE = "active_before_window_earliest_created_v1"
+RULE_LAUNCHES = "active_before_window_plus_window_launches_v1"
+SELECTION_RULES = frozenset({RULE_EARLIEST, RULE_ACTIVE, RULE_LAUNCHES})
+
+
+def count_window_swaps(scan_counts, launch_candidates: list[tuple[str, dict[str, Any]]], k: int, blocks: dict[str, int], is_v4: bool, emitter: str) -> dict[str, list[int]]:
+    """Activation (block, log index) of every launch candidate that reached ``k`` swaps inside the period.
+    v4: one unfiltered Swap scan of the PoolManager over the period (pool ids come from topic 1); v3:
+    address-batched Swap scans over the candidate pools."""
+    wanted = {a for a, _ in launch_candidates}
+    if not wanted:
+        return {}
+    if is_v4:
+        counts = scan_counts("launches", address=emitter, topics=[TOPIC_V4_SWAP], start=blocks["period_start"], end_exclusive=blocks["period_end"], pool_of=lambda lg: lg["topics"][1].lower(), wanted=wanted, k=k)
+    else:
+        counts = {}
+        ids = sorted(wanted)
+        for bi in range(0, len(ids), ACTIVITY_BATCH):
+            batch = ids[bi : bi + ACTIVITY_BATCH]
+            counts.update(scan_counts(f"launches:b{bi // ACTIVITY_BATCH}", address=batch, topics=[TOPIC_V3_SWAP], start=blocks["period_start"], end_exclusive=blocks["period_end"], pool_of=lambda lg: lg["address"].lower(), wanted=set(batch), k=k))
+    return {pid: [row[1], row[2]] for pid, row in counts.items() if row[0] >= k}
+
+
 def normalize_cl_logs(logs: list[dict[str, Any]], *, protocol: str, pool_key: str, fee_pips: int, block_time_ms) -> list[dict[str, Any]]:
     """Turn raw Initialize/ModifyLiquidity/Mint/Burn/Swap logs into ``cl_init``/``cl_modify``/``cl_swap`` rows.
 
@@ -273,6 +297,37 @@ def run_cl_collection(
                 progress["chunks"] += 1
             return logs_file.read()
 
+        def scan_counts(key: str, *, address: str | list[str] | None, topics: list[Any], start: int, end_exclusive: int, pool_of, wanted: set[str], k: int) -> dict[str, list[int]]:
+            """Forward scan that keeps no logs: per wanted pool, the swap count and the block / log index of
+            its k-th swap. Checkpointed per chunk; halved on provider error (unfiltered ranges are dense)."""
+            cur = int(ck.get(key + ":cursor", start))
+            counts: dict[str, list[int]] = ck.get(key + ":counts", {})  # pool -> [count, kth_block, kth_log_index]
+            c = chunk
+            while cur < end_exclusive:
+                slice_check()
+                to_b = min(cur + c - 1, end_exclusive - 1)
+                try:
+                    logs = rpc.get_logs(address=address, topics=topics, from_block=cur, to_block=to_b)
+                except ProviderError as e:
+                    if c > 50:
+                        c //= 2
+                        note(f"{key} chunk reduced to {c} after provider error ({str(e)[:60]})")
+                        continue
+                    raise
+                for lg in sorted(logs, key=lambda l: (hex_to_int(l["blockNumber"]), hex_to_int(l["logIndex"]))):
+                    pid = pool_of(lg)
+                    if pid not in wanted:
+                        continue
+                    row = counts.setdefault(pid, [0, 0, 0])
+                    row[0] += 1
+                    if row[0] == k:
+                        row[1], row[2] = hex_to_int(lg["blockNumber"]), hex_to_int(lg["logIndex"])
+                cur = to_b + 1
+                ck.set(key + ":cursor", cur)
+                ck.set(key + ":counts", counts)
+                progress["chunks"] += 1
+            return counts
+
         # 4. Pool creation / initialization logs over the discovery window, chunked and checkpointed
         pools: dict[str, dict[str, Any]] = {}
         if is_v4:
@@ -303,14 +358,17 @@ def run_cl_collection(
                 in_scope.append((a, m))
         max_pairs = int(cfg.get("max_pairs", 3))
         rule = str(cfg.get("selection_rule", "earliest_created_wrapped_native_pairs_v1"))
+        if rule not in SELECTION_RULES:
+            raise CollectionBlocked(f"unknown selection rule {rule!r}; one of {sorted(SELECTION_RULES)}")
         inactive_out: list[dict[str, Any]] = []
-        if rule == "active_before_window_earliest_created_v1":
+        launch_candidates = [(a, m) for a, m in in_scope if m["created_block"] >= blocks["period_start"]]
+        if rule in (RULE_ACTIVE, RULE_LAUNCHES):
             # Activity strictly before the prehistory window is a fact known at the window start; it never
             # depends on what happens during the period. One Swap scan over the discovery range.
             act_key = "active_before_window"
             active = ck.get(act_key)
             if active is None:
-                ids = [a for a, _ in in_scope]
+                ids = [a for a, m in in_scope if m["created_block"] < blocks["prehistory_start"]]  # a pool cannot trade before it exists
                 lookback = int(cfg.get("activity_lookback_blocks", 0))
                 first = blocks["discovery_start"] if lookback <= 0 else max(blocks["discovery_start"], blocks["prehistory_start"] - lookback)
                 found: set[str] = set()
@@ -331,11 +389,34 @@ def run_cl_collection(
             active_set = set(active)
             inactive_out = [{"pool": a, "reason": "no swap observed before the window start under the frozen activity rule"} for a, _ in in_scope if a not in active_set]
             in_scope = [(a, m) for a, m in in_scope if a in active_set]
-        selected = in_scope[:max_pairs]
-        sampled_out = [{"pool": a, "reason": f"beyond max_pairs under frozen rule {rule}"} for a, _ in in_scope[max_pairs:]] + inactive_out
+        launch_activation: dict[str, int] = {}
+        if rule == RULE_LAUNCHES:
+            # Established pools (active before the window) share the universe with launches from inside the
+            # window. A launch enters the universe, and becomes discoverable, at its k-th swap: creation
+            # order alone would fill the set with pools that never trade, and any rule that looked further
+            # ahead than the pool's own first k swaps would leak the future into the selection.
+            max_launches = int(cfg.get("max_launches", max_pairs // 2))
+            k = int(cfg.get("launch_min_swaps", 20))
+            established = in_scope[: max_pairs - max_launches]
+            activation = ck.get("launch_activation")
+            if activation is None:
+                activation = count_window_swaps(scan_counts, launch_candidates, k, blocks, is_v4, emitter)
+                ck.set("launch_activation", activation)
+                note(f"window launches: {len(activation)} of {len(launch_candidates)} pools created inside the period reached {k} swaps")
+            ranked = sorted(activation.items(), key=lambda kv: (kv[1][0], kv[1][1], kv[0]))[:max_launches]
+            by_id = dict(launch_candidates)
+            launches = [(a, by_id[a]) for a, _ in ranked if a in by_id]
+            launch_activation = {a: int(activation[a][0]) for a, _ in launches}
+            selected = established + launches
+            chosen = {a for a, _ in selected}
+            sampled_out = [{"pool": a, "reason": f"beyond max_pairs under frozen rule {rule}"} for a, _ in in_scope if a not in chosen] + inactive_out
+            sampled_out += [{"pool": a, "reason": f"launch did not reach {k} swaps inside the period, or later than the first {max_launches} that did"} for a, _ in launch_candidates if a not in chosen]
+        else:
+            selected = in_scope[:max_pairs]
+            sampled_out = [{"pool": a, "reason": f"beyond max_pairs under frozen rule {rule}"} for a, _ in in_scope[max_pairs:]] + inactive_out
         if ck.get("selection") is None:
-            ck.set("selection", {"candidates": len(candidates), "in_scope": len(in_scope), "selected": [a for a, _ in selected], "rule": rule})
-            note(f"universe frozen: {len(candidates)} candidates, {len(in_scope)} in scope after rule {rule}, {len(selected)} selected")
+            ck.set("selection", {"candidates": len(candidates), "in_scope": len(in_scope), "selected": [a for a, _ in selected], "launches": sorted(launch_activation), "rule": rule})
+            note(f"universe frozen: {len(candidates)} candidates, {len(in_scope)} in scope after rule {rule}, {len(selected)} selected ({len(launch_activation)} launches from inside the period)")
         # 6. Events and initial state per selected pool
         assets: dict[str, dict[str, Any]] = ck.get("assets", {})
         pools_out: list[dict[str, Any]] = []
@@ -455,7 +536,7 @@ def run_cl_collection(
                     "hooks": meta["hooks"],
                     "created_block": meta["created_block"],
                     "created_time_utc_ms": block_time_ms(meta["created_block"]),
-                    "discovery_available_utc_ms": block_time_ms(meta["created_block"]) + delay_ms,
+                    "discovery_available_utc_ms": block_time_ms(launch_activation.get(addr, meta["created_block"])) + delay_ms,
                     "initial_reserve0": None,
                     "initial_reserve1": None,
                     "initial_sqrt_price_x96": init_sqrt,
@@ -486,8 +567,8 @@ def run_cl_collection(
         cov_intervals = []
         for p in pools_out:
             if p["supported_by_clmm"]:
-                cov_intervals.append({"object_ref": p["key"], "field": "swaps", "start_utc_ms": block_time_ms(blocks["prehistory_start"]), "end_utc_ms": block_time_ms(blocks["period_end"]), "state": "completed_and_checked" if not ledger.pending(p["key"], "swaps") else "partial", "evidence": "eth_getLogs ranges returned without truncation error; provider indexing completeness not independently established"})
-                cov_intervals.append({"object_ref": p["key"], "field": "liquidity", "start_utc_ms": p["created_time_utc_ms"], "end_utc_ms": block_time_ms(blocks["period_end"]), "state": "completed_and_checked" if not ledger.pending(p["key"], "liquidity") else "partial", "evidence": "liquidity events fetched from pool creation so the tick map at the window start is complete"})
+                cov_intervals.append({"object_ref": p["key"], "field": "swaps", "start_utc_ms": block_time_ms(blocks["prehistory_start"]), "end_utc_ms": block_time_ms(blocks["period_end"]), "state": "completed_and_checked" if not ledger.pending(p["key"], "events") else "partial", "evidence": "eth_getLogs ranges returned without truncation error; provider indexing completeness not independently established"})
+                cov_intervals.append({"object_ref": p["key"], "field": "liquidity", "start_utc_ms": p["created_time_utc_ms"], "end_utc_ms": block_time_ms(blocks["period_end"]), "state": "completed_and_checked" if not ledger.pending(p["key"], "events") else "partial", "evidence": "liquidity events fetched from pool creation so the tick map at the window start is complete"})
         coverage = {"schema": "coverage_v1", "basis": "evm_rpc_logs", "intervals": cov_intervals, "ledger": ledger.rows, "interval_check": interval_check, "budget": budget.as_dict(), "unsupported_events": []}
         from ..datasets.builder import build_pack, make_period
         from ..datasets.execution_params import historical_research_params
