@@ -20,7 +20,7 @@ from market_replay.datasets.validator import reconcile_no_agent, validate_pack
 from market_replay.domain.models import Rights, Universe
 from market_replay.domain.status import DataOrigin, OrderState, PoolModel, TokenBehavior, UseStatus
 from market_replay.engine.session import Session
-from market_replay.engine.simulation import Simulation, SubmitRejected
+from market_replay.engine.simulation import HOOKED_LAUNCH_WINDOW_MS, Simulation, SubmitRejected
 from market_replay.venues.clmm.math import Q96
 from market_replay.venues.clmm.pool import ClPoolState
 
@@ -323,6 +323,11 @@ def test_pool_initialized_inside_window_becomes_tradable_after_cl_init(cl_pack: 
     assert isinstance(pool, ClPoolState) and pool.liquidity == L1 and pool.fee_pips == FEE2
     # the dynamic-fee swap was replayed with the row's fee, so private == reference
     assert cl_fields(pool) == cl_fields(sim.ref_pools[POOL2])
+    # a hooked pool offers no route inside its launch window (MEV modules), then trades normally
+    with pytest.raises(SubmitRejected) as e:
+        sim.quote(POOL2, WETH, 10**15)
+    assert e.value.code == "NO_ROUTE" and "launch window" in e.value.message
+    sim.process_until(init_ms + HOOKED_LAUNCH_WINDOW_MS)
     q = sim.quote(POOL2, WETH, 10**15)
     assert q.amount_out == pool.copy().quote(WETH, 10**15).amount_out > 0
 

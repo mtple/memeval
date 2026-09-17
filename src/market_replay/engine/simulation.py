@@ -86,6 +86,9 @@ def cl_state_from_pool(meta) -> ClPoolState | None:
     )
 
 
+HOOKED_LAUNCH_WINDOW_MS = 120_000  # no fills on a hooked v4 pool in its first two minutes (launch MEV modules)
+
+
 class SimulationError(RuntimeError):
     pass
 
@@ -636,7 +639,20 @@ class Simulation:
             raise SubmitRejected("MISSING_DATA", "pool has no executable initial state in this pack")
         if pool.halted:
             raise SubmitRejected("NO_ROUTE", "no modeled route: pool trading is halted")
+        launch = self._launch_window_reason(pool_key, self.now_ms)
+        if launch:
+            raise SubmitRejected("NO_ROUTE", f"no modeled route: {launch}")
         return pool
+
+    def _launch_window_reason(self, pool_key: str, t: int) -> str | None:
+        """Hooked v4 pools (Clanker and similar launchers) run MEV modules right after initialization:
+        a block delay or a sniper auction with fees decaying from about 80%. Neither is modelled, so
+        the engine offers no route in that window instead of pretending a plain fill was possible."""
+        meta = self.pool_meta.get(pool_key)
+        init = self.cl_init_ms.get(pool_key)
+        if meta is None or not meta.hooks or init is None or t >= init + HOOKED_LAUNCH_WINDOW_MS:
+            return None
+        return f"hooked pool inside its launch window ({HOOKED_LAUNCH_WINDOW_MS // 1000} s after initialization; MEV module semantics not modelled)"
 
     def _capacity_check(self, pool: PoolState, asset_in: str, amount_in: int, out: int) -> tuple[bool, str | None]:
         """Capacity profile on the pool depth (``depth_for``).
@@ -815,6 +831,10 @@ class Simulation:
             return
         if pool.halted:
             self._revert(order, t, block, "NO_ROUTE: pool halted at inclusion")
+            return
+        launch = self._launch_window_reason(order.pool, t)
+        if launch:
+            self._revert(order, t, block, f"NO_ROUTE: {launch}")
             return
         blocked = pool.transfer_blocked(order.asset_in, "sell") or pool.transfer_blocked(order.asset_out, "buy")
         if blocked:
