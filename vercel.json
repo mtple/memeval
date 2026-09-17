@@ -10,13 +10,41 @@
       "excludeFiles": "{tests/**,apps/**,node_modules/**,data/**,docs/**,fixtures/**,collection/**,schemas/**,scripts/**,.venv/**,**/*.png}"
     }
   },
-  "crons": [{ "path": "/api/v1/weeks/tick", "schedule": "* * * * *" }],
+  "crons": [
+    {
+      "path": "/api/v1/weeks/tick",
+      "schedule": "* * * * *"
+    }
+  ],
   "rewrites": [
-    { "source": "/api/v1/:path*", "destination": "/api/index" },
-    { "source": "/agent/:path*", "destination": "/api/index" },
-    { "source": "/skill.md", "destination": "/api/index" },
-    { "source": "/join", "destination": "/api/index" },
-    { "source": "/skill/:path*", "destination": "/api/index" },
-    { "source": "/((?!api/|agent/|assets/|skill/|skill\\.md|join$).*)", "destination": "/index.html" }
-  ]
+    {
+      "source": "/api/v1/:path*",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/agent/:path*",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/skill.md",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/join",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/skill/:path*",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/((?!api/|agent/|assets/|skill/|skill\\.md|join$).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "status-probe": false
+    }
+  }
 }
