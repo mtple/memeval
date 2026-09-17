@@ -91,9 +91,10 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' || github.event.deployment.environment == 'Production' }}
         run: |
           set -u
-          enabled=$(curl -sS -m 60 "$BASE/api/v1/weeks" | jq -r .enabled)
-          echo "real weeks enabled: $enabled"
-          [ "$enabled" = "true" ] || { echo "RPC_URL not visible to the function; skipping"; exit 0; }
+          listing=$(curl -sS -m 60 "$BASE/api/v1/weeks")
+          echo "$listing" | jq -c '{enabled, paused, usage}'
+          [ "$(echo "$listing" | jq -r .enabled)" = "true" ] || { echo "RPC_URL not visible to the function; skipping"; exit 0; }
+          [ "$(echo "$listing" | jq -r .paused)" = "false" ] || { echo "collection is paused (MARKET_REPLAY_WEEKS_RESUME is not 1); not requesting anything"; exit 0; }
           week=$(python3 -c "
           import datetime as dt
           today = dt.datetime.now(dt.timezone.utc).date()

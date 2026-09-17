@@ -291,7 +291,15 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
 
     @app.get("/api/v1/weeks")
     def list_weeks(role: str = Depends(public_read)) -> dict[str, Any]:
-        return {"enabled": bool(manager.weeks and manager.weeks.enabled), "items": manager.weeks.jobs(role) if manager.weeks else []}
+        import os
+
+        w = manager.weeks
+        return {
+            "enabled": bool(w and w.enabled),
+            "paused": os.environ.get("MARKET_REPLAY_WEEKS_RESUME") != "1",
+            "usage": w.usage() if w else None,
+            "items": w.jobs(role) if w else [],
+        }
 
     @app.post("/api/v1/weeks", dependencies=[Depends(public_write("weeks"))], status_code=201)
     def request_week(body: WeekBody, request: Request) -> dict[str, Any]:

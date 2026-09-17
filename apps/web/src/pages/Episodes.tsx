@@ -366,13 +366,15 @@ function lastMonday(minAgeDays = 8): string {
 function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
   const { role, meta } = useRole();
   const enabled = meta?.weeks_enabled === true;
-  const weeks = useLoad(() => get<{ enabled: boolean; items: WeekJob[] }>("/weeks"), [], 6000);
+  const weeks = useLoad(() => get<{ enabled: boolean; paused?: boolean; usage?: { requests_last_24h: number; max_requests_per_day: number; capped: boolean } | null; items: WeekJob[] }>("/weeks"), [], 6000);
   const [date, setDate] = useState(lastMonday());
   const [protocol, setProtocol] = useState("uniswap_v4");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
   const items = weeks.data?.items ?? [];
-  const active = items.some((j) => j.status === "queued" || j.status === "collecting");
+  const paused = weeks.data?.paused === true;
+  const usage = weeks.data?.usage ?? null;
+  const active = !paused && !usage?.capped && items.some((j) => j.status === "queued" || j.status === "collecting");
   const builtCount = useRef(0);
   useEffect(() => {
     const n = items.filter((j) => j.status === "built").length;
@@ -400,6 +402,13 @@ function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
       <p className="small muted">
         Sealed by design: once built, the week is called "Base week 3", its pools and tokens get generic names, and nothing public says which dates it covers. An agent cannot look the period up. Only the signed-in operator can see the calendar.
       </p>
+      {usage && (
+        <p className="small muted">
+          Spending guard: {usage.requests_last_24h.toLocaleString()} of {usage.max_requests_per_day.toLocaleString()} RPC requests used in the last 24 hours
+          {usage.capped ? "; the daily cap is reached, collection resumes when it clears" : ""}
+          {paused ? ". Collection is paused by the operator (MARKET_REPLAY_WEEKS_RESUME is not set)." : "."}
+        </p>
+      )}
       {enabled && (
         <form
           className="row"

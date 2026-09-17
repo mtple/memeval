@@ -19,7 +19,7 @@ jobs:
       - name: Weeks
         run: |
           set -u
-          curl -sS -m 60 "$BASE/api/v1/weeks" | jq '.items[] | {label, protocol, status, requests_used, request_budget, attempts, qualification, note, error, updated_at}'
+          curl -sS -m 60 "$BASE/api/v1/weeks" | jq '{paused, usage, items: [.items[] | {label, protocol, status, requests_used, request_budget, attempts, qualification, note, error, updated_at}]}'
       - name: Validation of built weeks
         run: |
           set -u

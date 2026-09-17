@@ -52,6 +52,7 @@ class WeekJobs:
         log_chunk_blocks: int = 10000,
         max_pairs: int = 16,
         max_jobs_per_day: int = 3,
+        max_requests_per_day: int = 15000,
         selection_rule: str = "active_before_window_earliest_created_v1",
         transport: httpx.BaseTransport | None = None,
         sleep=None,
@@ -70,6 +71,7 @@ class WeekJobs:
         self.log_chunk_blocks = log_chunk_blocks
         self.max_pairs = max_pairs
         self.max_jobs_per_day = max_jobs_per_day
+        self.max_requests_per_day = max_requests_per_day
         self.selection_rule = selection_rule
         self.transport = transport
         self.sleep = sleep
@@ -221,8 +223,20 @@ class WeekJobs:
         return str(pack["use_status"]) if pack else None
 
     # ------------------------------------------------------------------ slices
+    def requests_today(self) -> int:
+        """RPC requests spent by every week in the last 24 hours (the operator's bill is per request)."""
+        return self.m.store.week_requests_since(time.time() - 86400)
+
+    def usage(self) -> dict[str, Any]:
+        used = self.requests_today()
+        return {"requests_last_24h": used, "max_requests_per_day": self.max_requests_per_day, "capped": used >= self.max_requests_per_day}
+
     def tick(self, slice_seconds: float | None = None) -> dict[str, Any]:
         """Advance the oldest unfinished job by one time slice. Safe to call from anywhere, any time."""
+        usage = self.usage()
+        if usage["capped"]:
+            # The rolling daily cap is the spending limit: nothing is requested until it clears.
+            return {"advanced": None, "capped": True, "usage": usage, "pending": sum(1 for r in self.m.store.week_jobs() if r["status"] in RESUMABLE)}
         pending = [r for r in self.m.store.week_jobs() if r["status"] in RESUMABLE]
         if not pending:
             stale = self._stale_job()
@@ -279,6 +293,7 @@ class WeekJobs:
         res = run_collection(cfg_path, data_dir, transport=self.transport, rpc_url_override=self.rpc_url, sleep=self.sleep, deadline=time.monotonic() + slice_seconds, store_bodies=False, budget_used=int(row["requests_used"]))
         status = res["status"]
         used = int(res.get("budget", {}).get("requests", row["requests_used"]))
+        self.m.store.log_week_requests(row["job_id"], time.time(), used - int(row["requests_used"]))
         log = res.get("decision_log") or []
         note = log[-1] if log else status
         fields: dict[str, Any] = {"requests_used": used, "note": note[:400], "updated_at": now_iso(), "lease_until": None}

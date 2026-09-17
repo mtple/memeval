@@ -159,7 +159,40 @@ def test_a_raised_request_budget_applies_to_the_week_in_flight(tmp_path: Path):
     mgr.close()
 
 
-def test_week_requests_are_validated_capped_and_public_over_http(tmp_path: Path):
+def test_daily_request_cap_stops_ticks_and_is_visible(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("MARKET_REPLAY_WEEKS_RESUME", "1")
+    fake = FakeBase()
+    mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))
+    mgr.weeks.max_requests_per_day = 30
+    mgr.weeks.request(PERIOD_START, PERIOD_END)
+    out = mgr.weeks.tick(slice_seconds=0.001)
+    assert out["advanced"] is not None and mgr.weeks.requests_today() > 0
+    for _ in range(60):
+        out = mgr.weeks.tick(slice_seconds=0.001)
+        if out.get("capped"):
+            break
+    assert out.get("capped") is True and out["usage"]["requests_last_24h"] >= 30
+    c = TestClient(create_app(mgr, "adm_w"))
+    listing = c.get("/api/v1/weeks").json()
+    assert listing["usage"]["capped"] is True and listing["paused"] is False
+    assert c.post("/api/v1/weeks/tick").json()["capped"] is True
+    mgr.close()
+
+
+def test_collection_is_paused_until_the_operator_resumes(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("MARKET_REPLAY_WEEKS_RESUME", raising=False)
+    fake = FakeBase()
+    mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))
+    mgr.weeks.request(PERIOD_START, PERIOD_END)
+    c = TestClient(create_app(mgr, "adm_w"))
+    assert c.post("/api/v1/weeks/tick").json() == {"advanced": None, "paused": True, "pending": 0}
+    assert c.get("/api/v1/weeks").json()["paused"] is True
+    assert fake.calls == 0  # not one request left the server
+    mgr.close()
+
+
+def test_week_requests_are_validated_capped_and_public_over_http(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("MARKET_REPLAY_WEEKS_RESUME", "1")
     fake = FakeBase()
     mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))
     mgr.weeks.max_jobs_per_day = 1
@@ -184,7 +217,8 @@ def test_weeks_are_disabled_without_an_endpoint(tmp_path: Path):
     mgr = RunManager(data_dir=tmp_path / "data")
     mgr.weeks = WeekJobs(mgr, rpc_url=None)
     c = TestClient(create_app(mgr, "adm_w"))
-    assert c.get("/api/v1/weeks").json() == {"enabled": False, "items": []}
+    listing = c.get("/api/v1/weeks").json()
+    assert listing["enabled"] is False and listing["items"] == [] and listing["usage"]["requests_last_24h"] == 0
     assert c.post("/api/v1/weeks", json={"week_start": "2025-09-01"}).status_code == 503
     assert c.get("/api/v1/meta").json()["weeks_enabled"] is False
     mgr.close()

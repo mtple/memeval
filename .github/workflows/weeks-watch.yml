@@ -20,6 +20,7 @@ jobs:
           set -u
           list=$(curl -sS -m 60 "$BASE/api/v1/weeks") || { echo "server unreachable"; exit 0; }
           echo "$list" | jq -c '{enabled, items: [.items[] | {label, status, requests_used, request_budget, attempts, error}]}'
+          [ "$(echo "$list" | jq -r .paused)" = "false" ] || { echo "collection is paused"; exit 0; }
           pending=$(echo "$list" | jq '[.items[] | select(.status=="queued" or .status=="collecting")] | length')
           [ "$pending" -gt 0 ] || { echo "nothing pending"; exit 0; }
           for i in $(seq 1 7); do

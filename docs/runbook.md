@@ -144,6 +144,12 @@ the Episodes page offers "Add this week" to everyone:
    the venue for v3/v4, e.g. "Base week 2, v4 pools"). Dates stay sealed: only the signed-in
    operator's views carry the calendar. Failures show their reason on the Episodes page.
 
+Spending guard: collection is **paused until `MARKET_REPLAY_WEEKS_RESUME=1`** is set on the
+server, and a rolling cap of `MARKET_REPLAY_WEEK_MAX_REQUESTS_PER_DAY` RPC requests (default
+15,000) stops every tick once reached. Both show on the Episodes page and in `GET /api/v1/weeks`.
+A full v4 week costs roughly 12,000 to 16,000 requests, a v2 week under 1,000; check what your
+RPC provider charges per request before resuming.
+
 Watching a collection from outside: push anything to the `status-probe` branch (Vercel never
 deploys it, see `vercel.json`) and read the `status` workflow's log; it prints every week job,
 the validation report of every built week and the leaderboard categories. Every production

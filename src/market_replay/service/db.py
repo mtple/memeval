@@ -146,6 +146,12 @@ CREATE TABLE IF NOT EXISTS week_job_files (
   updated_at TEXT NOT NULL,
   PRIMARY KEY (job_id, path)
 );
+CREATE TABLE IF NOT EXISTS week_request_log (
+  job_id TEXT NOT NULL,
+  ts DOUBLE PRECISION NOT NULL,
+  requests INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS week_request_log_ts ON week_request_log (ts);
 CREATE TABLE IF NOT EXISTS rate_events (
   kind TEXT NOT NULL,
   key TEXT NOT NULL,
@@ -154,7 +160,7 @@ CREATE TABLE IF NOT EXISTS rate_events (
 CREATE INDEX IF NOT EXISTS rate_events_kind_key_ts ON rate_events (kind, key, ts);
 """
 
-TABLES = ("packs", "agents", "runs", "traces", "docs", "usage", "comparisons", "studies", "suite_runs", "attempts", "rate_events", "pack_archives", "week_jobs", "week_job_files")
+TABLES = ("packs", "agents", "runs", "traces", "docs", "usage", "comparisons", "studies", "suite_runs", "attempts", "rate_events", "pack_archives", "week_jobs", "week_job_files", "week_request_log")
 
 
 def today_key() -> str:
@@ -372,6 +378,14 @@ class BaseStore:
 
     def delete_week_job_files(self, job_id: str) -> None:
         self.execute("DELETE FROM week_job_files WHERE job_id=?", (job_id,))
+
+    def log_week_requests(self, job_id: str, ts: float, requests: int) -> None:
+        if requests > 0:
+            self.execute("INSERT INTO week_request_log (job_id, ts, requests) VALUES (?, ?, ?)", (job_id, ts, requests))
+
+    def week_requests_since(self, ts: float) -> int:
+        row = self.one("SELECT COALESCE(SUM(requests), 0) AS n FROM week_request_log WHERE ts >= ?", (ts,))
+        return int(row["n"]) if row else 0
 
     def week_jobs_created_since(self, iso: str) -> int:
         row = self.one("SELECT COUNT(*) AS n FROM week_jobs WHERE created_at>=?", (iso,))
