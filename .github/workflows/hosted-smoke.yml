@@ -115,6 +115,16 @@ jobs:
             [ "$st" -gt 0 ] || break
           done
           curl -sS -m 60 "$BASE/api/v1/weeks" | jq '.items[] | {label, status, requests_used, request_budget, attempts, note, error}'
+      - name: Agent runs every built real week through the skill script
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event.deployment.environment == 'Production' }}
+        run: |
+          set -u
+          curl -sSfO "$BASE/skill/market_replay_agent.py"
+          for pid in $(curl -sS -m 60 "$BASE/api/v1/weeks" | jq -r '.items[] | select(.status=="built" and .qualification=="research") | .pack_id'); do
+            echo "== running on $pid"
+            python3 market_replay_agent.py --server "$BASE" --agent smoke-real-week-bot --version 1 --pack "$pid" | tee "run_$pid.txt"
+            grep -q "finished at" "run_$pid.txt" || { echo "run on $pid did not finish"; exit 1; }
+          done
       - name: Validation report of every built week
         if: ${{ github.event_name == 'workflow_dispatch' || github.event.deployment.environment == 'Production' }}
         run: |
