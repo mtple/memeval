@@ -484,10 +484,10 @@ def run_cl_collection(
                     "unsupported_reason": None if supported else "pool never initialized",
                 }
             )
-        # 7-10. Build pack. The validator has no CL reconciliation yet: pools are flagged supported_by_clmm only,
-        # so the CPMM mechanics gate passes and the no-agent reconciliation reports zero checkpoints.
+        # 7-10. Build pack. Pools are flagged supported_by_clmm only: the CLMM adapter serves them and the
+        # validator reconciles every cl_swap against the v3 swap loop (sqrt price, liquidity, tick).
         if ck.get("clmm_note") is None:
-            note("pools are supported_by_clmm=True and supported_by_cpmm=False: the mechanics gate passes, the CPMM validator reconciles zero checkpoints and, with no CPMM-executable pool, its execution_state gate downgrades the pack to diagnostic_only until CL reconciliation is added to the engine")
+            note("pools are supported_by_clmm=True and supported_by_cpmm=False: served by the CLMM adapter; the validator replays every cl_swap as a reconciliation checkpoint (sqrt price, liquidity, tick) and applies cl_modify/cl_init rows")
             ck.set("clmm_note", True)
         tape.sort(key=lambda r: (r["block"], r["log_index"], r["seq"]))
         for i, r in enumerate(tape, start=1):

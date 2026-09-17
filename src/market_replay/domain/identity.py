@@ -86,7 +86,7 @@ class AliasMap:
     as ``CASH`` or ``NATIVE``; every other object receives a random alias.
     """
 
-    KINDS = ("asset", "pool", "wallet", "tx")
+    KINDS = ("asset", "pool", "wallet", "tx", "hook")
 
     def __init__(self, mask_seed: str, numeraire_key: str | None = None, numeraire_alias: str = "CASH") -> None:
         if not mask_seed:
@@ -132,6 +132,10 @@ class AliasMap:
 
     def tx(self, canonical: str) -> str:
         return self.alias("tx", canonical)
+
+    def hook(self, canonical: str) -> str:
+        """Alias of a v4 hook contract address (an address like any other: never shown raw)."""
+        return self.alias("hook", canonical)
 
     def resolve(self, alias: str) -> tuple[str, str] | None:
         """Reverse lookup. Only aliases already issued by this map resolve; canonical keys never do."""

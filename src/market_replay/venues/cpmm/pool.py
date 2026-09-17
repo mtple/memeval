@@ -66,6 +66,10 @@ class CpmmPoolState:
             return self.reserve1, self.reserve0
         raise CpmmMathError("ASSET_NOT_IN_POOL")
 
+    def depth_for(self, asset_in: str) -> tuple[int, int]:
+        """``(depth_in, depth_out)``: for a CPMM the depth is the reserves themselves (common pool surface)."""
+        return self.reserves_for(asset_in)
+
     def other(self, asset: str) -> str:
         if asset == self.asset0:
             return self.asset1

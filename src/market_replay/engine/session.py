@@ -19,15 +19,14 @@ from ..domain.envelope import Envelope, Quality
 from ..domain.identity import AliasMap, looks_like_canonical
 from ..domain.quantities import QuantityError, fraction_to_decimal_str, parse_raw
 from ..domain.status import (
-    SUPPORTED_CPMM_MODELS,
     AvailabilityBasis,
     Completeness,
     ErrorCode,
-    PoolModel,
 )
 from ..observations.masking import LeakScanner
 from ..observations.store import aggregate_candles, basis_for
-from .simulation import INF, Simulation, SubmitRejected
+from ..venues.clmm.pool import ClPoolState
+from .simulation import INF, Simulation, SubmitRejected, cl_supported, cpmm_supported
 
 TOOLS: dict[str, str] = {
     "session.describe": "Capabilities, limits, relative horizon, numeraire, assumptions and virtual clock.",
@@ -35,7 +34,7 @@ TOOLS: dict[str, str] = {
     "markets.get": "Time-qualified metadata and available current observations for one pool.",
     "market.trades": "Bounded visible trade history ending at or before virtual now.",
     "market.candles": "Generic OHLCV over visible trades with explicit completeness handling.",
-    "market.liquidity": "Current modeled reserve facts for a supported pool (model-labelled).",
+    "market.liquidity": "Current modeled liquidity facts for a supported pool (CPMM reserves, or CL sqrt price / tick / active liquidity / virtual depth; model-labelled).",
     "market.restrictions": "Available individual restriction observations or explicit unknown/unsupported.",
     "broker.quote": "Exact-input simulated quote against the current model state.",
     "broker.submit": "Submit an exact-input simulated swap with min-output, deadline and idempotency key.",
@@ -182,10 +181,13 @@ class Session:
     def _pool_public(self, key: str) -> dict[str, Any]:
         meta = self.pack.pools[key]
         st = self.sim.pools.get(key)
-        supported = meta.supported_by_cpmm and PoolModel(meta.model) in SUPPORTED_CPMM_MODELS and st is not None
+        supported = (cpmm_supported(meta) or cl_supported(meta)) and st is not None
         reason = None
         if not supported:
-            reason = meta.unsupported_reason or ("no executable initial state in this pack" if st is None else "unsupported")
+            if st is None and cl_supported(meta) and self.sim.cl_init_ms.get(key, -INF) > self.now:
+                reason = "pool not yet initialized at the current virtual time"
+            else:
+                reason = meta.unsupported_reason or ("no executable initial state in this pack" if st is None else "unsupported")
         if key in self.sim.fidelity_failed:
             supported = False
             reason = "environment fidelity limit reached for this market"
@@ -194,7 +196,7 @@ class Session:
         if self.pack.numeraire not in (meta.asset0, meta.asset1):
             quote = meta.asset0
             base = meta.asset1
-        return {
+        pub = {
             "pool_id": self.alias.pool(key),
             "venue_model": str(meta.model),
             "execution_supported": supported,
@@ -210,6 +212,14 @@ class Session:
             "age_ms": self.now - self.sim.pool_discovery_ms.get(key, self.now),
             "halted_observed": bool(st.halted) if st is not None else None,
         }
+        # Concentrated-liquidity descriptors (present only when the record carries them).
+        if meta.fee_pips is not None:
+            pub["fee_pips"] = meta.fee_pips
+        if meta.tick_spacing is not None:
+            pub["tick_spacing"] = meta.tick_spacing
+        if meta.hooks is not None:
+            pub["hooks"] = self.alias.hook(meta.hooks)
+        return pub
 
     def _trade_public(self, t, base: str, quote: str) -> dict[str, Any]:
         if t.asset_in == quote:
@@ -620,10 +630,34 @@ class Session:
         key = self._resolve_pool_discovered(args.get("pool_id"))
         meta = self.pack.pools[key]
         st = self.sim.pools.get(key)
-        if st is None or not meta.supported_by_cpmm:
+        if st is None and cl_supported(meta) and self.sim.cl_init_ms.get(key, -INF) > self.now:
+            raise SessionError(ErrorCode.NOT_YET_DISCOVERED, "identifier is not currently discoverable in this session")
+        if st is None or not (cpmm_supported(meta) or cl_supported(meta)):
             raise SessionError(ErrorCode.UNSUPPORTED_CAPABILITY, f"no modeled liquidity for this venue: {meta.unsupported_reason or 'missing state'}")
         if key in self.sim.fidelity_failed:
             raise SessionError(ErrorCode.ENVIRONMENT_FIDELITY_LIMIT, "market left the model's validated domain")
+        if isinstance(st, ClPoolState):
+            x, y = st.virtual_reserves()
+            data = {
+                "pool_id": self.alias.pool(key),
+                "basis": "modeled_private_market_state",
+                "model": str(meta.model),
+                "sqrt_price_x96": str(st.sqrt_price_x96),
+                "tick": st.tick,
+                "liquidity": str(st.liquidity),
+                "virtual_depth": [
+                    {"asset_id": self.alias.asset(st.asset0), "depth_raw": str(x)},
+                    {"asset_id": self.alias.asset(st.asset1), "depth_raw": str(y)},
+                ],
+                "fee_pips": st.fee_pips,
+                "fee": {"numerator": st.fee_num, "denominator": st.fee_den},
+                "tick_spacing": st.tick_spacing,
+                "initialized_ticks_near_price": [{"tick": t, "liquidity_net": str(net)} for t, net, _gross in st.ticks_near(8)],
+                "halted": st.halted,
+                "as_of_ms": self.now,
+                "note": "State is the private model copy after your own fills; virtual_depth is the active tick range only (L*2^96/sqrtP, L*sqrtP/2^96), not the pool's token balances nor router depth.",
+            }
+            return data, self._quality(Completeness.COMPLETE)
         data = {
             "pool_id": self.alias.pool(key),
             "basis": "modeled_private_market_state",

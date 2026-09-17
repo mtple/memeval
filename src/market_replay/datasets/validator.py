@@ -10,8 +10,10 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from ..domain.models import TapeEvent
+from ..domain.models import Pool, TapeEvent
 from ..domain.status import SUPPORTED_CPMM_MODELS, DataOrigin, GateStatus, PoolModel, UseStatus
+from ..venues.clmm.math import ClMathError, get_tick_at_sqrt_ratio
+from ..venues.clmm.pool import SUPPORTED_CLMM_MODELS, ClPoolState
 from ..venues.cpmm.math import CpmmMathError
 from ..venues.cpmm.pool import CpmmPoolState, FidelityLimit
 from .builder import VALIDATOR_VERSION
@@ -24,25 +26,98 @@ def _gate(name: str, status: GateStatus, detail: str, **extra: Any) -> dict[str,
     return d
 
 
+def _cpmm_supported(p: Pool) -> bool:
+    return bool(p.supported_by_cpmm) and PoolModel(p.model) in SUPPORTED_CPMM_MODELS
+
+
+def _cl_supported(p: Pool) -> bool:
+    return bool(p.supported_by_clmm) and str(p.model) in SUPPORTED_CLMM_MODELS
+
+
+def _cl_initial_state(p: Pool) -> ClPoolState | None:
+    """Initial ``ClPoolState`` from the pool record (None when the pool is initialized inside the window)."""
+    if p.initial_sqrt_price_x96 is None:
+        return None
+    sqrt_price = int(p.initial_sqrt_price_x96)
+    tick = p.initial_tick if p.initial_tick is not None else get_tick_at_sqrt_ratio(sqrt_price)
+    return ClPoolState(
+        key=p.key,
+        asset0=p.asset0,
+        asset1=p.asset1,
+        fee_pips=int(p.fee_pips or 0),
+        tick_spacing=int(p.tick_spacing or 1),
+        sqrt_price_x96=sqrt_price,
+        tick=int(tick),
+        liquidity=int(p.initial_liquidity or 0),
+        ticks={int(t): (int(net), int(gross)) for t, net, gross in p.initial_ticks},
+        model=str(p.model),
+    )
+
+
 def reconcile_no_agent(pack: Pack, max_events: int | None = None) -> dict[str, Any]:
-    """Replay the tape with no participant and compare against Sync checkpoints (exact integers)."""
-    pools: dict[str, CpmmPoolState] = {}
+    """Replay the tape with no participant and compare it against the recorded checkpoints (exact integers).
+
+    CPMM pools: every ``sync`` row is a checkpoint (reserves). Concentrated-liquidity pools: every
+    ``cl_swap`` row is a checkpoint (``sqrt_price_x96_after``, ``liquidity_after``, ``tick_after`` after
+    replaying the recorded swap with the v3 swap loop); ``cl_modify`` rows are applied to the tick map
+    and ``cl_init`` rows create pools initialized inside the window.
+    """
+    pools: dict[str, CpmmPoolState | ClPoolState] = {}
+    cl_meta: dict[str, Pool] = {}
+    fidelity: list[dict[str, Any]] = []
     for key, p in pack.pools.items():
-        if not p.supported_by_cpmm or PoolModel(p.model) not in SUPPORTED_CPMM_MODELS:
-            continue
-        if p.initial_reserve0 is None or p.initial_reserve1 is None:
-            continue
-        pools[key] = CpmmPoolState(key=key, asset0=p.asset0, asset1=p.asset1, reserve0=int(p.initial_reserve0), reserve1=int(p.initial_reserve1), fee_num=p.fee_numerator, fee_den=p.fee_denominator, model=PoolModel(p.model))
+        if _cpmm_supported(p):
+            if p.initial_reserve0 is None or p.initial_reserve1 is None:
+                continue
+            pools[key] = CpmmPoolState(key=key, asset0=p.asset0, asset1=p.asset1, reserve0=int(p.initial_reserve0), reserve1=int(p.initial_reserve1), fee_num=p.fee_numerator, fee_den=p.fee_denominator, model=PoolModel(p.model))
+        elif _cl_supported(p):
+            cl_meta[key] = p
+            try:
+                st = _cl_initial_state(p)
+            except ClMathError as e:
+                fidelity.append({"seq": 0, "pool": key, "code": "INITIAL_STATE_INVALID", "message": str(e)})
+                continue
+            if st is not None:
+                pools[key] = st
     checkpoints = 0
     mismatches: list[dict[str, Any]] = []
-    fidelity: list[dict[str, Any]] = []
     ratio_deviations = 0
     rows = pack.tape if max_events is None else pack.tape[:max_events]
     for r in rows:
+        kind = r["kind"]
+        if kind == "cl_init":
+            meta = cl_meta.get(r["pool"])
+            if meta is None or r.get("sqrt_price_x96") is None:
+                continue
+            if r["pool"] in pools:
+                fidelity.append({"seq": r["seq"], "pool": r["pool"], "code": "CL_ALREADY_INITIALIZED", "message": "Initialize for a pool that already has a state; ignored"})
+                continue
+            sqrt_price = int(r["sqrt_price_x96"])
+            tick = r["tick"] if r.get("tick") is not None else get_tick_at_sqrt_ratio(sqrt_price)
+            try:
+                pools[r["pool"]] = ClPoolState(key=meta.key, asset0=meta.asset0, asset1=meta.asset1, fee_pips=int(meta.fee_pips or 0), tick_spacing=int(meta.tick_spacing or 1), sqrt_price_x96=sqrt_price, tick=int(tick), model=str(meta.model))
+            except ClMathError as e:
+                fidelity.append({"seq": r["seq"], "pool": r["pool"], "code": "REFERENCE_INIT_INVALID", "message": str(e)})
+            continue
         pool = pools.get(r["pool"])
         if pool is None:
             continue
-        kind = r["kind"]
+        if isinstance(pool, ClPoolState):
+            if kind == "cl_modify":
+                try:
+                    pool.apply_modify_liquidity(int(r["tick_lower"]), int(r["tick_upper"]), int(r["liquidity_delta"]))
+                except ClMathError as e:
+                    fidelity.append({"seq": r["seq"], "pool": r["pool"], "code": "REFERENCE_MODIFY_INVALID", "message": str(e)})
+            elif kind == "cl_swap":
+                checkpoints += 1
+                try:
+                    rec = pool.apply_recorded_swap(int(r["amount0"]), int(r["amount1"]), int(r["sqrt_price_x96_after"]), int(r["liquidity_after"]), int(r["tick_after"]), r.get("fee_pips"))
+                except ClMathError as e:
+                    fidelity.append({"seq": r["seq"], "pool": r["pool"], "code": "REFERENCE_SWAP_INVALID", "message": str(e)})
+                    continue
+                if rec["sqrt_price_x96"] or rec["liquidity"] or rec["tick"]:
+                    mismatches.append({"seq": r["seq"], "pool": r["pool"], "block": r["block"], "delta_sqrt_price_x96": rec["sqrt_price_x96"], "delta_liquidity": rec["liquidity"], "delta_tick": rec["tick"], "delta_amount0": rec["amount0"], "delta_amount1": rec["amount1"], "mode": rec["mode"]})
+            continue
         if kind == "swap":
             amount_in = int(r["amount_in"])
             rec = r.get("amount_out_recorded")
@@ -75,6 +150,13 @@ def reconcile_no_agent(pack: Pack, max_events: int | None = None) -> dict[str, A
             d0, d1 = pool.reconcile_sync(int(r["reserve0"]), int(r["reserve1"]))
             if d0 or d1:
                 mismatches.append({"seq": r["seq"], "pool": r["pool"], "block": r["block"], "delta0": d0, "delta1": d1})
+    final_reserves = {k: {"reserve0": str(v.reserve0), "reserve1": str(v.reserve1)} for k, v in pools.items() if isinstance(v, CpmmPoolState)}
+    final_cl_state = {
+        k: {"sqrt_price_x96": str(v.sqrt_price_x96), "tick": v.tick, "liquidity": str(v.liquidity), "initialized_ticks": len(v.ticks)}
+        for k, v in pools.items()
+        if isinstance(v, ClPoolState)
+    }
+    final_state = {k: {"model": str(v.model), **(final_reserves.get(k) or final_cl_state.get(k) or {})} for k, v in pools.items()}
     return {
         "checkpoints": checkpoints,
         "mismatches": mismatches[:50],
@@ -82,8 +164,10 @@ def reconcile_no_agent(pack: Pack, max_events: int | None = None) -> dict[str, A
         "fidelity_flags": fidelity[:50],
         "fidelity_flag_count": len(fidelity),
         "recorded_output_below_model_max": ratio_deviations,
-        "final_reserves": {k: {"reserve0": str(v.reserve0), "reserve1": str(v.reserve1)} for k, v in pools.items()},
-        "rounding_rule": "floor division per Uniswap v2 getAmountOut; exact integers",
+        "final_reserves": final_reserves,
+        "final_cl_state": final_cl_state,
+        "final_state": final_state,
+        "rounding_rule": "CPMM: floor division per Uniswap v2 getAmountOut; CL: Uniswap v3 SwapMath/SqrtPriceMath rounding per step; exact integers",
     }
 
 
@@ -162,24 +246,29 @@ def validate_pack(pack: Pack) -> dict[str, Any]:
     executable_failure |= cov_status == GateStatus.FAILED
 
     # 5. Execution state / no-agent reconciliation
-    exec_pools = [p for p in pack.pools.values() if p.supported_by_cpmm and PoolModel(p.model) in SUPPORTED_CPMM_MODELS]
-    missing_state = [p.key for p in exec_pools if p.initial_reserve0 is None or p.initial_reserve1 is None]
+    cpmm_pools = [p for p in pack.pools.values() if _cpmm_supported(p)]
+    cl_pools = [p for p in pack.pools.values() if _cl_supported(p)]
+    exec_pools = cpmm_pools + cl_pools
+    cl_init_on_tape = {r["pool"] for r in pack.tape if r["kind"] == "cl_init"}
+    missing_state = [p.key for p in cpmm_pools if p.initial_reserve0 is None or p.initial_reserve1 is None]
+    missing_state += [p.key for p in cl_pools if p.initial_sqrt_price_x96 is None and p.key not in cl_init_on_tape]
     recon = reconcile_no_agent(pack)
     exec_ok = not missing_state and recon["mismatch_count"] == 0 and recon["fidelity_flag_count"] == 0 and len(exec_pools) > 0
     if m.execution.model == "diagnostic_no_execution":
         gates.append(_gate("execution_state", GateStatus.NOT_APPLICABLE, "diagnostic pack: no execution model claimed", reconciliation=recon))
     else:
         status = GateStatus.PASSED if exec_ok else GateStatus.FAILED
-        detail = f"executable pools={len(exec_pools)} missing_initial_state={len(missing_state)} sync_checkpoints={recon['checkpoints']} mismatches={recon['mismatch_count']} fidelity_flags={recon['fidelity_flag_count']}"
+        detail = f"executable pools={len(exec_pools)} (cpmm={len(cpmm_pools)} cl={len(cl_pools)}) missing_initial_state={len(missing_state)} checkpoints={recon['checkpoints']} mismatches={recon['mismatch_count']} fidelity_flags={recon['fidelity_flag_count']}"
         if exec_ok and recon["checkpoints"] == 0:
             status = GateStatus.WARNING
             detail += "; no checkpoints were reconciled (reconciliation untested for this pack: no external flow in the window)"
-        gates.append(_gate("execution_state", status, detail, reconciliation={k: v for k, v in recon.items() if k != "final_reserves"}, pools_missing_initial_state=missing_state, reconciliation_untested=recon["checkpoints"] == 0))
+        gates.append(_gate("execution_state", status, detail, reconciliation={k: v for k, v in recon.items() if k not in ("final_reserves", "final_cl_state", "final_state")}, pools_missing_initial_state=missing_state, reconciliation_untested=recon["checkpoints"] == 0))
         executable_failure |= not exec_ok
 
-    # 6. Mechanics
-    unsupported_in_adapter = [p.key for p in pack.pools.values() if p.supported_by_cpmm and PoolModel(p.model) not in SUPPORTED_CPMM_MODELS]
-    gates.append(_gate("mechanics", GateStatus.FAILED if unsupported_in_adapter else GateStatus.PASSED, "unsupported pool models are excluded from the CPMM adapter" if not unsupported_in_adapter else f"pools marked supported with unsupported model: {unsupported_in_adapter}", token_behavior_basis=str(m.data.token_behavior_basis), unsupported_pools_kept=len(pack.inventory.get("unsupported", [])) if pack.inventory else 0))
+    # 6. Mechanics: a pool may only claim the adapter that serves its model (CPMM: uniswap_v2_plain /
+    #    fixture_cpmm; CLMM: uniswap_v3_cl / uniswap_v4_cl). A CL model marked supported_by_cpmm fails.
+    unsupported_in_adapter = [p.key for p in pack.pools.values() if (p.supported_by_cpmm and PoolModel(p.model) not in SUPPORTED_CPMM_MODELS) or (p.supported_by_clmm and str(p.model) not in SUPPORTED_CLMM_MODELS)]
+    gates.append(_gate("mechanics", GateStatus.FAILED if unsupported_in_adapter else GateStatus.PASSED, "unsupported pool models are excluded from the CPMM and CLMM adapters" if not unsupported_in_adapter else f"pools marked supported with unsupported model: {unsupported_in_adapter}", token_behavior_basis=str(m.data.token_behavior_basis), unsupported_pools_kept=len(pack.inventory.get("unsupported", [])) if pack.inventory else 0))
     executable_failure |= bool(unsupported_in_adapter)
 
     # 7. Valuation

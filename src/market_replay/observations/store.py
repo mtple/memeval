@@ -30,10 +30,14 @@ class TradeObs:
     asset_out: str
     amount_in: int
     amount_out: int
-    reserve0_after: int
-    reserve1_after: int
+    reserve0_after: int  # CPMM: reserve; CL: virtual depth of the active range (L * 2^96 / sqrtP)
+    reserve1_after: int  # CPMM: reserve; CL: virtual depth of the active range (L * sqrtP / 2^96)
     origin: str  # "external" | "own"
     order_id: str | None = None
+    # concentrated-liquidity fills only
+    sqrt_price_x96_after: int | None = None
+    tick_after: int | None = None
+    liquidity_after: int | None = None
 
 
 @dataclass(slots=True)

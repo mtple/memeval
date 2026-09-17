@@ -28,6 +28,17 @@ class RelEvent:
     payload: dict
     available_ms: int | None  # relative; None -> never published
     availability_basis: str
+    # concentrated liquidity (cl_init / cl_modify / cl_swap); None when the row has no such field.
+    # cl_swap amount0/amount1 are pool deltas (positive = paid into the pool).
+    sqrt_price_x96: int | None = None
+    tick: int | None = None
+    tick_lower: int | None = None
+    tick_upper: int | None = None
+    liquidity_delta: int | None = None
+    sqrt_price_x96_after: int | None = None
+    liquidity_after: int | None = None
+    tick_after: int | None = None
+    fee_pips: int | None = None
     # filled during reference replay: recorded_out / max_out on reference state
     output_ratio: Fraction | None = None
 
@@ -62,6 +73,15 @@ def to_relative(events: list[TapeEvent] | list[dict], start_utc_ms: int) -> list
                 payload=dict(d.get("payload") or {}),
                 available_ms=(int(avail) - start_utc_ms) if avail is not None else None,
                 availability_basis=str(d.get("availability_basis") or "unknown"),
+                sqrt_price_x96=_opt_int(d.get("sqrt_price_x96")),
+                tick=_opt_int(d.get("tick")),
+                tick_lower=_opt_int(d.get("tick_lower")),
+                tick_upper=_opt_int(d.get("tick_upper")),
+                liquidity_delta=_opt_int(d.get("liquidity_delta")),
+                sqrt_price_x96_after=_opt_int(d.get("sqrt_price_x96_after")),
+                liquidity_after=_opt_int(d.get("liquidity_after")),
+                tick_after=_opt_int(d.get("tick_after")),
+                fee_pips=_opt_int(d.get("fee_pips")),
             )
         )
     # Deterministic order: block, log_index, seq. Time must be monotone with block.

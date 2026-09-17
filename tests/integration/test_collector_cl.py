@@ -1,9 +1,12 @@
-"""Concentrated-liquidity collector (v4 PoolManager and v3 factory) against a deterministic fake Base RPC."""
+"""Concentrated-liquidity collector (v4 PoolManager and v3 factory) against a deterministic fake Base RPC.
+
+The fake chain drives a ``ClPoolState`` per pool, so every emitted Swap event carries the amounts,
+sqrt price, liquidity and tick the v3 swap loop produces: the pack it yields reconciles exactly.
+"""
 
 from __future__ import annotations
 
 import json
-import math
 import time
 from pathlib import Path
 
@@ -24,6 +27,7 @@ from market_replay.collectors.evm_rpc import (
 from market_replay.collectors.historical import CollectionBlocked, run_collection
 from market_replay.collectors.uniswap_cl import active_liquidity, fold_tick_map
 from market_replay.datasets.pack import Pack
+from market_replay.venues.clmm.pool import ClPoolState
 
 POOL_MANAGER = "0x498581ff718922c3f8e6a244956af099b2652b2b"
 V3_FACTORY = "0x33128a8fc17869897dce68ed026d694621f6fdfd"
@@ -44,7 +48,7 @@ ANCHOR_TS = 1_756_997_600  # seconds == 2025-09-04T14:53:20Z
 Q96 = 1 << 96
 FEE, SPACING = 10000, 200
 L1, L2 = 10**21, 5 * 10**20
-IN_AMOUNT, OUT_AMOUNT = 10**18, 99 * 10**16
+IN_AMOUNT = 10**18
 
 
 def w(v: int) -> str:
@@ -59,14 +63,11 @@ def topic_int(v: int) -> str:
     return "0x" + w(v)
 
 
-def tick_of(sqrt_price: int) -> int:
-    return math.floor(2 * math.log(sqrt_price / Q96) / math.log(1.0001))
-
-
 class FakePoolManager:
     """One WETH/TOKEN pool with two in-range mints and a deterministic swap sequence, one TOKEN/TOKEN2 pool
     that fails the WETH filter, and one WETH/TOKEN3 pool initialized inside the period. ``protocol``
-    selects whether the same world is emitted as v4 PoolManager logs or v3 factory + pool logs."""
+    selects whether the same world is emitted as v4 PoolManager logs or v3 factory + pool logs. Each
+    pool's events come from a ``ClPoolState`` so the tape is self-consistent under the v3 math."""
 
     def __init__(self, *, protocol: str = "uniswap_v4", fail_first_logs: bool = False, rate_limit_once: bool = False) -> None:
         self.protocol = protocol
@@ -78,49 +79,45 @@ class FakePoolManager:
         self.swaps: list[tuple[int, int, int]] = []  # (block, sqrt_price_x96, tick) for slot0 answers
         created = ANCHOR_BLOCK - 5000
         self.created = created
-        self.sqrt = Q96
-        self.liq = L1 + L2
         tx0 = "0x" + "11" * 32
         # pool 1 (WETH/TOKEN) created before the window, pool 2 (TOKEN/TOKEN2, no WETH leg) right after
-        self.init(POOL_ID, POOL_V3, WETH, TOKEN, created, tx0)
+        world = self.init(POOL_ID, POOL_V3, WETH, TOKEN, created, tx0)
         self.init(POOL_ID2, POOL_V3_2, TOKEN, TOKEN2, created + 1, "0x" + "12" * 32)
-        self.modify(POOL_ID, POOL_V3, created + 2, "0x" + "13" * 32, -20000, 20000, L1)
-        self.modify(POOL_ID, POOL_V3, created + 3, "0x" + "14" * 32, -2000, 2000, L2)
+        self.modify(world, POOL_ID, POOL_V3, created + 2, "0x" + "13" * 32, -20000, 20000, L1)
+        self.modify(world, POOL_ID, POOL_V3, created + 3, "0x" + "14" * 32, -2000, 2000, L2)
         # swaps every 10 blocks from A-3000 to A+1800 (prehistory starts at A-1800, period is [A, A+1800))
         for i, b in enumerate(range(ANCHOR_BLOCK - 3000, ANCHOR_BLOCK + 1800, 10)):
             tx = "0x" + f"{i:064x}"
-            zero_for_one = i % 3 == 0
-            self.sqrt = self.sqrt * 995 // 1000 if zero_for_one else self.sqrt * 1003 // 1000
-            self.swap(POOL_ID, POOL_V3, b, tx, zero_for_one, self.sqrt, self.liq)
+            self.swap(world, POOL_ID, POOL_V3, b, tx, zero_for_one=i % 3 == 0)
             if i == 200:  # block A-1000, inside the prehistory
-                self.modify(POOL_ID, POOL_V3, b, tx + "1", -2000, 2000, -L2 // 10)
-                self.liq -= L2 // 10
+                self.modify(world, POOL_ID, POOL_V3, b, tx + "1", -2000, 2000, -L2 // 10)
         # pool 3 initialized inside the period with one mint and one swap
         b3 = ANCHOR_BLOCK + 100
-        self.init(POOL_ID3, POOL_V3_3, WETH, TOKEN3, b3, "0x" + "15" * 32)
-        self.modify(POOL_ID3, POOL_V3_3, b3 + 1, "0x" + "16" * 32, -1000, 1000, L1)
-        self.swap(POOL_ID3, POOL_V3_3, b3 + 2, "0x" + "17" * 32, True, Q96 * 995 // 1000, L1)
+        world3 = self.init(POOL_ID3, POOL_V3_3, WETH, TOKEN3, b3, "0x" + "15" * 32)
+        self.modify(world3, POOL_ID3, POOL_V3_3, b3 + 1, "0x" + "16" * 32, -1000, 1000, L1)
+        self.swap(world3, POOL_ID3, POOL_V3_3, b3 + 2, "0x" + "17" * 32, zero_for_one=True)
         self.latest = ANCHOR_BLOCK + 5000
 
-    def init(self, pid: str, pool: str, c0: str, c1: str, block: int, tx: str) -> None:
+    def init(self, pid: str, pool: str, c0: str, c1: str, block: int, tx: str) -> ClPoolState:
         if self.v4:
             self.logs.append({"address": POOL_MANAGER, "blockNumber": hex(block), "logIndex": hex(0), "transactionHash": tx, "topics": [TOPIC_V4_INITIALIZE, pid, topic_addr(c0), topic_addr(c1)], "data": "0x" + w(FEE) + w(SPACING) + w(int(HOOKS, 16)) + w(Q96) + w(0)})
         else:
             self.logs.append({"address": V3_FACTORY, "blockNumber": hex(block), "logIndex": hex(0), "transactionHash": tx, "topics": [TOPIC_V3_POOL_CREATED, topic_addr(c0), topic_addr(c1), topic_int(FEE)], "data": "0x" + w(SPACING) + w(int(pool, 16))})
             self.logs.append({"address": pool, "blockNumber": hex(block), "logIndex": hex(1), "transactionHash": tx, "topics": [TOPIC_V3_INITIALIZE], "data": "0x" + w(Q96) + w(0)})
+        return ClPoolState.initialize(pid, c0, c1, FEE, SPACING, Q96)
 
-    def modify(self, pid: str, pool: str, block: int, tx: str, lo: int, hi: int, delta: int) -> None:
+    def modify(self, world: ClPoolState, pid: str, pool: str, block: int, tx: str, lo: int, hi: int, delta: int) -> None:
+        amount0, amount1 = world.apply_modify_liquidity(lo, hi, delta)
         if self.v4:
             self.logs.append({"address": POOL_MANAGER, "blockNumber": hex(block), "logIndex": hex(5), "transactionHash": tx, "topics": [TOPIC_V4_MODIFY_LIQUIDITY, pid, topic_addr(SENDER)], "data": "0x" + w(lo) + w(hi) + w(delta) + w(0)})
         elif delta > 0:
-            self.logs.append({"address": pool, "blockNumber": hex(block), "logIndex": hex(5), "transactionHash": tx, "topics": [TOPIC_V3_MINT, topic_addr(SENDER), topic_int(lo), topic_int(hi)], "data": "0x" + w(int(SENDER, 16)) + w(delta) + w(IN_AMOUNT) + w(IN_AMOUNT)})
+            self.logs.append({"address": pool, "blockNumber": hex(block), "logIndex": hex(5), "transactionHash": tx, "topics": [TOPIC_V3_MINT, topic_addr(SENDER), topic_int(lo), topic_int(hi)], "data": "0x" + w(int(SENDER, 16)) + w(delta) + w(amount0) + w(amount1)})
         else:
-            self.logs.append({"address": pool, "blockNumber": hex(block), "logIndex": hex(5), "transactionHash": tx, "topics": [TOPIC_V3_BURN, topic_addr(SENDER), topic_int(lo), topic_int(hi)], "data": "0x" + w(-delta) + w(IN_AMOUNT // 10) + w(IN_AMOUNT // 10)})
+            self.logs.append({"address": pool, "blockNumber": hex(block), "logIndex": hex(5), "transactionHash": tx, "topics": [TOPIC_V3_BURN, topic_addr(SENDER), topic_int(lo), topic_int(hi)], "data": "0x" + w(-delta) + w(-amount0) + w(-amount1)})
 
-    def swap(self, pid: str, pool: str, block: int, tx: str, zero_for_one: bool, sqrt: int, liq: int) -> None:
-        # pool deltas: the input leg is paid into the pool, the output leg leaves it
-        a0, a1 = (IN_AMOUNT, -OUT_AMOUNT) if zero_for_one else (-OUT_AMOUNT, IN_AMOUNT)
-        tick = tick_of(sqrt)
+    def swap(self, world: ClPoolState, pid: str, pool: str, block: int, tx: str, *, zero_for_one: bool) -> None:
+        # exact input of IN_AMOUNT on the driving state; pool deltas: the input leg is paid into the pool
+        a0, a1, sqrt, liq, tick = world.swap(zero_for_one, IN_AMOUNT)
         if pid == POOL_ID:
             self.swaps.append((block, sqrt, tick))
         if self.v4:
@@ -260,15 +257,15 @@ def _check_pack(res: dict, fake: FakePoolManager, protocol: str) -> Pack:
     burn = next(r for r in rows1 if r["kind"] == "cl_modify")
     assert burn["liquidity_delta"] == str(-L2 // 10) and burn["tick_lower"] == -2000 and burn["tick_upper"] == 2000
     if protocol == "uniswap_v3":
-        assert burn["amount0"] == str(IN_AMOUNT // 10)
+        assert int(burn["amount0"]) > 0 and int(burn["amount1"]) > 0
     else:
         assert burn.get("amount0") is None
     swaps = [r for r in rows1 if r["kind"] == "cl_swap"]
-    # pool-delta sign convention in both protocols: the input leg is positive
+    # pool-delta sign convention in both protocols: the input leg is positive, the output leg negative
     z = [r for r in swaps if r["amount0"] == str(IN_AMOUNT)]
     o = [r for r in swaps if r["amount1"] == str(IN_AMOUNT)]
     assert z and o and len(z) + len(o) == len(swaps)
-    assert all(r["amount1"] == str(-OUT_AMOUNT) for r in z) and all(r["amount0"] == str(-OUT_AMOUNT) for r in o)
+    assert all(int(r["amount1"]) < 0 for r in z) and all(int(r["amount0"]) < 0 for r in o)
     assert all(r["fee_pips"] == FEE and r["wallet"] == SENDER for r in swaps)
     assert all(int(r["liquidity_after"]) in (L1 + L2, L1 + L2 - L2 // 10) for r in swaps)
     assert all(isinstance(r["sqrt_price_x96_after"], str) and isinstance(r["tick_after"], int) for r in swaps)
@@ -285,11 +282,16 @@ def _check_pack(res: dict, fake: FakePoolManager, protocol: str) -> Pack:
     keys = [(r["block"], r["log_index"], r["seq"]) for r in pack.tape]
     assert keys == sorted(keys) and [r["seq"] for r in pack.tape] == list(range(1, len(pack.tape) + 1))
     assert all(r["available_utc_ms"] == r["time_utc_ms"] + 4000 and r["received_utc_ms"] > r["time_utc_ms"] for r in pack.tape)
-    # validator: mechanics gate passes (no CL pool claims CPMM support); reconciliation has nothing to check yet
+    # validator: mechanics gate passes (no CL pool claims CPMM support); every cl_swap is a checkpoint and the
+    # tape came from the same v3 math, so the no-agent replay reconciles exactly and the pack stays research
     gates = {g["gate"]: g for g in pack.validation["gates"]}
     assert gates["mechanics"]["status"] == "passed"
-    assert gates["execution_state"]["reconciliation"]["checkpoints"] == 0
+    recon = gates["execution_state"]["reconciliation"]
+    assert recon["checkpoints"] == len([r for r in pack.tape if r["kind"] == "cl_swap"]) > 0
+    assert recon["mismatch_count"] == 0 and recon["fidelity_flag_count"] == 0
+    assert gates["execution_state"]["status"] == "passed" and gates["execution_state"]["pools_missing_initial_state"] == []
     assert gates["temporal_ordering"]["status"] == "passed"
+    assert pack.validation["resulting_qualification"] == "research" and res["qualification"] == "research"
     assert any("supported_by_clmm" in s for s in pack.manifest.decision_log)
     assert res["budget"]["requests"] <= 400
     return pack

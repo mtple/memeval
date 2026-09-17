@@ -1,9 +1,17 @@
 """The deterministic simulation for one participant on one pack.
 
-Internal market state (private CPMM pools), the no-agent reference state, the
-agent-visible observation store, the pending-order schedule and the ledger all live
-here. Time is integer milliseconds relative to the episode start. Nothing here
-reads the wall clock or the network.
+Internal market state (private pool copies: CPMM ``CpmmPoolState`` or concentrated
+liquidity ``ClPoolState``), the no-agent reference state, the agent-visible observation
+store, the pending-order schedule and the ledger all live here. Time is integer
+milliseconds relative to the episode start. Nothing here reads the wall clock or the
+network.
+
+Both pool kinds expose the same surface (``depth_for``, ``max_out``, ``apply_swap``,
+``copy``, ``other``, ``transfer_blocked``, ``halted``, ``restrictions``, ``fee_num`` /
+``fee_den``, ``spot_price_fraction``). For a CPMM the depth is the reserve pair; for a
+concentrated-liquidity pool it is the virtual reserves of the active tick range at the
+current price, so every depth-based check (capacity, liquidation ranking) reads the
+active range only.
 """
 
 from __future__ import annotations
@@ -28,12 +36,54 @@ from ..broker.orders import Order, Quote, payload_hash
 from ..datasets.pack import Pack
 from ..domain.status import SUPPORTED_CPMM_MODELS, CoverageState, OrderState, PoolModel, ValuationClass
 from ..observations.store import CoverageSpan, PoolObservations, TradeObs
+from ..venues.clmm.math import ClMathError, get_tick_at_sqrt_ratio
+from ..venues.clmm.pool import SUPPORTED_CLMM_MODELS, ClPoolState
 from ..venues.cpmm.math import CpmmMathError
 from ..venues.cpmm.pool import CpmmPoolState, FidelityLimit
 from .blocks import BlockSchedule, BlockScheduleError, FixedIntervalSchedule, TableSchedule
 from .tape import RelEvent, to_relative
 
 INF = 1 << 62
+PoolState = CpmmPoolState | ClPoolState
+# Every "the model cannot fill this" error from either venue adapter.
+MathError = (CpmmMathError, ClMathError)
+
+
+def cl_supported(meta) -> bool:
+    """True when a pool record is served by the concentrated-liquidity adapter."""
+    return bool(meta.supported_by_clmm) and str(meta.model) in SUPPORTED_CLMM_MODELS
+
+
+def cpmm_supported(meta) -> bool:
+    """True when a pool record is served by the CPMM adapter."""
+    return bool(meta.supported_by_cpmm) and PoolModel(meta.model) in SUPPORTED_CPMM_MODELS
+
+
+def cl_state_from_pool(meta) -> ClPoolState | None:
+    """Build the initial ``ClPoolState`` of a CL pool record, or None when it has no initial price.
+
+    The tick map comes from ``initial_ticks`` (``[tick, liquidity_net, liquidity_gross]`` strings),
+    the active liquidity from ``initial_liquidity`` and the tick from ``initial_tick`` when the
+    collector recorded it (a swap can leave the on-chain tick one below ``getTickAtSqrtRatio`` when it
+    stops exactly on a crossed boundary, so the recorded tick is authoritative).
+    """
+    if not cl_supported(meta) or meta.initial_sqrt_price_x96 is None:
+        return None
+    sqrt_price = int(meta.initial_sqrt_price_x96)
+    tick = meta.initial_tick if meta.initial_tick is not None else get_tick_at_sqrt_ratio(sqrt_price)
+    ticks = {int(t): (int(net), int(gross)) for t, net, gross in meta.initial_ticks}
+    return ClPoolState(
+        key=meta.key,
+        asset0=meta.asset0,
+        asset1=meta.asset1,
+        fee_pips=int(meta.fee_pips or 0),
+        tick_spacing=int(meta.tick_spacing or 1),
+        sqrt_price_x96=sqrt_price,
+        tick=int(tick),
+        liquidity=int(meta.initial_liquidity or 0),
+        ticks=ticks,
+        model=str(meta.model),
+    )
 
 
 class SimulationError(RuntimeError):
@@ -128,26 +178,35 @@ class Simulation:
             self.schedule = FixedIntervalSchedule(first=first_block, origin_ms=origin, interval_ms=self.params.block_interval_ms, last=last_block)
 
         # Market state
-        self.pools: dict[str, CpmmPoolState] = {}
-        self.ref_pools: dict[str, CpmmPoolState] = {}
+        self.pools: dict[str, PoolState] = {}
+        self.ref_pools: dict[str, PoolState] = {}
         self.pool_meta = pack.pools
         self.assets = pack.assets
         self.fidelity_failed: dict[str, str] = {}
         for key, p in pack.pools.items():
-            if not p.supported_by_cpmm or p.model not in SUPPORTED_CPMM_MODELS:
+            st: PoolState | None = None
+            if cpmm_supported(p):
+                if p.initial_reserve0 is None or p.initial_reserve1 is None:
+                    continue
+                st = CpmmPoolState(
+                    key=key,
+                    asset0=p.asset0,
+                    asset1=p.asset1,
+                    reserve0=int(p.initial_reserve0),
+                    reserve1=int(p.initial_reserve1),
+                    fee_num=p.fee_numerator,
+                    fee_den=p.fee_denominator,
+                    model=PoolModel(p.model),
+                )
+            elif cl_supported(p):
+                # A CL pool initialized inside the window has no initial price; its state is created
+                # by the cl_init tape row and it is not tradable before that.
+                try:
+                    st = cl_state_from_pool(p)
+                except ClMathError as e:
+                    raise SimulationError(f"pool {key} has an invalid concentrated-liquidity initial state: {e}") from e
+            if st is None:
                 continue
-            if p.initial_reserve0 is None or p.initial_reserve1 is None:
-                continue
-            st = CpmmPoolState(
-                key=key,
-                asset0=p.asset0,
-                asset1=p.asset1,
-                reserve0=int(p.initial_reserve0),
-                reserve1=int(p.initial_reserve1),
-                fee_num=p.fee_numerator,
-                fee_den=p.fee_denominator,
-                model=PoolModel(p.model),
-            )
             self.pools[key] = st
             self.ref_pools[key] = st.copy()
         self.state_version = 0
@@ -164,6 +223,11 @@ class Simulation:
         # Tape
         self.tape: list[RelEvent] = to_relative(pack.tape, self.start_utc_ms)
         self.cursor = 0
+        # Pools whose state is created by a cl_init row on the tape: key -> time of that row.
+        self.cl_init_ms: dict[str, int] = {}
+        for ev in self.tape:
+            if ev.kind == "cl_init" and ev.pool not in self.cl_init_ms:
+                self.cl_init_ms[ev.pool] = ev.time_ms
         self.reconciliation_mismatches: list[dict[str, Any]] = []
         self.fidelity_flags: list[FidelityFlag] = []
 
@@ -275,7 +339,7 @@ class Simulation:
         pool = self.pools.get(ev.pool)
         ref = self.ref_pools.get(ev.pool)
         if ev.kind == "swap":
-            if pool is None or ref is None or ev.asset_in is None or ev.amount_in is None:
+            if not isinstance(pool, CpmmPoolState) or not isinstance(ref, CpmmPoolState) or ev.asset_in is None or ev.amount_in is None:
                 return
             # Reference state: recorded output exactly.
             rec_out = ev.amount_out_recorded
@@ -302,16 +366,16 @@ class Simulation:
                 return
             self.state_version += 1
             if ev.available_ms is not None:
-                self._record_trade(ev, pool, out, origin="external")
+                self._record_trade(ev, pool, ev.asset_in, ev.amount_in, out, origin="external")
         elif ev.kind == "mint":
-            if pool is None or ref is None:
+            if not isinstance(pool, CpmmPoolState) or not isinstance(ref, CpmmPoolState):
                 return
             ref.apply_mint(ev.amount0 or 0, ev.amount1 or 0)
             if ev.pool not in self.fidelity_failed:
                 pool.apply_mint(ev.amount0 or 0, ev.amount1 or 0)
                 self.state_version += 1
         elif ev.kind == "burn":
-            if pool is None or ref is None:
+            if not isinstance(pool, CpmmPoolState) or not isinstance(ref, CpmmPoolState):
                 return
             try:
                 ref.apply_burn(ev.amount0 or 0, ev.amount1 or 0)
@@ -325,13 +389,34 @@ class Simulation:
                     self.fidelity_failed[ev.pool] = "ENVIRONMENT_FIDELITY_LIMIT"
                     self._flag(ev, "ENVIRONMENT_FIDELITY_LIMIT", str(e))
         elif ev.kind == "sync":
-            if ref is None or ev.reserve0 is None or ev.reserve1 is None:
+            if not isinstance(ref, CpmmPoolState) or ev.reserve0 is None or ev.reserve1 is None:
                 return
             d0, d1 = ref.reconcile_sync(ev.reserve0, ev.reserve1)
             if d0 != 0 or d1 != 0:
                 self.reconciliation_mismatches.append(
                     {"seq": ev.seq, "pool": ev.pool, "block": ev.block, "delta0": d0, "delta1": d1}
                 )
+        elif ev.kind == "cl_init":
+            self._apply_cl_init(ev)
+        elif ev.kind == "cl_modify":
+            if not isinstance(ref, ClPoolState) or ev.tick_lower is None or ev.tick_upper is None or ev.liquidity_delta is None:
+                return
+            assert isinstance(pool, ClPoolState)
+            try:
+                ref.apply_modify_liquidity(ev.tick_lower, ev.tick_upper, ev.liquidity_delta)
+            except ClMathError as e:
+                self._flag(ev, "REFERENCE_MODIFY_INVALID", str(e))
+            if ev.pool not in self.fidelity_failed:
+                try:
+                    pool.apply_modify_liquidity(ev.tick_lower, ev.tick_upper, ev.liquidity_delta)
+                    self.state_version += 1
+                except ClMathError as e:
+                    # e.g. a burn the private tick map cannot honour after agent flow (``LS``): the
+                    # counterfactual left the model's validated domain, like a CPMM burn overdraw.
+                    self.fidelity_failed[ev.pool] = "ENVIRONMENT_FIDELITY_LIMIT"
+                    self._flag(ev, "ENVIRONMENT_FIDELITY_LIMIT", f"counterfactual liquidity change cannot be applied to the private state of {ev.pool}: {e}")
+        elif ev.kind == "cl_swap":
+            self._apply_cl_swap(ev)
         elif ev.kind == "halt":
             if pool is not None:
                 pool.halted = True
@@ -354,6 +439,78 @@ class Simulation:
         elif ev.kind == "discovery":
             pass
 
+    def _apply_cl_init(self, ev: RelEvent) -> None:
+        """``Initialize``: create the reference and private states of a pool that starts inside the window."""
+        meta = self.pool_meta.get(ev.pool)
+        if meta is None or not cl_supported(meta) or ev.sqrt_price_x96 is None:
+            return
+        if ev.pool in self.pools:
+            self._flag(ev, "CL_ALREADY_INITIALIZED", "Initialize observed for a pool that already has a state; ignored")
+            return
+        tick = ev.tick if ev.tick is not None else get_tick_at_sqrt_ratio(ev.sqrt_price_x96)
+        try:
+            st = ClPoolState(
+                key=ev.pool,
+                asset0=meta.asset0,
+                asset1=meta.asset1,
+                fee_pips=int(meta.fee_pips or 0),
+                tick_spacing=int(meta.tick_spacing or 1),
+                sqrt_price_x96=ev.sqrt_price_x96,
+                tick=int(tick),
+                model=str(meta.model),
+            )
+        except ClMathError as e:
+            self._flag(ev, "REFERENCE_INIT_INVALID", str(e))
+            return
+        self.ref_pools[ev.pool] = st
+        self.pools[ev.pool] = st.copy()
+        self.state_version += 1
+
+    def _apply_cl_swap(self, ev: RelEvent) -> None:
+        """Recorded ``Swap`` on a CL pool: the reference replays and reconciles the row (every swap is a
+        checkpoint, the CL counterpart of a v2 Sync); the private copy re-executes the same intent."""
+        pool = self.pools.get(ev.pool)
+        ref = self.ref_pools.get(ev.pool)
+        if not isinstance(ref, ClPoolState) or not isinstance(pool, ClPoolState):
+            return
+        if ev.amount0 is None or ev.amount1 is None or ev.sqrt_price_x96_after is None or ev.liquidity_after is None or ev.tick_after is None:
+            return
+        try:
+            rec = ref.apply_recorded_swap(ev.amount0, ev.amount1, ev.sqrt_price_x96_after, ev.liquidity_after, ev.tick_after, ev.fee_pips)
+        except ClMathError as e:
+            self._flag(ev, "REFERENCE_SWAP_INVALID", str(e))
+            return
+        if rec["sqrt_price_x96"] != 0 or rec["liquidity"] != 0 or rec["tick"] != 0:
+            self.reconciliation_mismatches.append(
+                {
+                    "seq": ev.seq,
+                    "pool": ev.pool,
+                    "block": ev.block,
+                    "delta_sqrt_price_x96": rec["sqrt_price_x96"],
+                    "delta_liquidity": rec["liquidity"],
+                    "delta_tick": rec["tick"],
+                    "delta_amount0": rec["amount0"],
+                    "delta_amount1": rec["amount1"],
+                    "mode": rec["mode"],
+                }
+            )
+        # Private state: the recorded intent (exact input of the recorded input amount, or exact output
+        # when that is what reproduced the event) with the fee the event reported.
+        if ev.pool in self.fidelity_failed:
+            return
+        zero_for_one = ev.amount0 > 0
+        amount_in = ev.amount0 if zero_for_one else ev.amount1
+        amount_out = -(ev.amount1 if zero_for_one else ev.amount0)
+        specified = -amount_out if rec["mode"] == "exact_out" else amount_in
+        try:
+            actual_in, actual_out = pool.apply_intent(zero_for_one, specified, ev.fee_pips)
+        except ClMathError as e:
+            self._flag(ev, "EXTERNAL_SWAP_FAILED_ON_PRIVATE_STATE", str(e))
+            return
+        self.state_version += 1
+        if ev.available_ms is not None:
+            self._record_trade(ev, pool, pool.asset0 if zero_for_one else pool.asset1, actual_in, actual_out, origin="external")
+
     @staticmethod
     def _apply_recorded_to_ref(ref: CpmmPoolState, asset_in: str, amount_in: int, out: int) -> None:
         if asset_in == ref.asset0:
@@ -366,9 +523,17 @@ class Simulation:
     def _flag(self, ev: RelEvent, code: str, message: str) -> None:
         self.fidelity_flags.append(FidelityFlag(time_ms=ev.time_ms, pool=ev.pool, code=code, message=message))
 
-    def _record_trade(self, ev: RelEvent, pool: CpmmPoolState, out: int, origin: str, order_id: str | None = None) -> None:
+    @staticmethod
+    def _state_after(pool: PoolState) -> dict[str, Any]:
+        """TradeObs fields describing the pool after a trade. For a CL pool ``reserve0/1_after`` carry the
+        virtual depths of the active range so reserve-based consumers keep working."""
+        if isinstance(pool, ClPoolState):
+            x, y = pool.virtual_reserves()
+            return {"reserve0_after": x, "reserve1_after": y, "sqrt_price_x96_after": pool.sqrt_price_x96, "tick_after": pool.tick, "liquidity_after": pool.liquidity}
+        return {"reserve0_after": pool.reserve0, "reserve1_after": pool.reserve1}
+
+    def _record_trade(self, ev: RelEvent, pool: PoolState, asset_in: str, amount_in: int, out: int, origin: str, order_id: str | None = None) -> None:
         self.trade_seq += 1
-        assert ev.asset_in is not None and ev.amount_in is not None
         available = ev.available_ms if ev.available_ms is not None else ev.time_ms + self.params.availability_delay_ms
         self.obs[ev.pool].append(
             TradeObs(
@@ -380,14 +545,13 @@ class Simulation:
                 log_index=ev.log_index,
                 tx=ev.tx,
                 wallet=ev.wallet,
-                asset_in=ev.asset_in,
-                asset_out=pool.other(ev.asset_in),
-                amount_in=ev.amount_in,
+                asset_in=asset_in,
+                asset_out=pool.other(asset_in),
+                amount_in=amount_in,
                 amount_out=out,
-                reserve0_after=pool.reserve0,
-                reserve1_after=pool.reserve1,
                 origin=origin,
                 order_id=order_id,
+                **self._state_after(pool),
             )
         )
 
@@ -399,10 +563,10 @@ class Simulation:
         if amount_in <= 0:
             raise SubmitRejected("INVALID_ORDER", "amount_in must be positive")
         asset_out = pool.other(asset_in)
-        rin, rout = pool.reserves_for(asset_in)
+        rin, rout = pool.depth_for(asset_in)
         try:
             out = pool.max_out(asset_in, amount_in)
-        except CpmmMathError as e:
+        except MathError as e:
             raise SubmitRejected("NO_ROUTE", f"pool cannot fill: {e}") from e
         cap_ok, cap_reason = self._capacity_check(pool, asset_in, amount_in, out)
         self.quote_seq += 1
@@ -427,7 +591,7 @@ class Simulation:
         self.quotes[q.quote_id] = q
         return q
 
-    def _tradable_pool(self, pool_key: str) -> CpmmPoolState:
+    def _tradable_pool(self, pool_key: str) -> PoolState:
         meta = self.pool_meta.get(pool_key)
         if meta is None:
             raise SubmitRejected("NOT_YET_DISCOVERED", "identifier is not currently discoverable in this session")
@@ -439,23 +603,38 @@ class Simulation:
             )
         pool = self.pools.get(pool_key)
         if pool is None:
-            if not meta.supported_by_cpmm or PoolModel(meta.model) not in SUPPORTED_CPMM_MODELS:
+            if not cpmm_supported(meta) and not cl_supported(meta):
                 raise SubmitRejected("UNSUPPORTED_CAPABILITY", f"pool mechanics not supported: {meta.unsupported_reason or meta.model}")
+            if self.cl_init_ms.get(pool_key, -INF) > self.now_ms:
+                # Initialized later in the window: the pool exists but has no state yet.
+                raise SubmitRejected("NOT_YET_DISCOVERED", "identifier is not currently discoverable in this session")
             raise SubmitRejected("MISSING_DATA", "pool has no executable initial state in this pack")
         if pool.halted:
             raise SubmitRejected("NO_ROUTE", "no modeled route: pool trading is halted")
         return pool
 
-    def _capacity_check(self, pool: CpmmPoolState, asset_in: str, amount_in: int, out: int) -> tuple[bool, str | None]:
+    def _capacity_check(self, pool: PoolState, asset_in: str, amount_in: int, out: int) -> tuple[bool, str | None]:
+        """Capacity profile on the pool depth (``depth_for``).
+
+        CPMM: the depth is the reserve pair and the post-trade depth is ``(rin + in, rout - out)``.
+        CL: the depth is the virtual reserves of the active range, the post-trade depth is the virtual
+        reserves after the swap on a copy, and the reference-displacement check compares those virtual
+        depths with the no-agent state's; liquidity outside the active range is not counted.
+        """
         cap = self.params.capacity
-        rin, rout = pool.reserves_for(asset_in)
+        rin, rout = pool.depth_for(asset_in)
         if amount_in * 10_000 > rin * cap.max_input_bps_of_reserve:
             return False, f"input exceeds {cap.max_input_bps_of_reserve} bps of current input reserve ({cap.version})"
         ref = self.ref_pools.get(pool.key)
         if ref is not None:
-            new_in = rin + amount_in
-            new_out = rout - out
-            ref_in, ref_out = ref.reserves_for(asset_in)
+            if isinstance(pool, ClPoolState):
+                trial = pool.copy()
+                trial.apply_swap(asset_in, amount_in)
+                new_in, new_out = trial.depth_for(asset_in)
+            else:
+                new_in = rin + amount_in
+                new_out = rout - out
+            ref_in, ref_out = ref.depth_for(asset_in)
             for new, refv in ((new_in, ref_in), (new_out, ref_out)):
                 if refv <= 0:
                     continue
@@ -515,7 +694,7 @@ class Simulation:
             raise SubmitRejected("NO_ROUTE", f"no modeled route: {blocked}")
         try:
             out_now = pool.max_out(asset_in, amount_in)
-        except CpmmMathError as e:
+        except MathError as e:
             raise SubmitRejected("NO_ROUTE", f"pool cannot fill: {e}") from e
         cap_ok, cap_reason = self._capacity_check(pool, asset_in, amount_in, out_now)
         if not cap_ok:
@@ -618,7 +797,7 @@ class Simulation:
             return
         try:
             out = pool.max_out(order.asset_in, order.amount_in)
-        except CpmmMathError as e:
+        except MathError as e:
             self._revert(order, t, block, f"NO_ROUTE: {e}")
             return
         cap_ok, cap_reason = self._capacity_check(pool, order.asset_in, order.amount_in, out)
@@ -632,7 +811,7 @@ class Simulation:
         # Fill on the private state.
         try:
             actual = pool.apply_swap(order.asset_in, order.amount_in)
-        except CpmmMathError as e:
+        except MathError as e:
             self._revert(order, t, block, f"NO_ROUTE: {e}")
             return
         assert actual == out
@@ -674,10 +853,9 @@ class Simulation:
                 asset_out=order.asset_out,
                 amount_in=order.amount_in,
                 amount_out=out,
-                reserve0_after=pool.reserve0,
-                reserve1_after=pool.reserve1,
                 origin="own",
                 order_id=order.order_id,
+                **self._state_after(pool),
             )
         )
         self._ledger_equity_point(t)
@@ -712,7 +890,7 @@ class Simulation:
             if self.pool_discovery_ms.get(key, INF) > self.now_ms:
                 continue
             if asset in (pool.asset0, pool.asset1) and pool.other(asset) == self.numeraire:
-                rn, _ = pool.reserves_for(self.numeraire)
+                rn, _ = pool.depth_for(self.numeraire)
                 cand = (rn, key)
                 if best is None or cand > best:
                     best = cand
@@ -723,7 +901,7 @@ class Simulation:
         cash_av = self.ledger.balance(AGENT_AVAILABLE, self.numeraire)
         cash_rs = self.ledger.balance(AGENT_RESERVED, self.numeraire)
         cash_pd = self.ledger.balance(AGENT_PENDING, self.numeraire)
-        branch: dict[str, CpmmPoolState] = {}
+        branch: dict[str, PoolState] = {}
         holdings_out: list[dict[str, Any]] = []
         priced = 0
         gas_total = 0
@@ -739,7 +917,7 @@ class Simulation:
                     meta_pool = m
                     break
             if pk is None:
-                if meta_pool is not None and (not meta_pool.supported_by_cpmm or meta_pool.key in self.fidelity_failed or meta_pool.key not in self.pools):
+                if meta_pool is not None and (not (cpmm_supported(meta_pool) or cl_supported(meta_pool)) or meta_pool.key in self.fidelity_failed or meta_pool.key not in self.pools):
                     cls = ValuationClass.UNPRICED_MISSING_DATA
                     complete = False
                 else:
@@ -755,10 +933,10 @@ class Simulation:
                 continue
             try:
                 out = pool.apply_swap(asset, qty)
-            except CpmmMathError as e:
+            except MathError as e:
                 holdings_out.append({"asset": asset, "quantity": qty, "class": str(ValuationClass.NO_ROUTE), "value": 0, "pool": pk, "reason": f"model cannot fill: {e}"})
                 continue
-            rin, _ = self.pools[pk].reserves_for(asset)
+            rin, _ = self.pools[pk].depth_for(asset)
             if qty * 10_000 > rin * self.params.capacity.max_input_bps_of_reserve:
                 warnings.append(f"liquidation of {asset} exceeds the capacity profile; value is model output, not validated")
             net = out - self.gas_cost
@@ -835,7 +1013,10 @@ class Simulation:
         h.update(self.ledger.content_hash().encode())
         for k in sorted(self.pools):
             p = self.pools[k]
-            h.update(f"{k}:{p.reserve0}:{p.reserve1}:{p.halted}\n".encode())
+            if isinstance(p, ClPoolState):
+                h.update(f"{k}:cl:{p.sqrt_price_x96}:{p.tick}:{p.liquidity}:{p.ticks_digest()}:{p.halted}\n".encode())
+            else:
+                h.update(f"{k}:{p.reserve0}:{p.reserve1}:{p.halted}\n".encode())
         return h.hexdigest()
 
     def discovered_pools(self, as_of: int) -> list[str]:
@@ -875,7 +1056,7 @@ class Simulation:
             ev = self.tape[i]
             if ev.time_ms > limit:
                 break
-            if ev.kind == "swap" and ev.pool in discovered and ev.available_ms is not None and ev.available_ms > after_ms:
+            if ev.kind in ("swap", "cl_swap") and ev.pool in discovered and ev.available_ms is not None and ev.available_ms > after_ms:
                 cand = min(ev.available_ms, limit)
                 best = cand if best is None else min(best, cand)
                 break

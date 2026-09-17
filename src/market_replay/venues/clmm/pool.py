@@ -16,6 +16,7 @@ supported by passing ``fee_pips`` per swap.
 
 from __future__ import annotations
 
+import hashlib
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
 from fractions import Fraction
@@ -147,6 +148,52 @@ class ClPoolState:
         if asset == self.asset1:
             return self.asset0
         raise ClMathError("ASSET_NOT_IN_POOL")
+
+    # ------------------------------------------------------ common pool surface
+
+    @property
+    def fee_num(self) -> int:
+        """Fee expressed the CPMM way: the share of input kept after the fee is ``(1e6 - fee_pips) / 1e6``."""
+        return _MAX_FEE_PIPS - self.fee_pips
+
+    @property
+    def fee_den(self) -> int:
+        return _MAX_FEE_PIPS
+
+    def virtual_reserves(self) -> tuple[int, int]:
+        """Virtual reserves of the active range at the current price, in raw units.
+
+        From the v3 whitepaper (x_virtual = L / sqrt(P), y_virtual = L * sqrt(P)) with the
+        Q64.96 sqrt price: ``x = L * 2^96 // sqrtP``, ``y = L * sqrtP // 2^96``. Both are zero
+        when no liquidity is active. They are the depth the constant-product view of the
+        current tick range would show; they are not token balances of the pool.
+        """
+        if self.liquidity == 0 or self.sqrt_price_x96 == 0:
+            return 0, 0
+        return (self.liquidity * Q96) // self.sqrt_price_x96, (self.liquidity * self.sqrt_price_x96) // Q96
+
+    def depth_for(self, asset_in: str) -> tuple[int, int]:
+        """``(depth_in, depth_out)``: the virtual reserves ordered by the input asset."""
+        x, y = self.virtual_reserves()
+        if asset_in == self.asset0:
+            return x, y
+        if asset_in == self.asset1:
+            return y, x
+        raise ClMathError("ASSET_NOT_IN_POOL")
+
+    def ticks_digest(self) -> str:
+        """Stable digest of the initialized tick table (sorted ``tick:net:gross`` lines)."""
+        h = hashlib.sha256()
+        for t in sorted(self.ticks):
+            net, gross = self.ticks[t]
+            h.update(f"{t}:{net}:{gross}\n".encode())
+        return h.hexdigest()
+
+    def ticks_near(self, count: int) -> list[tuple[int, int, int]]:
+        """Up to ``count`` initialized ticks on each side of the current tick as ``(tick, net, gross)``, ascending."""
+        below = sorted(t for t in self.ticks if t <= self.tick)[-count:] if count > 0 else []
+        above = sorted(t for t in self.ticks if t > self.tick)[:count] if count > 0 else []
+        return [(t, self.ticks[t][0], self.ticks[t][1]) for t in below + above]
 
     def transfer_blocked(self, asset: str, direction: str) -> str | None:
         """Return a reason if the fixture token rules block this transfer direction ('sell' or 'buy')."""
@@ -456,8 +503,16 @@ class ClPoolState:
         """Largest output an exact-input swap of ``amount_in`` yields on the current state."""
         return self.quote(asset_in, amount_in).amount_out
 
-    def apply_swap(self, asset_in: str, amount_in: int) -> int:
-        """Apply an exact-input swap and return ``amount_out``; the swap must produce output."""
+    def apply_swap(self, asset_in: str, amount_in: int, output_ratio: Fraction | None = None) -> int:
+        """Apply an exact-input swap and return ``amount_out``; the swap must produce output.
+
+        ``output_ratio`` exists only so the call shape matches ``CpmmPoolState.apply_swap``.
+        A concentrated-liquidity swap has no free output parameter (the path is fixed by the
+        tick map), so any ratio other than 1 is refused with ``OUTPUT_RATIO_UNSUPPORTED``;
+        external flow is replayed through :meth:`apply_intent` instead.
+        """
+        if output_ratio is not None and output_ratio != 1:
+            raise ClMathError("OUTPUT_RATIO_UNSUPPORTED")
         if amount_in <= 0:
             raise ClMathError("INSUFFICIENT_INPUT_AMOUNT")
         zero_for_one = asset_in == self.asset0
@@ -472,3 +527,25 @@ class ClPoolState:
         self.tick = trial.tick
         self.liquidity = trial.liquidity
         return out
+
+    def apply_intent(self, zero_for_one: bool, amount_specified: int, fee_pips: int | None = None) -> tuple[int, int]:
+        """Re-execute a recorded swap intent on this state and return ``(amount_in, amount_out)``.
+
+        ``amount_specified`` follows ``swap``: positive exact input, negative exact output.
+        ``fee_pips`` is the fee the recorded event reported (v4 dynamic fees). The swap is
+        run on a copy and committed only when both legs are non-zero; otherwise the state is
+        untouched and ``INSUFFICIENT_INPUT_AMOUNT`` / ``INSUFFICIENT_OUTPUT_AMOUNT`` is raised,
+        the same codes the CPMM adapter uses for an external swap it cannot honour.
+        """
+        trial = self.copy()
+        amount0, amount1, _, _, _ = trial.swap(zero_for_one, amount_specified, None, fee_pips)
+        amount_in = amount0 if zero_for_one else amount1
+        amount_out = -(amount1 if zero_for_one else amount0)
+        if amount_in <= 0:
+            raise ClMathError("INSUFFICIENT_INPUT_AMOUNT")
+        if amount_out <= 0:
+            raise ClMathError("INSUFFICIENT_OUTPUT_AMOUNT")
+        self.sqrt_price_x96 = trial.sqrt_price_x96
+        self.tick = trial.tick
+        self.liquidity = trial.liquidity
+        return amount_in, amount_out
