@@ -324,8 +324,8 @@ class WeekJobs:
             shutil.rmtree(work, ignore_errors=True)
             self.m.store.delete_week_job_files(row["job_id"])
             self.m.store.set_week_job_archive(row["job_id"], None)
-            if (row.get("protocol") or cfg.get("protocol")) == "all":
-                self._retire_single_venue_weeks(row)
+            if (row.get("protocol") or cfg.get("protocol")) == "all" and res["qualification"] == "research":
+                self._retire_single_venue_weeks(row)  # only a week that qualifies replaces the single-venue ones
         elif status == "in_progress_resumable":
             fields.update(status="collecting")
             last = int(cfg.get("synced_at_requests", 0))

@@ -27,6 +27,14 @@ jobs:
         run: |
           set -u
           curl -sS -m 60 "$BASE/api/v1/packs" | jq '[.items[] | select(.origin=="historical_reconstruction") | {name, use_status, period, pools_executable: .summary.pools_executable, tape_events: .summary.tape_events, gates: [.summary.gates[] | select(.status!="passed")]}]'
+      - name: Validation detail of diagnostic weeks (downloads the pack; only when something failed)
+        run: |
+          set -u
+          for pid in $(curl -sS -m 60 "$BASE/api/v1/packs" | jq -r '.items[] | select(.origin=="historical_reconstruction" and .use_status=="diagnostic_only") | .pack_id'); do
+            echo "== $pid"
+            curl -sS -m 200 "$BASE/api/v1/packs/$pid/validation" | jq '{resulting_qualification, gates: [.gates[] | select(.status!="passed") | {gate, status, detail, pools_missing_initial_state, reconciliation: (.reconciliation // {} | {checkpoints, mismatch_count, fidelity_flag_count, reserve_adjustments, mismatches: (.mismatches // [] | .[0:5]), fidelity_flags: (.fidelity_flags // [] | .[0:8])})}]}'
+            curl -sS -m 120 "$BASE/api/v1/packs/$pid" | jq '{venues: .summary.universe.excluded_or_unsupported_counts, unsupported: (.summary.unsupported_inventory | map(select(.reason | test("wrapped") | not)) | .[0:8])}'
+          done
       - name: Leaderboard categories
         run: |
           curl -sS -m 60 "$BASE/api/v1/leaderboard?all=true" | jq '{categories: [.categories[]? | {id, label}], rows: (.rows | length)}' || true
