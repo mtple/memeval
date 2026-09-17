@@ -124,6 +124,7 @@ sdk/python, sdk/typescript, agents/examples, schemas/, fixtures/, tests/, docs/,
 - [docs/execution-assumptions.md](docs/execution-assumptions.md) — `cpmm_fixed_flow_v1`, capacity guardrails, gas, valuation
 - [docs/benchmark-protocol.md](docs/benchmark-protocol.md) — suites, comparisons, what is and is not claimed
 - [docs/data-rights.md](docs/data-rights.md) — storage/processing/redistribution/serving status
+- [docs/how-a-real-week-is-built.md](docs/how-a-real-week-is-built.md) — from the chain to the leaderboard, step by step, and how the tests stand in for the chain
 - [docs/runbook.md](docs/runbook.md) — operations, collection, troubleshooting
 - [docs/implementation-report.md](docs/implementation-report.md) — what works, verification commands executed, blockers
 

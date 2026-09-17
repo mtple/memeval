@@ -116,6 +116,8 @@ historical collection (run `make collect` locally and import the pack into a loc
 
 ## Real weeks (anyone picks a past week in the app)
 
+The mechanism, step by step and in plain words, is in [how-a-real-week-is-built.md](how-a-real-week-is-built.md). This section is the operator's reference.
+
 Set `BASE_RPC_URL` (or `RPC_URL`) on the server to a read-only EVM RPC endpoint for Base. Then
 the Episodes page offers "Add this week" to everyone:
 
