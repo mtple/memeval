@@ -84,3 +84,29 @@ jobs:
           curl -sSfO "$BASE/skill/market_replay_agent.py"
           python3 market_replay_agent.py --server "$BASE" --agent smoke-skill-bot --version 1 --suite generated-dev-v1 | tee out.txt
           grep -q "finished at" out.txt
+
+      # First real week: on a production deployment with an RPC endpoint configured, ask for the most
+      # recent complete Monday-to-Monday week (idempotent) and push the collection along for a while.
+      - name: Request and advance a real week
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event.deployment.environment == 'Production' }}
+        run: |
+          set -u
+          enabled=$(curl -sS -m 60 "$BASE/api/v1/weeks" | jq -r .enabled)
+          echo "real weeks enabled: $enabled"
+          [ "$enabled" = "true" ] || { echo "RPC_URL not visible to the function; skipping"; exit 0; }
+          week=$(python3 -c "
+          import datetime as dt
+          today = dt.datetime.now(dt.timezone.utc).date()
+          monday = today - dt.timedelta(days=today.weekday())
+          start = monday - dt.timedelta(days=7)
+          while (dt.datetime.now(dt.timezone.utc).date() - (start + dt.timedelta(days=7))).days < 1:
+              start -= dt.timedelta(days=7)
+          print(start.isoformat())")
+          echo "requesting week starting $week"
+          curl -sS -m 60 -X POST "$BASE/api/v1/weeks" -H 'content-type: application/json' -d "{\"week_start\":\"$week\"}" | jq -c 'del(.note)' || true
+          for i in $(seq 1 6); do
+            curl -sS -m 290 -X POST "$BASE/api/v1/weeks/tick?slice=200" | jq -c '.advanced | {label, status, requests_used, request_budget, attempts, note: (.note // "" | .[0:160]), error}' || true
+            st=$(curl -sS -m 60 "$BASE/api/v1/weeks" | jq -r '.items[0].status')
+            [ "$st" = "collecting" ] || [ "$st" = "queued" ] || break
+          done
+          curl -sS -m 60 "$BASE/api/v1/weeks" | jq '.items[] | {label, status, requests_used, request_budget, attempts, note, error}'
