@@ -121,7 +121,7 @@ the Episodes page offers "Add this week" to everyone:
 
 1. `POST /api/v1/weeks {week_start}` queues the week (idempotent per period; at most
    `MARKET_REPLAY_MAX_WEEKS_PER_DAY` new weeks a day, default 3).
-2. The server collects it in time slices (`MARKET_REPLAY_WEEK_SLICE_SECONDS`, default 240) so it
+2. The server collects it in time slices (`MARKET_REPLAY_WEEK_SLICE_SECONDS`, default 200) so it
    fits a serverless invocation. After each slice the collector's checkpoints are archived in
    the database; the next slice can run on any instance. Slices are triggered by a Vercel cron
    every minute (`/api/v1/weeks/tick`) and by any open Episodes page.

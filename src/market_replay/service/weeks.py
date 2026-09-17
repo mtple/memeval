@@ -34,7 +34,7 @@ class WeekJobs:
         manager: RunManager,
         *,
         rpc_url: str | None,
-        slice_seconds: float = 240.0,
+        slice_seconds: float = 200.0,
         max_requests: int = 20000,
         log_chunk_blocks: int = 10000,
         max_pairs: int = 16,

@@ -52,7 +52,7 @@ def build_hosted_app() -> tuple[FastAPI, RunManager]:
     mgr.weeks = WeekJobs(
         mgr,
         rpc_url=rpc,
-        slice_seconds=float(os.environ.get("MARKET_REPLAY_WEEK_SLICE_SECONDS", "240")),
+        slice_seconds=float(os.environ.get("MARKET_REPLAY_WEEK_SLICE_SECONDS", "200")),
         max_requests=int(os.environ.get("MARKET_REPLAY_WEEK_MAX_REQUESTS", "20000")),
         log_chunk_blocks=int(os.environ.get("MARKET_REPLAY_WEEK_LOG_CHUNK", "10000")),
         max_pairs=int(os.environ.get("MARKET_REPLAY_WEEK_MAX_PAIRS", "16")),
