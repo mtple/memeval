@@ -498,6 +498,18 @@ class Simulation:
         except ClMathError as e:
             self._flag(ev, "REFERENCE_SWAP_INVALID", str(e))
             return
+        if rec["mode"] == "anchored_degenerate":
+            # A swap the loop cannot replay (a hook absorbed a leg): the reference was anchored to the
+            # chain; the private copy takes the same correction. Nothing to fill, nothing to observe.
+            self.reserve_adjustments["explained"] += 1
+            if ev.pool not in self.fidelity_failed and (rec["sqrt_price_x96"] or rec["liquidity"]):
+                try:
+                    pool.apply_state_delta(-int(rec["sqrt_price_x96"]), -int(rec["liquidity"]))
+                    self.state_version += 1
+                except ClMathError as e:
+                    self.fidelity_failed[ev.pool] = "ENVIRONMENT_FIDELITY_LIMIT"
+                    self._flag(ev, "ENVIRONMENT_FIDELITY_LIMIT", str(e))
+            return
         if rec["sqrt_price_x96"] != 0 or rec["liquidity"] != 0 or rec["tick"] != 0:
             self.reconciliation_mismatches.append(
                 {
@@ -512,6 +524,8 @@ class Simulation:
                     "mode": rec["mode"],
                 }
             )
+            self.reserve_adjustments["material"] += 1
+            ref.anchor_to_recorded(ev.sqrt_price_x96_after, ev.liquidity_after, ev.tick_after)  # the chain is the truth
         # Private state: the recorded intent (exact input of the recorded input amount, or exact output
         # when that is what reproduced the event) with the fee the event reported.
         if ev.pool in self.fidelity_failed:

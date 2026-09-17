@@ -338,5 +338,7 @@ def test_apply_recorded_swap_reports_perturbed_liquidity():
     assert diff["mode"] == "exact_in"
     # the model state is what the swap produced, not the perturbed recording
     assert pool.liquidity == liquidity_after and pool.sqrt_price_x96 == sqrt_after
-    with pytest.raises(ClMathError, match="SWAP_SIGNS"):
-        pool.apply_recorded_swap(1, 1, sqrt_after, liquidity_after, tick_after)
+    # a swap the loop cannot replay (both legs paid in: a hook took a leg) is anchored to the recording
+    anchored = pool.apply_recorded_swap(1, 1, sqrt_after + 7, liquidity_after + 5, tick_after)
+    assert anchored["mode"] == "anchored_degenerate" and anchored["sqrt_price_x96"] == -7 and anchored["liquidity"] == -5
+    assert pool.sqrt_price_x96 == sqrt_after + 7 and pool.liquidity == liquidity_after + 5

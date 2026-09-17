@@ -123,8 +123,14 @@ def reconcile_rows(pool_records: dict[str, Pool], tape: list[dict[str, Any]], ma
                 except ClMathError as e:
                     fidelity.append({"seq": r["seq"], "pool": r["pool"], "code": "REFERENCE_SWAP_INVALID", "message": str(e)})
                     continue
-                if rec["sqrt_price_x96"] or rec["liquidity"] or rec["tick"]:
+                if rec["mode"] == "anchored_degenerate":
+                    adjustments["explained"] += 1
+                    per_pool.setdefault(r["pool"], Counter())["explained"] += 1
+                elif rec["sqrt_price_x96"] or rec["liquidity"] or rec["tick"]:
                     mismatches.append({"seq": r["seq"], "pool": r["pool"], "block": r["block"], "delta_sqrt_price_x96": rec["sqrt_price_x96"], "delta_liquidity": rec["liquidity"], "delta_tick": rec["tick"], "delta_amount0": rec["amount0"], "delta_amount1": rec["amount1"], "mode": rec["mode"]})
+                    adjustments["material"] += 1
+                    per_pool.setdefault(r["pool"], Counter())["material"] += 1
+                    pool.anchor_to_recorded(int(r["sqrt_price_x96_after"]), int(r["liquidity_after"]), int(r["tick_after"]))  # the chain is the truth
             continue
         if kind == "swap":
             amount_in = int(r["amount_in"])

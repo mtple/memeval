@@ -241,6 +241,22 @@ class RunManager:
             "scenario": (m.generator or {}).get("scenario_description"),
         }
 
+    def revalidate_pack(self, pack_ref: str) -> dict[str, Any]:
+        """Run the current validator over an existing pack (data untouched, same pack id) and record the new
+        qualification and archive. A pack that a newer engine can now reconcile qualifies without being
+        collected again."""
+        row, _pack = self.load_pack(pack_ref)
+        path = Path(row["path"])
+        with self._global:
+            self._packs.pop(row["pack_id"], None)
+        view = self.import_pack(path, row["name"])
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+            tf.add(path, arcname=path.name)
+        archive = buf.getvalue()
+        self.store.put_pack_archive(view["pack_id"], view["name"], archive, hashlib.sha256(archive).hexdigest(), now_iso())
+        return view
+
     def forget_pack(self, pack_id: str) -> None:
         """Drop a pack from the catalogue and the archive store; cached objects go too."""
         with self._global:

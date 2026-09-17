@@ -225,6 +225,33 @@ def test_a_diagnostic_week_from_an_older_collector_is_rebuilt_once_on_an_idle_ti
     mgr.close()
 
 
+def test_a_diagnostic_week_the_current_engine_can_reconcile_is_revalidated_not_recollected(tmp_path: Path, monkeypatch):
+    import market_replay.service.weeks as weeks_mod
+
+    fake = FakeBase()
+    mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))
+    job = mgr.weeks.request(PERIOD_START, PERIOD_END)
+    for _ in range(60):
+        out = mgr.weeks.tick(slice_seconds=0.001)
+        if out["advanced"]["status"] in ("built", "failed"):
+            break
+    pack_id = mgr.weeks.job(job["job_id"])["pack_id"]
+    assert mgr.weeks.job(job["job_id"])["qualification"] == "research"
+    # an older engine had left this pack diagnostic_only; the data itself is fine
+    row = mgr.store.pack(pack_id)
+    mgr.store.upsert_pack({**row, "use_status": "diagnostic_only"})
+    assert mgr.weeks.job(job["job_id"])["qualification"] == "diagnostic_only"
+    monkeypatch.setattr(weeks_mod, "COLLECTOR_VERSION", "9999.2")
+    calls = fake.calls
+    out = mgr.weeks.tick(slice_seconds=0.001)
+    assert out.get("revalidated") is True and out["advanced"]["status"] == "built" and out["advanced"]["pack_id"] == pack_id
+    assert fake.calls == calls  # no RPC request was spent
+    assert mgr.weeks.job(job["job_id"])["qualification"] == "research"
+    assert mgr.store.pack_archive_meta(pack_id) is not None
+    assert mgr.weeks.tick()["advanced"] is None  # revalidated under this version: not again
+    mgr.close()
+
+
 def test_a_raised_request_budget_applies_to_the_week_in_flight(tmp_path: Path):
     fake = FakeBase()
     mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))

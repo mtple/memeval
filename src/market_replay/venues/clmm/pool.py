@@ -445,7 +445,11 @@ class ClPoolState:
         elif amount1 > 0 and amount0 <= 0:
             zero_for_one = False
         else:
-            raise ClMathError("SWAP_SIGNS")
+            # Not a swap the v3 loop can replay (both legs paid in, both paid out, or nothing moved):
+            # a hook took the whole leg (launch auctions, fee modules) or the event is a no-op. The
+            # chain is the truth: anchor to the recorded after-state and report how far the model was.
+            d_sqrt, d_liq, d_tick = self.anchor_to_recorded(sqrt_after, liquidity_after, tick_after)
+            return {"mode": "anchored_degenerate", "amount0": 0, "amount1": 0, "sqrt_price_x96": d_sqrt, "liquidity": d_liq, "tick": d_tick}
         amount_in = amount0 if zero_for_one else amount1
         amount_out = -(amount1 if zero_for_one else amount0)
 
@@ -476,6 +480,28 @@ class ClPoolState:
             "liquidity": result[3] - liquidity_after,
             "tick": result[4] - tick_after,
         }
+
+    def anchor_to_recorded(self, sqrt_after: int, liquidity_after: int, tick_after: int) -> tuple[int, int, int]:
+        """Set price, liquidity and tick to a recorded after-state (the chain is the truth). Returns the
+        deltas ``model - recorded`` the state was off by, so a caller can classify the correction and apply
+        the same one to any diverged copy."""
+        if not (MIN_SQRT_RATIO <= sqrt_after < MAX_SQRT_RATIO) or liquidity_after < 0 or liquidity_after > MAX_UINT128:
+            raise ClMathError("R")
+        d = (self.sqrt_price_x96 - sqrt_after, self.liquidity - liquidity_after, self.tick - tick_after)
+        self.sqrt_price_x96, self.liquidity, self.tick = sqrt_after, liquidity_after, tick_after
+        return d
+
+    def apply_state_delta(self, d_sqrt: int, d_liq: int) -> None:
+        """Apply a correction (a price and liquidity delta) to this copy of the state, as when the
+        reference was anchored to the chain: the private copy moves by the same amount so one unseen
+        event never compounds. Raises ClMathError if the result leaves the valid range."""
+        sqrt = self.sqrt_price_x96 + d_sqrt
+        liq = self.liquidity + d_liq
+        if not (MIN_SQRT_RATIO <= sqrt < MAX_SQRT_RATIO) or liq < 0 or liq > MAX_UINT128:
+            raise ClMathError("R")
+        self.sqrt_price_x96 = sqrt
+        self.liquidity = liq
+        self.tick = get_tick_at_sqrt_ratio(sqrt)
 
     # ------------------------------------------------------------------- broker
 

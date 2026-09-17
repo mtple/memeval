@@ -73,7 +73,7 @@ class World:
         self.rows.append({**self._base(st.key, block, 2), "kind": "cl_swap", "amount0": str(a0), "amount1": str(a1), "sqrt_price_x96_after": str(sqrt), "liquidity_after": str(liq), "tick_after": tick, "fee_pips": st.fee_pips if fee_pips is None else fee_pips})
 
 
-def make_cl_pack(out_dir: Path, *, tamper_seq: int | None = None, overdraw: bool = False) -> Pack:
+def make_cl_pack(out_dir: Path, *, tamper_seq: int | None = None, overdraw: bool = False, degenerate_seq: int | None = None) -> Pack:
     """Two CL pools: POOL1 (v3, live before the window, initial state from the driving state) and POOL2
     (v4 with hooks and a dynamic fee, initialized inside the period)."""
     world = World()
@@ -107,6 +107,11 @@ def make_cl_pack(out_dir: Path, *, tamper_seq: int | None = None, overdraw: bool
     if tamper_seq is not None:
         row = next(r for r in tape if r["kind"] == "cl_swap" and r["seq"] >= tamper_seq)
         row["sqrt_price_x96_after"] = str(int(row["sqrt_price_x96_after"]) + 1)
+    if degenerate_seq is not None:
+        # a hook (launch auction, fee module) took the input leg: the log shows no token0 moving,
+        # yet the recorded after-state is exactly what the chain holds
+        row = next(r for r in tape if r["kind"] == "cl_swap" and r["seq"] >= degenerate_seq)
+        row["amount0" if int(row["amount0"]) > 0 else "amount1"] = "0"
     assets = [
         {"key": WETH, "chain_id": CHAIN, "address": WETH.split(":")[1], "decimals": 18, "symbol": "WETH", "is_numeraire": True, "discovery_available_utc_ms": PRE_MS},
         {"key": TOKEN, "chain_id": CHAIN, "address": TOKEN.split(":")[1], "decimals": 18, "symbol": None, "is_numeraire": False, "discovery_available_utc_ms": PRE_MS},
@@ -211,14 +216,29 @@ def test_prehistory_and_full_replay_keep_private_equal_to_reference(cl_pack: Pac
     assert (trades[-1].reserve0_after, trades[-1].reserve1_after) == sim.pools[POOL1].virtual_reserves()
 
 
-def test_tampered_after_price_is_exactly_one_mismatch(tmp_path: Path):
+def test_tampered_after_price_is_one_mismatch_and_one_correction(tmp_path: Path):
+    # The chain is the truth: after a mismatch the reference is anchored to the recorded state, so a
+    # single corrupt record costs the mismatch itself plus the step back onto the true path.
     pack = make_cl_pack(tmp_path / "tampered", tamper_seq=100)
     assert pack.validation["resulting_qualification"] == "diagnostic_only"
     recon = reconcile_no_agent(pack)
-    assert recon["mismatch_count"] == 1 and recon["mismatches"][0]["delta_sqrt_price_x96"] == -1
+    assert [(m["delta_sqrt_price_x96"], m["delta_liquidity"]) for m in recon["mismatches"]] == [(-1, 0), (1, 0)]
+    assert recon["mismatch_count"] == 2 and recon["reserve_adjustments"] == {"material": 2}
     sim = sim_for(pack)
     sim.process_until(sim.end_ms)
-    assert len(sim.reconciliation_mismatches) == 1 and sim.reconciliation_mismatches[0]["delta_sqrt_price_x96"] == -1
+    assert [m["delta_sqrt_price_x96"] for m in sim.reconciliation_mismatches] == [-1, 1]
+
+
+def test_degenerate_swap_anchors_to_the_recorded_state_and_stays_research(tmp_path: Path):
+    pack = make_cl_pack(tmp_path / "degenerate", degenerate_seq=100)
+    assert pack.validation["resulting_qualification"] == "research"
+    recon = reconcile_no_agent(pack)
+    assert recon["mismatch_count"] == 0 and recon["reserve_adjustments"] == {"explained": 1}
+    sim = sim_for(pack)
+    sim.process_until(sim.end_ms)
+    assert sim.reconciliation_mismatches == [] and dict(sim.reserve_adjustments) == {"explained": 1}
+    # the private replica followed the same anchoring: it still equals the reference at the end
+    assert cl_fields(sim.pools[POOL1]) == cl_fields(sim.ref_pools[POOL1]) and sim.fidelity_flags == []
 
 
 def test_overdrawn_modify_flags_environment_fidelity_limit(tmp_path: Path):
