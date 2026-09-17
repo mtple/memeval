@@ -10,7 +10,7 @@
     BASE_RPC_URL / RPC_URL                 read-only EVM RPC endpoint; when set, anyone can request a real past week
     MARKET_REPLAY_MAX_WEEKS_PER_DAY, MARKET_REPLAY_WEEK_MAX_REQUESTS, MARKET_REPLAY_WEEK_MAX_PAIRS,
     MARKET_REPLAY_WEEK_MAX_REQUESTS_PER_DAY (rolling daily RPC request cap, default 15000),
-    MARKET_REPLAY_WEEKS_RESUME=1 (collection is paused until set),
+    MARKET_REPLAY_WEEKS_PAUSED=1 (stops every tick; no RPC call is made),
     MARKET_REPLAY_WEEK_LOG_CHUNK, MARKET_REPLAY_WEEK_SLICE_SECONDS   collection caps and slice length
 """
 

@@ -160,7 +160,7 @@ def test_a_raised_request_budget_applies_to_the_week_in_flight(tmp_path: Path):
 
 
 def test_daily_request_cap_stops_ticks_and_is_visible(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("MARKET_REPLAY_WEEKS_RESUME", "1")
+    monkeypatch.delenv("MARKET_REPLAY_WEEKS_PAUSED", raising=False)
     fake = FakeBase()
     mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))
     mgr.weeks.max_requests_per_day = 30
@@ -179,8 +179,8 @@ def test_daily_request_cap_stops_ticks_and_is_visible(tmp_path: Path, monkeypatc
     mgr.close()
 
 
-def test_collection_is_paused_until_the_operator_resumes(tmp_path: Path, monkeypatch):
-    monkeypatch.delenv("MARKET_REPLAY_WEEKS_RESUME", raising=False)
+def test_collection_can_be_paused_by_the_operator(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("MARKET_REPLAY_WEEKS_PAUSED", "1")
     fake = FakeBase()
     mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))
     mgr.weeks.request(PERIOD_START, PERIOD_END)
@@ -192,7 +192,7 @@ def test_collection_is_paused_until_the_operator_resumes(tmp_path: Path, monkeyp
 
 
 def test_week_requests_are_validated_capped_and_public_over_http(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("MARKET_REPLAY_WEEKS_RESUME", "1")
+    monkeypatch.delenv("MARKET_REPLAY_WEEKS_PAUSED", raising=False)
     fake = FakeBase()
     mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))
     mgr.weeks.max_jobs_per_day = 1

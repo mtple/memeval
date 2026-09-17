@@ -406,7 +406,7 @@ function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
         <p className="small muted">
           Spending guard: {usage.requests_last_24h.toLocaleString()} of {usage.max_requests_per_day.toLocaleString()} RPC requests used in the last 24 hours
           {usage.capped ? "; the daily cap is reached, collection resumes when it clears" : ""}
-          {paused ? ". Collection is paused by the operator (MARKET_REPLAY_WEEKS_RESUME is not set)." : "."}
+          {paused ? ". Collection is paused by the operator (MARKET_REPLAY_WEEKS_PAUSED=1)." : "."}
         </p>
       )}
       {enabled && (
