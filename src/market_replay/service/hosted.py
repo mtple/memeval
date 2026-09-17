@@ -60,6 +60,7 @@ def build_hosted_app() -> tuple[FastAPI, RunManager]:
         max_pairs=int(os.environ.get("MARKET_REPLAY_WEEK_MAX_PAIRS", "16")),
         max_jobs_per_day=int(os.environ.get("MARKET_REPLAY_MAX_WEEKS_PER_DAY", "3")),
         max_requests_per_day=int(os.environ.get("MARKET_REPLAY_WEEK_MAX_REQUESTS_PER_DAY", "25000")),
+        max_response_bytes=int(os.environ.get("MARKET_REPLAY_WEEK_MAX_RESPONSE_BYTES", str(4 * 1024 * 1024 * 1024))),
     )
     boot = os.environ.get("MARKET_REPLAY_BOOTSTRAP") or ("all" if mgr.hosted else "")
     names = [] if boot in ("", "none") else (["gen_dev_short"] if boot == "dev" else list(FIXTURE_NAMES))

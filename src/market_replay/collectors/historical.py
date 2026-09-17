@@ -245,7 +245,7 @@ def run_collection(
     work.mkdir(parents=True, exist_ok=True)
     rpc_url = rpc_url_override or os.environ.get(cfg["rpc_url_env"])
     dep = DEPLOYMENTS.get(cfg["protocol"], {}).get(cfg["chain"])
-    budget = Budget(max_requests=int(cfg["max_requests"]), requests=int(budget_used))
+    budget = Budget(max_requests=int(cfg["max_requests"]), max_response_bytes=int(cfg.get("max_response_bytes", 200 * 1024 * 1024)), requests=int(budget_used))
     receipts = ReceiptStore(work / "receipts", store_bodies=store_bodies)
 
     progress = {"chunks": 0}

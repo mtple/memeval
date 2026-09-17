@@ -29,7 +29,7 @@ from .runs import ApiError, RunManager, now_iso
 RESUMABLE = ("queued", "collecting")
 # Bump when the collector or the reconciliation changes what a built week contains. A week that came
 # out diagnostic_only under an older version is collected again once, automatically, on an idle tick.
-COLLECTOR_VERSION = "2026-09-17.4"
+COLLECTOR_VERSION = "2026-09-17.5"
 # Venues a week can be recorded from. v2 pairs are constant-product; v3/v4 pools are concentrated
 # liquidity (v4 is where Clanker/Bankr launches trade, behind hooks).
 PROTOCOLS = {
@@ -55,6 +55,7 @@ class WeekJobs:
         max_pairs: int = 16,
         max_jobs_per_day: int = 3,
         max_requests_per_day: int = 25000,
+        max_response_bytes: int = 4 * 1024 * 1024 * 1024,
         default_protocol: str = "all",
         sync_every_requests: int = SYNC_EVERY_REQUESTS,
         selection_rule: str = "active_before_window_earliest_created_v1",
@@ -76,6 +77,7 @@ class WeekJobs:
         self.max_pairs = max_pairs
         self.max_jobs_per_day = max_jobs_per_day
         self.max_requests_per_day = max_requests_per_day
+        self.max_response_bytes = max_response_bytes  # per slice; an unfiltered v4 swap scan is dense
         self.default_protocol = default_protocol
         self.sync_every_requests = sync_every_requests
         self.selection_rule = selection_rule
@@ -131,6 +133,7 @@ class WeekJobs:
             "activity_lookback_blocks": 43200 if is_week else 5400,
             "max_pairs": self.max_pairs,
             "max_requests": self.max_requests,
+            "max_response_bytes": self.max_response_bytes,
             "log_chunk_blocks": self.log_chunk_blocks,
             "initial_state_lookback_blocks": 20000,
             "collector_version": COLLECTOR_VERSION,
@@ -287,8 +290,14 @@ class WeekJobs:
         cfg = json.loads(row["config_json"])
         # An operator who raises MARKET_REPLAY_WEEK_MAX_REQUESTS wants it to apply to the week in flight,
         # not only to weeks requested later.
+        changed = False
         if int(cfg.get("max_requests", 0)) < self.max_requests:
             cfg["max_requests"] = self.max_requests
+            changed = True
+        if int(cfg.get("max_response_bytes", 0)) < self.max_response_bytes:
+            cfg["max_response_bytes"] = self.max_response_bytes
+            changed = True
+        if changed:
             self.m.store.update_week_job(row["job_id"], config_json=json.dumps(cfg, sort_keys=True))
         name = row["name"]
         data_dir = self.m.data_dir
