@@ -130,8 +130,11 @@ the Episodes page offers "Add this week" to everyone:
    next slice can run on any instance. Slices are triggered by a Vercel cron every minute
    (`/api/v1/weeks/tick`), by the `weeks-watch` GitHub workflow every ten minutes, and by any
    open Episodes page.
-3. The frozen universe is `MARKET_REPLAY_WEEK_MAX_PAIRS` pools (default 16) that were already
-   trading before the week; the request budget is `MARKET_REPLAY_WEEK_MAX_REQUESTS` (default
+3. The frozen universe is `MARKET_REPLAY_WEEK_MAX_PAIRS` pools (default 16). v2 weeks take
+   pools that were already trading before the week (earliest created first). v3/v4 weeks take
+   half of them that way and fill the other half with launches from inside the week, ranked by
+   when they reached 20 swaps; a launch becomes discoverable to agents at that moment, so
+   nothing later than a pool's own first 20 swaps influences the selection; the request budget is `MARKET_REPLAY_WEEK_MAX_REQUESTS` (default
    40,000; raising it applies to the week in flight); log ranges start at `MARKET_REPLAY_WEEK_LOG_CHUNK` blocks (capped to the provider's
    `eth_getLogs` limit: 1,000 on Coinbase Developer Platform, 2,000 on Alchemy) and halve on
    provider errors. Retry backoff never sleeps past the slice deadline.
@@ -140,6 +143,11 @@ the Episodes page offers "Add this week" to everyone:
    imported, archived in the database, and appears on the leaderboard as "Base week N" (plus
    the venue for v3/v4, e.g. "Base week 2, v4 pools"). Dates stay sealed: only the signed-in
    operator's views carry the calendar. Failures show their reason on the Episodes page.
+
+Watching a collection from outside: push anything to the `status-probe` branch (Vercel never
+deploys it, see `vercel.json`) and read the `status` workflow's log; it prints every week job,
+the validation report of every built week and the leaderboard categories. Every production
+deploy also drives the collection for a few minutes and prints the same (`hosted-smoke`).
 
 Cost: collection is I/O-bound (Fluid compute bills active CPU), so a week costs mostly RPC
 requests on your provider plan. `collect-week` (GitHub Actions) remains as an alternative for

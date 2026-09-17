@@ -129,6 +129,10 @@ Done so far (September 17):
   leave the executable set with the reason on record. Diagnostic weeks from an older collector
   are rebuilt once, automatically.
 
+- Universe for v3/v4 weeks: established pools plus launches from inside the week, each launch
+  discoverable at its 20th swap (no look-ahead beyond the pool's own first swaps). Hooked v4
+  pools offer no route in their first two minutes (launch MEV modules are not modelled).
+
 Still open, in order:
 
 1. Clanker hook fee model for agent fills on v4 pools (static per-direction fee, the 20%
