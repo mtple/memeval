@@ -24,9 +24,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ..datasets.builder import rebuild_pack
 from ..datasets.generator import dev_short_config, generate_pack, standard_suite_configs
 from ..datasets.pack import Pack, PackError
-from ..datasets.validator import validate_pack
+from ..datasets.validator import demote_unreconciled_pools, validate_pack
 from ..domain.envelope import Envelope
 from ..domain.models import PublicDescriptor
 from ..domain.status import ErrorCode, Isolation, RunState
@@ -245,11 +246,19 @@ class RunManager:
         """Run the current validator over an existing pack (data untouched, same pack id) and record the new
         qualification and archive. A pack that a newer engine can now reconcile qualifies without being
         collected again."""
-        row, _pack = self.load_pack(pack_ref)
+        row, pack = self.load_pack(pack_ref)
         path = Path(row["path"])
         with self._global:
             self._packs.pop(row["pack_id"], None)
+        pools = [p.model_dump(mode="json") for p in pack.pools.values()]
+        demoted = demote_unreconciled_pools(pools, pack.tape)
+        if demoted:
+            inventory = dict(pack.inventory or {})
+            inventory["demoted"] = [*inventory.get("demoted", []), *demoted]
+            rebuild_pack(pack, pools=pools, inventory=inventory, decision_note=f"revalidated {now_iso()}: {len(demoted)} pool(s) demoted from execution under the current validator: " + "; ".join(f"{d['pool']}: {d['reason']}" for d in demoted))
         view = self.import_pack(path, row["name"])
+        if view["pack_id"] != row["pack_id"]:
+            self.store.delete_pack(row["pack_id"])
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tf:
             tf.add(path, arcname=path.name)

@@ -29,7 +29,7 @@ from .runs import ApiError, RunManager, now_iso
 RESUMABLE = ("queued", "collecting")
 # Bump when the collector or the reconciliation changes what a built week contains. A week that came
 # out diagnostic_only under an older version is collected again once, automatically, on an idle tick.
-COLLECTOR_VERSION = "2026-09-17.6"
+COLLECTOR_VERSION = "2026-09-17.7"
 # Venues a week can be recorded from. v2 pairs are constant-product; v3/v4 pools are concentrated
 # liquidity (v4 is where Clanker/Bankr launches trade, behind hooks).
 PROTOCOLS = {
@@ -176,6 +176,8 @@ class WeekJobs:
         view = self.m.revalidate_pack(row["pack_id"])
         cfg = json.loads(row["config_json"])
         cfg["collector_version"] = COLLECTOR_VERSION
+        if view["pack_id"] != row["pack_id"]:
+            self.m.store.update_week_job(job_id, pack_id=view["pack_id"], updated_at=now_iso())
         if view["use_status"] != "research":
             self.m.store.update_week_job(job_id, note=f"revalidated under the current engine: still {view['use_status']}; collecting again", updated_at=now_iso())
             return None

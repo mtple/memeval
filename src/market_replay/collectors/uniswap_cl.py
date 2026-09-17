@@ -559,6 +559,14 @@ def run_cl_collection(
         tape.sort(key=lambda r: (r["block"], r["log_index"], r["seq"]))
         for i, r in enumerate(tape, start=1):
             r["seq"] = i
+        # Pre-build reconciliation: a pool whose swaps the exact v3 loop cannot reproduce (a hook that
+        # charges its own fee or moves liquidity, a tick map the logs did not fully reveal) stays in the
+        # pack as data but leaves the executable set, with the reason on record.
+        from ..datasets.validator import demote_unreconciled_pools
+
+        demoted = demote_unreconciled_pools(pools_out, tape)
+        for d in demoted:
+            note(f"{d['pool']}: demoted from execution: {d['reason']}")
         assets_rows = []
         for tok, a in assets.items():
             assets_rows.append({"key": f"{dep['chain_id']}:{tok}", "chain_id": dep["chain_id"], "address": tok, "decimals": a["decimals"] if a["decimals"] is not None else 18, "symbol": None, "name": None, "is_numeraire": tok == wn, "created_block": None, "created_time_utc_ms": None, "discovery_available_utc_ms": block_time_ms(blocks["discovery_start"]), "fixture_rules": {"decimals_basis": a.get("basis", "unknown")}})
@@ -588,7 +596,7 @@ def run_cl_collection(
                 quote_asset=f"{dep['chain_id']}:{wn}",
                 selection_rule_version=rule,
                 indexed_block_ranges=[[blocks["discovery_start"], blocks["period_end"] - 1]],
-                excluded_or_unsupported_counts={"no_wrapped_native_leg_or_hooks": len(excluded), "beyond_max_pairs": len(sampled_out), "missing_state": len(missing)},
+                excluded_or_unsupported_counts={"no_wrapped_native_leg_or_hooks": len(excluded), "beyond_max_pairs": len(sampled_out), "missing_state": len(missing), "demoted_after_reconciliation": len(demoted)},
                 candidate_count=len(candidates),
                 selected_count=len(selected),
                 unsupported_count=len(excluded),
@@ -607,7 +615,7 @@ def run_cl_collection(
             availability_model={"kind": "constant_delay_from_block_time", "delay_ms": delay_ms, "acquisition_utc_ms": now_ms(), "note": "acquired later than the events; original provider availability not established"},
             rights=Rights(storage_basis="public_chain_data_via_configured_rpc; endpoint terms not reviewed here", local_processing_basis="research", redistribution="not_cleared", simulator_serving="local_only", notes=cfg["authorization_note"]),
             qualification=UseStatus.RESEARCH,
-            inventory={"unsupported": excluded, "excluded_by_sampling": sampled_out, "missing": missing, "native_currency_pools": native_pools, "candidate_count": len(candidates), "selected_count": len(selected)},
+            inventory={"unsupported": excluded, "excluded_by_sampling": sampled_out, "missing": missing, "demoted": demoted, "native_currency_pools": native_pools, "candidate_count": len(candidates), "selected_count": len(selected)},
             provenance_notes=[
                 f"HISTORICAL RECONSTRUCTION of {protocol} concentrated-liquidity pools from eth_getLogs. Token sellability/restrictions unknown (assumed standard transfer). Not a full week unless the period says so.",
                 "cl_swap amounts are pool deltas (positive = paid into the pool); v4 user deltas were negated to match the v3 convention.",

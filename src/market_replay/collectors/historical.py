@@ -155,31 +155,10 @@ def normalize_pair_logs(logs: list[dict[str, Any]], *, pool_key: str, token0: st
 
 
 def demote_unreconciled_pools(pools_out: list[dict[str, Any]], tape: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Run the no-agent reconciliation on the rows about to become a pack and mark every CPMM pool that
-    does not reconcile as not executable. Returns the demotion records (pool, reason, counts)."""
-    from ..datasets.validator import reconcile_rows
-    from ..domain.models import Pool
+    """Shared with the CL collector and pack revalidation: see ``datasets.validator.demote_unreconciled_pools``."""
+    from ..datasets.validator import demote_unreconciled_pools as demote
 
-    probe = {p["key"]: Pool.model_validate(p) for p in pools_out if p.get("supported_by_cpmm")}
-    if not probe:
-        return []
-    recon = reconcile_rows(probe, tape)
-    flags_by_pool: dict[str, list[str]] = {}
-    for f in recon["fidelity_flags"]:
-        flags_by_pool.setdefault(f["pool"], []).append(f["code"])
-    demoted: list[dict[str, Any]] = []
-    for p in pools_out:
-        if not p.get("supported_by_cpmm"):
-            continue
-        material = int(recon["reserve_adjustments_by_pool"].get(p["key"], {}).get("material", 0))
-        codes = sorted(set(flags_by_pool.get(p["key"], [])))
-        if material == 0 and not codes:
-            continue
-        reason = f"reserve checkpoints did not reconcile under the CPMM model: {material} material unexplained deltas; fidelity flags {codes or 'none'}"
-        p["supported_by_cpmm"] = False
-        p["unsupported_reason"] = reason
-        demoted.append({"pool": p["key"], "reason": reason, "material_deltas": material, "fidelity_flags": codes, "explained": int(recon["reserve_adjustments_by_pool"].get(p["key"], {}).get("explained", 0))})
-    return demoted
+    return demote(pools_out, tape)
 
 
 # ---------------------------------------------------------------------- pipeline

@@ -141,3 +141,41 @@ def build_pack(
             (out_dir / "manifest.yaml").write_text(yaml.safe_dump(manifest.model_dump(mode="json"), sort_keys=False))
         pack = Pack.load(out_dir)
     return pack
+
+
+def rebuild_pack(pack: Pack, *, pools: list[dict[str, Any]], inventory: dict[str, Any], decision_note: str) -> Pack:
+    """Write a loaded pack again into its own directory with revised pool records (the data rows are
+    untouched). Used when a newer validator changes which pools are executable; the content hash, and so
+    the pack id, changes with the pool records."""
+    m = pack.manifest
+    universe = m.universe.model_copy(deep=True)
+    demoted = sum(1 for p in pools if p.get("unsupported_reason") and not (p.get("supported_by_cpmm") or p.get("supported_by_clmm")))
+    universe.excluded_or_unsupported_counts["demoted_after_reconciliation"] = demoted
+    return build_pack(
+        pack.path,
+        origin=m.origin,
+        chain=m.chain,
+        chain_id=m.chain_id,
+        scope_label=m.scope_label,
+        title_private=m.title_private,
+        period=m.period,
+        universe=universe,
+        assets=[a.model_dump(mode="json") for a in pack.assets.values()],
+        pools=pools,
+        tape=pack.tape,
+        params=pack.params,
+        coverage=pack.coverage,
+        numeraire=m.numeraire,
+        numeraire_alias=m.numeraire_alias,
+        numeraire_decimals=m.numeraire_decimals,
+        token_behavior=m.data.token_behavior_basis,
+        availability_model=dict(m.data.availability_model),
+        rights=Rights(**m.rights.model_dump()),
+        qualification=UseStatus.RESEARCH,
+        blocks=[{"block": b, "time_utc_ms": t} for b, t in pack.blocks] or None,
+        restrictions=[r.model_dump(mode="json") for r in pack.restrictions] or None,
+        inventory=inventory,
+        generator=dict(m.generator),
+        provenance_notes=list(m.provenance_notes),
+        decision_log=[*m.decision_log, decision_note],
+    )

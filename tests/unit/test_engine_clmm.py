@@ -73,7 +73,7 @@ class World:
         self.rows.append({**self._base(st.key, block, 2), "kind": "cl_swap", "amount0": str(a0), "amount1": str(a1), "sqrt_price_x96_after": str(sqrt), "liquidity_after": str(liq), "tick_after": tick, "fee_pips": st.fee_pips if fee_pips is None else fee_pips})
 
 
-def make_cl_pack(out_dir: Path, *, tamper_seq: int | None = None, overdraw: bool = False, degenerate_seq: int | None = None) -> Pack:
+def make_cl_pack(out_dir: Path, *, tamper_seq: int | None = None, overdraw: bool = False, degenerate_seq: int | None = None, tamper_pool: str | None = None) -> Pack:
     """Two CL pools: POOL1 (v3, live before the window, initial state from the driving state) and POOL2
     (v4 with hooks and a dynamic fee, initialized inside the period)."""
     world = World()
@@ -107,6 +107,10 @@ def make_cl_pack(out_dir: Path, *, tamper_seq: int | None = None, overdraw: bool
     if tamper_seq is not None:
         row = next(r for r in tape if r["kind"] == "cl_swap" and r["seq"] >= tamper_seq)
         row["sqrt_price_x96_after"] = str(int(row["sqrt_price_x96_after"]) + 1)
+    if tamper_pool is not None:
+        # this pool's hook moved the price on its own: the last recorded swap cannot be reproduced
+        row = [r for r in tape if r["kind"] == "cl_swap" and r["pool"] == tamper_pool][-1]
+        row["sqrt_price_x96_after"] = str(int(row["sqrt_price_x96_after"]) + 1000)
     if degenerate_seq is not None:
         # a hook (launch auction, fee module) took the input leg: the log shows no token0 moving,
         # yet the recorded after-state is exactly what the chain holds
@@ -239,6 +243,29 @@ def test_degenerate_swap_anchors_to_the_recorded_state_and_stays_research(tmp_pa
     assert sim.reconciliation_mismatches == [] and dict(sim.reserve_adjustments) == {"explained": 1}
     # the private replica followed the same anchoring: it still equals the reference at the end
     assert cl_fields(sim.pools[POOL1]) == cl_fields(sim.ref_pools[POOL1]) and sim.fidelity_flags == []
+
+
+def test_a_pool_that_does_not_reconcile_is_demoted_and_the_rest_of_the_pack_qualifies(tmp_path: Path):
+    from market_replay.datasets.builder import rebuild_pack
+    from market_replay.datasets.validator import demote_unreconciled_pools
+
+    pack = make_cl_pack(tmp_path / "hooked", tamper_pool=POOL2)
+    assert pack.validation["resulting_qualification"] == "diagnostic_only"
+    pools = [p.model_dump(mode="json") for p in pack.pools.values()]
+    demoted = demote_unreconciled_pools(pools, pack.tape)
+    assert [d["pool"] for d in demoted] == [POOL2] and demoted[0]["material_deltas"] == 1
+    by_key = {p["key"]: p for p in pools}
+    assert by_key[POOL1]["supported_by_clmm"] is True and by_key[POOL2]["supported_by_clmm"] is False
+    assert "concentrated-liquidity model" in by_key[POOL2]["unsupported_reason"]
+    old_id = pack.pack_id
+    rebuilt = rebuild_pack(pack, pools=pools, inventory={**pack.inventory, "demoted": demoted}, decision_note="test demotion")
+    assert rebuilt.path == pack.path and rebuilt.pack_id != old_id
+    assert rebuilt.validation["resulting_qualification"] == "research"
+    assert rebuilt.manifest.universe.excluded_or_unsupported_counts["demoted_after_reconciliation"] == 1
+    assert rebuilt.inventory["demoted"][0]["pool"] == POOL2 and rebuilt.manifest.decision_log[-1] == "test demotion"
+    sim = sim_for(rebuilt)
+    sim.process_until(sim.end_ms)
+    assert sim.reconciliation_mismatches == [] and POOL2 not in sim.pools and POOL1 in sim.pools
 
 
 def test_overdrawn_modify_flags_environment_fidelity_limit(tmp_path: Path):

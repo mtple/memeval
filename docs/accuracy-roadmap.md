@@ -128,6 +128,13 @@ Done so far (September 17):
   every checkpoint re-anchors the model to the chain, and pools that still do not reconcile
   leave the executable set with the reason on record. Diagnostic weeks from an older collector
   are rebuilt once, automatically.
+- v3/v4 reconciliation follows the same policy: a swap the exact loop cannot replay (both legs
+  paid in or nothing moved, which is what a hook that absorbed a leg leaves in the log) anchors
+  the reference to the recorded after-state as an explained adjustment; any other mismatch is
+  material, re-anchors the reference, and the pool leaves the executable set. Demoted pools stay
+  in the pack as data (their swaps still price holdings) and the rest of the week qualifies.
+  Before a diagnostic week is collected again, its existing pack is revalidated under the
+  current validator, so an engine fix that reconciles the same data costs no RPC requests.
 
 - Universe for v3/v4 weeks: established pools plus launches from inside the week, each launch
   discoverable at its 20th swap (no look-ahead beyond the pool's own first swaps). Hooked v4

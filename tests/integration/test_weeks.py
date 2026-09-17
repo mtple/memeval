@@ -252,6 +252,22 @@ def test_a_diagnostic_week_the_current_engine_can_reconcile_is_revalidated_not_r
     mgr.close()
 
 
+def test_revalidating_a_pack_demotes_pools_the_current_validator_rejects_and_keeps_the_rest(tmp_path: Path):
+    from tests.unit.test_engine_clmm import POOL1, POOL2, make_cl_pack
+
+    pack = make_cl_pack(tmp_path / "hooked", tamper_pool=POOL2)
+    mgr = RunManager(data_dir=tmp_path / "data", store_url=str(tmp_path / "s.sqlite"), hosted=True)
+    old = mgr.import_pack(pack.path, "hooked_week")
+    assert old["use_status"] == "diagnostic_only"
+    view = mgr.revalidate_pack(old["pack_id"])
+    assert view["use_status"] == "research" and view["pack_id"] != old["pack_id"] and view["name"] == "hooked_week"
+    assert mgr.store.pack(old["pack_id"]) is None and mgr.store.pack_archive_meta(view["pack_id"]) is not None
+    _, loaded = mgr.load_pack(view["pack_id"])
+    assert loaded.pools[POOL2].supported_by_clmm is False and loaded.pools[POOL1].supported_by_clmm is True
+    assert mgr.revalidate_pack(view["pack_id"])["pack_id"] == view["pack_id"]  # nothing left to demote: stable id
+    mgr.close()
+
+
 def test_a_raised_request_budget_applies_to_the_week_in_flight(tmp_path: Path):
     fake = FakeBase()
     mgr = make(tmp_path, fake, str(tmp_path / "s.sqlite"))

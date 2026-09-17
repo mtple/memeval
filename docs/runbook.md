@@ -143,10 +143,14 @@ the Episodes page offers "Add this week" to everyone:
    `eth_getLogs` limit: 1,000 on Coinbase Developer Platform, 2,000 on Alchemy) and halve on
    provider errors. Retry backoff never sleeps past the slice deadline.
 4. When the collector finishes, the pack is validated (every on-chain checkpoint must
-   reconcile: v2 Sync reserves, or the price, tick and liquidity after every v3/v4 swap),
-   imported, archived in the database, and appears on the leaderboard as "Base week N" (plus
-   the venue for v3/v4, e.g. "Base week 2, v4 pools"). Dates stay sealed: only the signed-in
-   operator's views carry the calendar. Failures show their reason on the Episodes page.
+   reconcile: v2 Sync reserves, or the price, tick and liquidity after every v3/v4 swap). A pool
+   that does not reconcile is demoted from execution with the reason in the pack's inventory;
+   the week qualifies on the pools that do. The pack is imported, archived in the database, and
+   appears on the leaderboard as "Base week of YYYY-MM-DD" (plus the venue for a single-venue
+   week, e.g. "Base week of 2026-09-07, v4 pools"). Failures show their reason on the Weeks page.
+5. A week an older engine left diagnostic is first revalidated under the current validator on an
+   idle tick (no RPC requests; demotions are applied to the pack in place, which changes its pack
+   id). Only a week that still fails is collected again.
 
 Spending guard: `MARKET_REPLAY_WEEKS_PAUSED=1` stops every tick without an RPC call, and a rolling cap of `MARKET_REPLAY_WEEK_MAX_REQUESTS_PER_DAY` RPC requests (default
 25,000) stops every tick once reached. Both show on the Episodes page and in `GET /api/v1/weeks`.

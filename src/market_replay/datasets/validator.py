@@ -65,6 +65,37 @@ def reconcile_no_agent(pack: Pack, max_events: int | None = None) -> dict[str, A
     return reconcile_rows(pack.pools, pack.tape, max_events)
 
 
+def demote_unreconciled_pools(pools_out: list[dict[str, Any]], tape: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Run the no-agent reconciliation on pool records and tape rows and mark every executable pool
+    (CPMM or concentrated-liquidity) that does not reconcile as not executable. Explained adjustments
+    (orphan Syncs, hook-absorbed swaps anchored to the chain) keep a pool executable; a material delta
+    or a fidelity flag does not. Returns the demotion records (pool, reason, counts)."""
+    probe = {p["key"]: Pool.model_validate(p) for p in pools_out if p.get("supported_by_cpmm") or p.get("supported_by_clmm")}
+    if not probe:
+        return []
+    recon = reconcile_rows(probe, tape)
+    flags_by_pool: dict[str, list[str]] = {}
+    for f in recon["fidelity_flags"]:
+        flags_by_pool.setdefault(f["pool"], []).append(f["code"])
+    demoted: list[dict[str, Any]] = []
+    for p in pools_out:
+        flag = "supported_by_cpmm" if p.get("supported_by_cpmm") else "supported_by_clmm" if p.get("supported_by_clmm") else None
+        if flag is None:
+            continue
+        by_pool = recon["reserve_adjustments_by_pool"].get(p["key"], {})
+        material = int(by_pool.get("material", 0))
+        codes = sorted(set(flags_by_pool.get(p["key"], [])))
+        if material == 0 and not codes:
+            continue
+        model = "CPMM" if flag == "supported_by_cpmm" else "concentrated-liquidity"
+        what = "reserve checkpoints" if flag == "supported_by_cpmm" else "swap checkpoints"
+        reason = f"{what} did not reconcile under the {model} model: {material} material unexplained deltas; fidelity flags {codes or 'none'}"
+        p[flag] = False
+        p["unsupported_reason"] = reason
+        demoted.append({"pool": p["key"], "reason": reason, "material_deltas": material, "fidelity_flags": codes, "explained": int(by_pool.get("explained", 0))})
+    return demoted
+
+
 def reconcile_rows(pool_records: dict[str, Pool], tape: list[dict[str, Any]], max_events: int | None = None) -> dict[str, Any]:
     """The reconciliation itself, on pool records and raw tape rows (the collector calls it before a
     pack exists to decide which pools stay executable)."""
