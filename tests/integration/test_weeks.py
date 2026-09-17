@@ -30,10 +30,10 @@ def test_a_period_is_collected_in_slices_across_fresh_instances_and_becomes_a_ca
     store = str(tmp_path / "store.sqlite")
     mgr = make(tmp_path, fake, store)
     job = mgr.weeks.request(PERIOD_START, PERIOD_END)
-    assert job["status"] == "queued" and job["name"] == "base_period_01_1h" and job["label"] == "Base period 1 (1h)"
-    assert "period_start_utc" not in job and job["dates_sealed"] is True  # public view: no calendar
+    assert job["status"] == "queued" and job["name"] == "base_period_01_1h" and job["label"] == "Base 2025-09-04 (1h)"
+    assert job["period_start_utc"] == PERIOD_START and job["dates_sealed"] is False  # dates are public
     admin_view = mgr.weeks.job(job["job_id"], role="admin")
-    assert admin_view["period_start_utc"] == PERIOD_START and admin_view["dates_sealed"] is False
+    assert admin_view["period_start_utc"] == PERIOD_START and "requested_by" in admin_view
     assert mgr.weeks.request(PERIOD_START, PERIOD_END)["job_id"] == job["job_id"]  # idempotent
     mgr.close()
     # every tick runs on a brand-new instance with an empty filesystem and a tiny slice
@@ -53,12 +53,15 @@ def test_a_period_is_collected_in_slices_across_fresh_instances_and_becomes_a_ca
     packs = {p["name"]: p for p in final.packs()}
     assert view["name"] in packs and packs[view["name"]]["origin"] == "historical_reconstruction"
     cats = final.leaderboard_categories()
+    assert [c["id"] for c in cats][:1] == [view["pack_id"]]  # real weeks come first, practice material after
     real = [c for c in cats if c["id"] == view["pack_id"]]
-    assert real and real[0]["label"] == "Base period 1 (1h)" and "Real swaps recorded on Base" in real[0]["description"]
-    assert "2025" not in real[0]["label"] + real[0]["description"] + view["name"]  # nothing public names the calendar
+    c = TestClient(create_app(final, "adm_w"))
+    enrolled = c.post("/api/v1/enroll", json={"agent": {"name": "week-bot", "version": "1"}}).json()
+    assert [r["pack_name"] for r in enrolled["runs"]] == [view["name"]]  # enrolling with no choice plays every real week
+    assert real and real[0]["label"] == "Base 2025-09-04 (1h)" and "Real swaps recorded on Base from 2025-09-04 to 2025-09-04" in real[0]["description"]
+    assert "2025" not in view["name"]  # the sealed name inside a session never carries the calendar
     pack_view = next(p for p in final.packs() if p["pack_id"] == view["pack_id"])
-    assert "period_dev_mode" not in pack_view and "2025" not in json.dumps(pack_view)
-    assert "period_dev_mode" in next(p for p in final.packs(reveal_dates=True) if p["pack_id"] == view["pack_id"])
+    assert pack_view["period"]["start_utc"] == PERIOD_START
     # the pack materializes on demand from its archive and can be run
     row, pack = final.load_pack(view["name"])
     assert pack.pack_id == view["pack_id"] and len(pack.tape) > 0
@@ -73,8 +76,8 @@ def test_a_v4_period_is_collected_and_labelled_by_venue(tmp_path: Path):
     mgr.weeks = WeekJobs(mgr, rpc_url="http://fake-rpc.local", slice_seconds=240, max_requests=600, log_chunk_blocks=3000, max_pairs=2, selection_rule="earliest_created_wrapped_native_pairs_v1", transport=httpx.MockTransport(fake.handle), sleep=lambda s: None)
     v2 = mgr.weeks.request(PERIOD_START, PERIOD_END)  # same period on v2 pairs is a different job
     job = mgr.weeks.request(PERIOD_START, PERIOD_END, protocol="uniswap_v4")
-    assert job["job_id"] != v2["job_id"] and job["protocol"] == "uniswap_v4" and job["label"] == "Base period 2 (1h), v4 pools"
-    assert v2["label"] == "Base period 1 (1h)"
+    assert job["job_id"] != v2["job_id"] and job["protocol"] == "uniswap_v4" and job["label"] == "Base 2025-09-04 (1h), v4 pools"
+    assert v2["label"] == "Base 2025-09-04 (1h)"
     assert mgr.weeks.request(PERIOD_START, PERIOD_END, protocol="uniswap_v4")["job_id"] == job["job_id"]
     try:
         mgr.weeks.request(PERIOD_START, PERIOD_END, protocol="sushi")
@@ -94,7 +97,7 @@ def test_a_v4_period_is_collected_and_labelled_by_venue(tmp_path: Path):
     row, pack = mgr.load_pack(view["name"])
     assert any(p.model == "uniswap_v4_cl" for p in pack.pools.values()) and any(r["kind"] == "cl_swap" for r in pack.tape)
     cats = mgr.leaderboard_categories()
-    assert any(c["id"] == view["pack_id"] and c["label"] == "Base period 2 (1h), v4 pools" for c in cats)
+    assert any(c["id"] == view["pack_id"] and c["label"] == "Base 2025-09-04 (1h), v4 pools" for c in cats)
     mgr.close()
 
 
@@ -205,8 +208,8 @@ def test_week_requests_are_validated_capped_and_public_over_http(tmp_path: Path,
     assert r.status_code == 201 and r.json()["status"] == "queued"
     assert c.post("/api/v1/weeks", json={"week_start": "2025-08-04"}).status_code == 429  # daily cap
     listing = c.get("/api/v1/weeks").json()
-    assert listing["enabled"] and len(listing["items"]) == 1 and "period_start_utc" not in listing["items"][0]
-    assert "period_start_utc" in c.get("/api/v1/weeks", headers={"Authorization": "Bearer adm_w"}).json()["items"][0]
+    assert listing["enabled"] and len(listing["items"]) == 1 and listing["items"][0]["period_start_utc"] == PERIOD_START
+    assert "requested_by" in c.get("/api/v1/weeks", headers={"Authorization": "Bearer adm_w"}).json()["items"][0]
     t = c.post("/api/v1/weeks/tick?slice=5").json()
     assert t["advanced"]["status"] in ("collecting", "built")
     assert c.get(f"/api/v1/weeks/{r.json()['job_id']}").status_code == 200

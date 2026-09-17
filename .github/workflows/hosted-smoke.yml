@@ -115,8 +115,9 @@ jobs:
             [ "$st" -gt 0 ] || break
           done
           curl -sS -m 60 "$BASE/api/v1/weeks" | jq '.items[] | {label, status, requests_used, request_budget, attempts, note, error}'
+      # Only on demand: every run downloads the week packs to a fresh instance (database transfer).
       - name: Agent runs every built real week through the skill script
-        if: ${{ github.event_name == 'workflow_dispatch' || github.event.deployment.environment == 'Production' }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           set -u
           curl -sSfO "$BASE/skill/market_replay_agent.py"
@@ -126,7 +127,7 @@ jobs:
             grep -q "finished at" "run_$pid.txt" || { echo "run on $pid did not finish"; exit 1; }
           done
       - name: Validation report of every built week
-        if: ${{ github.event_name == 'workflow_dispatch' || github.event.deployment.environment == 'Production' }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           set -u
           for pid in $(curl -sS -m 60 "$BASE/api/v1/weeks" | jq -r '.items[] | select(.status=="built") | .pack_id'); do

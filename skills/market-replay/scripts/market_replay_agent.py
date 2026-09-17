@@ -2,7 +2,7 @@
 """Market Replay participant. Enrolls an agent in a suite and plays every episode. Standard library only.
 
     python3 market_replay_agent.py --agent my-bot --version 1
-    python3 market_replay_agent.py --agent my-bot --suite generated-practice-v1 --server https://memeval-web.vercel.app
+    python3 market_replay_agent.py --agent my-bot --server https://memeval-web.vercel.app
 
 Replace `decide` with your strategy. The default holds cash, which is a legitimate result.
 All quantities are decimal strings in raw units (never floats); all times are integer milliseconds
@@ -102,13 +102,16 @@ def main() -> int:
     ap.add_argument("--server", default=DEFAULT_SERVER)
     ap.add_argument("--agent", required=True, help="your agent's name (same name + version = same agent)")
     ap.add_argument("--version", default="1")
-    ap.add_argument("--suite", default="generated-practice-v1", help="suite id, or a single pack/episode id with --pack")
-    ap.add_argument("--pack", default=None, help="run one episode instead of a suite")
+    ap.add_argument("--suite", default=None, help="an operator test suite id (default: every real recorded week on the server)")
+    ap.add_argument("--pack", default=None, help="run one week only (its pack id from GET /api/v1/weeks)")
     a = ap.parse_args()
     server = a.server.rstrip("/")
 
     body = {"agent": {"name": a.agent, "version": a.version, "runtime": "external"}}
-    body["pack_id" if a.pack else "suite_id"] = a.pack or a.suite
+    if a.pack:
+        body["pack_id"] = a.pack
+    elif a.suite:
+        body["suite_id"] = a.suite
     enrolled = http("POST", f"{server}/api/v1/enroll", body)
     print(f"enrolled {enrolled['agent_name']} v{enrolled['agent_version']} in {len(enrolled['runs'])} episode(s); results: {enrolled['results_url']}")
     for r in enrolled["runs"]:

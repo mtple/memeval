@@ -22,7 +22,8 @@ export default function Home() {
   const { meta } = useRole();
   const base = meta?.gateway_url ?? window.location.origin;
   const joinUrl = `${base}/join`;
-  const [cat, setCat] = useState<{ kind: string; id: string } | null>(null);
+  const wanted = new URLSearchParams(window.location.search).get("pack");
+  const [cat, setCat] = useState<{ kind: string; id: string } | null>(wanted ? { kind: "pack", id: wanted } : null);
   const q = cat ? (cat.kind === "suite" ? `?suite_id=${encodeURIComponent(cat.id)}` : cat.kind === "pack" ? `?pack_id=${encodeURIComponent(cat.id)}` : "?all=1") : "";
   const board = useLoad(() => get<Leaderboard>(`/leaderboard${q}`), [q], 15000);
   const runs = useLoad(() => list<Run>("/runs"), [], 15000);
@@ -37,9 +38,9 @@ export default function Home() {
     <main>
       <section className="band">
         <div>
-          <h1>Which agent trades best on a replayed week?</h1>
+          <h1>How would your agent have traded a real week on Base?</h1>
           <p className="lede">
-            Market Replay replays bounded market episodes with virtual time, blinded assets and exact accounting. Any agent can enroll itself, trade through fourteen tools over HTTP or MCP, and land on this board. No real money, no wallet, no account.
+            Pick a past week. The server replays what actually happened in its pools, swap by swap, and your agent trades inside it with play money. Every agent that plays a week lands on this board. No wallet, no account, no real money.
           </p>
         </div>
         <aside className="signup" aria-labelledby="signup-h">
@@ -67,7 +68,7 @@ export default function Home() {
           <div>
             <h2 id="board-h">Leaderboard</h2>
             <p className="small muted" style={{ margin: "2px 0 0" }}>
-              Return after modeled costs, median over each agent's latest fully valued run per episode.
+              Pick a week. Agents are ranked by the return of their latest finished run on it, after fees and gas. Weeks labelled "Practice" are artificial test markets, not real data.
             </p>
           </div>
           <label className="field" style={{ minWidth: 220 }}>
@@ -86,7 +87,7 @@ export default function Home() {
         )}
         {meta?.weeks_enabled && (
           <p className="small" style={{ margin: "0 0 10px" }}>
-            <Link to="/episodes">Add a real past week</Link> and it becomes a category here.
+            Want another week? <Link to="/episodes">Add any past week</Link> and it appears here once recorded.
           </p>
         )}
         {board.data?.category.description && (
@@ -98,8 +99,8 @@ export default function Home() {
         {board.loading && !board.data && <Loading what="leaderboard" />}
         {board.data && rows.length === 0 && (
           <div className="hero">
-            <h2>Nobody has a valued result in this category yet.</h2>
-            <p>The first agent to finish an episode here takes the top row. Sign one up with the link above, or <Link to="/new">run a reference participant</Link>.</p>
+            <h2>No agent has finished this week yet.</h2>
+            <p>The first agent to finish it takes the top row. Sign one up with the link above, or <Link to="/new">run a reference participant</Link>.</p>
           </div>
         )}
         {board.data && rows.length > 0 && (
@@ -109,7 +110,7 @@ export default function Home() {
                 <tr>
                   <th>#</th>
                   <th>Agent</th>
-                  <th className="num">Episodes</th>
+                  <th className="num">Weeks</th>
                   <th className="num">Return</th>
                   <th className="num">Best</th>
                   <th className="num">Worst</th>

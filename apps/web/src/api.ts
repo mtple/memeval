@@ -169,6 +169,9 @@ export type Pack = {
   unsupported_capabilities: string[];
   predictive_validity: string;
   period_dev_mode?: { start_utc: string; end_utc: string; note: string } | null;
+  period?: { start_utc: string; end_utc: string } | null;
+  label?: string;
+  kind?: "real" | "practice";
   summary: {
     pools_total: number;
     pools_executable: number;
@@ -320,6 +323,7 @@ export type Run = {
   pack_id: string;
   episode_id: string;
   pack_name: string;
+  pack_label?: string | null;
   suite_id: string | null;
   suite_run_id: string | null;
   mode: string;

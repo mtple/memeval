@@ -129,6 +129,8 @@ def test_leaderboard_ranks_agents_per_category_and_join_serves_the_skill(tmp_pat
         assert r.status_code == 201 and r.json()["state"] == "completed", r.text
     lb = c.get("/api/v1/leaderboard?pack_id=gen_dev_short").json()
     assert lb["category"]["kind"] == "pack" and [x["kind"] for x in lb["categories"]][:1] == ["suite"]
+    assert lb["category"]["label"] == "Practice: short warm-up, 2 hours (artificial)"
+    assert c.get("/api/v1/leaderboard?pack_id=gen_dev_short&include_artificial=0").json()["categories"] == []
     names = [r["agent_name"] for r in lb["rows"]]
     assert set(names) == {"holder", "basket"} and [r["rank"] for r in lb["rows"]] == [1, 2]
     assert all(r["episodes_valued"] == 1 and r["covers_all"] for r in lb["rows"])
@@ -186,9 +188,9 @@ def test_category_labels_and_descriptions_for_real_and_artificial_weeks():
     from market_replay.service.runs import _episode_description, _episode_label
 
     fixture = {"name": "gen_week_trending", "is_full_week": 1, "duration_ms": 604_800_000, "origin": "generated_fixture", "chain": "generated", "summary_json": '{"scenario": "Sustained directional flow."}'}
-    assert _episode_label(fixture) == "Week: trending"
-    assert _episode_description(fixture).startswith("Artificial market with known rules. Sustained")
+    assert _episode_label(fixture) == "Practice week: trending market (artificial)"
+    assert _episode_description(fixture).startswith("Practice material, not real data: an artificial market with known rules, made for testing agents. Sustained")
     real = {"name": "base_week_03", "is_full_week": 1, "duration_ms": 604_800_000, "origin": "historical_reconstruction", "chain": "base", "start_utc": "2026-09-08T00:00:00Z", "end_utc": "2026-09-15T00:00:00Z", "summary_json": '{"pools_executable": 16}'}
-    assert _episode_label(real) == "Base week 3"
+    assert _episode_label(real) == "Base week of 2026-09-08"
     d = _episode_description(real)
-    assert "Real swaps recorded on Base over 7 days" in d and "16 tradable pools" in d and "sealed" in d and "2026" not in d
+    assert "Real swaps recorded on Base from 2026-09-08 to 2026-09-15 (7 days)" in d and "16 tradable pools" in d and "generic names" in d

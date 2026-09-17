@@ -57,7 +57,7 @@ export default function Results() {
             <p style={{ fontSize: 15, margin: 0 }}>
               {summarySentence({
                 agent: run.data?.agent_name ?? "The agent",
-                episode: run.data?.pack_name ?? "the episode",
+                episode: run.data?.pack_label ?? run.data?.pack_name ?? "the episode",
                 durationMs: R.coverage_and_assumptions.episode_duration_ms,
                 isFullWeek: R.coverage_and_assumptions.is_full_week,
                 unit: unit ?? "",

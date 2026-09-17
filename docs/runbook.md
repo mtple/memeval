@@ -149,6 +149,12 @@ Spending guard: `MARKET_REPLAY_WEEKS_PAUSED=1` stops every tick without an RPC c
 A full v4 week costs roughly 12,000 to 16,000 requests, a v2 week under 1,000; check what your
 RPC provider charges per request before resuming.
 
+Database transfer (Neon's free plan caps network transfer per month): every collection slice that
+lands on a cold instance re-downloads the week's working files, and every cold instance that
+serves a real week downloads that pack's archive once. Keep collection to a few weeks a month
+on the free plan, and avoid CI steps that run agents on real weeks on every deploy (they are
+`workflow_dispatch` only for that reason).
+
 Watching a collection from outside: push anything to the `status-probe` branch (Vercel never
 deploys it, see `vercel.json`) and read the `status` workflow's log; it prints every week job,
 the validation report of every built week and the leaderboard categories. Every production

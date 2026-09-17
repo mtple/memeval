@@ -329,19 +329,22 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
         return weeks_or_503().rebuild(job_id)
 
     @app.get("/api/v1/leaderboard", dependencies=[Depends(public_read)])
-    def leaderboard(suite_id: str | None = None, pack_id: str | None = None, all: bool = False) -> dict[str, Any]:
-        """Default: the practice suite when it has results, otherwise the first category that does."""
+    def leaderboard(suite_id: str | None = None, pack_id: str | None = None, all: bool = False, include_artificial: bool = True) -> dict[str, Any]:
+        """Default: the first category with results, real weeks (newest first) before practice material."""
         if suite_id or pack_id or all:
-            return manager.leaderboard(suite_id=suite_id, pack_id=pack_id)
-        if "generated-practice-v1" in manager.suites:
-            board = manager.leaderboard(suite_id="generated-practice-v1")
-            if board["rows"]:
-                return board
-        for cat in manager.leaderboard_categories():
-            board = manager.leaderboard(suite_id=cat["id"]) if cat["kind"] == "suite" else manager.leaderboard(pack_id=cat["id"])
-            if board["rows"]:
-                return board
-        return manager.leaderboard()
+            board = manager.leaderboard(suite_id=suite_id, pack_id=pack_id)
+        else:
+            cats = manager.leaderboard_categories(include_artificial=include_artificial)
+            board = None
+            for cat in cats:
+                b = manager.leaderboard(suite_id=cat["id"]) if cat["kind"] == "suite" else manager.leaderboard(pack_id=cat["id"])
+                if b["rows"]:
+                    board = b
+                    break
+            if board is None:
+                board = (manager.leaderboard(pack_id=cats[0]["id"]) if cats[0]["kind"] == "pack" else manager.leaderboard(suite_id=cats[0]["id"])) if cats else manager.leaderboard()
+        board["categories"] = manager.leaderboard_categories(include_artificial=include_artificial)
+        return board
 
     @app.get("/join", include_in_schema=False)
     @app.get("/api/v1/skill", include_in_schema=False)

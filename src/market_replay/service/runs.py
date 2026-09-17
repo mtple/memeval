@@ -297,6 +297,8 @@ class RunManager:
             "is_full_week": bool(row["is_full_week"]),
             "execution_model": row["execution_model"],
             "imported_at": row["imported_at"],
+            "label": _episode_label(row),
+            "kind": "practice" if str(row.get("origin", "")) == "generated_fixture" else "real",
             "runnable": row["use_status"] in ("demo", "research", "qualified_for_named_suite") and summary.get("pools_executable", 0) > 0,
             "diagnostic_only": row["use_status"] in ("diagnostic_only",),
             "summary": summary,
@@ -304,9 +306,12 @@ class RunManager:
             "unsupported_capabilities": UNSUPPORTED_CAPABILITIES,
             "predictive_validity": "not_established",
         }
-        # Calendar dates are never public: an agent that knows the period can look history up. The operator
-        # sees them (development mode, non-sealed packs); everyone else sees only the duration.
-        if reveal_dates and self.dev_mode and not sealed_only:
+        # The calendar is public on real data (the leaderboard is labelled by it); what stays generic is
+        # everything an agent sees inside a session (pool and token names). Generated fixtures have no
+        # real calendar; packs that only exist in a sealed suite keep theirs to the operator.
+        if str(row.get("origin", "")) != "generated_fixture" and not sealed_only:
+            view["period"] = {"start_utc": row["start_utc"], "end_utc": row["end_utc"]}
+        elif reveal_dates and self.dev_mode and not sealed_only:
             view["period_dev_mode"] = {"start_utc": row["start_utc"], "end_utc": row["end_utc"], "note": "actual dates shown to the operator only"}
         return view
 
@@ -793,6 +798,7 @@ class RunManager:
             "pack_id": row["pack_id"],
             "episode_id": pack_row["episode_id"] if pack_row else None,
             "pack_name": pack_row["name"] if pack_row else None,
+            "pack_label": _episode_label(pack_row) if pack_row else None,
             "suite_id": row["suite_id"],
             "suite_run_id": row["suite_run_id"],
             "mode": row["mode"],
@@ -958,7 +964,7 @@ class RunManager:
                     bundle["run"]["exposed"] = True
             bundle["private_period"] = {"start_utc": pack_row["start_utc"], "end_utc": pack_row["end_utc"]} if row["mode"] == "practice" else "sealed"
         else:
-            bundle["run"] = {k: v for k, v in bundle["run"].items() if k not in ("pack_id", "pack_name")}
+            bundle["run"] = {k: v for k, v in bundle["run"].items() if k not in ("pack_id", "pack_name", "pack_label")}
             bundle["trace"] = redact_for_role(trace, role, ctx.session.scanner)
         bundle["bundle_hash"] = hashlib.sha256(json.dumps({k: v for k, v in bundle.items() if k != "run"}, sort_keys=True, default=str).encode()).hexdigest()
         return bundle
@@ -1057,7 +1063,14 @@ class RunManager:
         elif pack_id:
             runs.append(self.create_run(agent_id=agent_id, pack_ref=pack_id))
         else:
-            raise ApiError(400, "suite_id or pack_id is required", "INVALID")
+            # No choice made: every real week on the server; on a server without one yet, the practice suite.
+            weeks = self.real_weeks()
+            if not weeks:
+                if "generated-practice-v1" in self.suites:
+                    return self.enroll(agent=agent, suite_id="generated-practice-v1")
+                raise ApiError(409, "no week is available on this server yet; pass suite_id or pack_id", "NO_WEEKS")
+            for r in weeks:
+                runs.append(self.create_run(agent_id=agent_id, pack_ref=r["pack_id"]))
         return {
             "agent_id": agent_id,
             "agent_name": view["name"],
@@ -1071,15 +1084,25 @@ class RunManager:
         }
 
     # ------------------------------------------------------------------ leaderboard
-    def leaderboard_categories(self) -> list[dict[str, Any]]:
-        """What can be ranked: each suite as a whole, then each episode on its own."""
+    def real_weeks(self) -> list[dict[str, Any]]:
+        """Recorded weeks that agents can trade, newest first (the public catalogue)."""
+        rows = [r for r in self.store.packs() if str(r.get("origin", "")) != "generated_fixture" and r["use_status"] in ("demo", "research", "qualified_for_named_suite")]
+        return sorted(rows, key=lambda r: str(r.get("start_utc") or ""), reverse=True)
+
+    def leaderboard_categories(self, include_artificial: bool = True) -> list[dict[str, Any]]:
+        """What can be ranked: every real week first, newest first, then the practice material (artificial
+        weeks made for testing agents), each labelled in plain words."""
         cats: list[dict[str, Any]] = []
-        for s in self.suites.values():
-            if s.sealed or len(s.packs) < 2:  # a one-episode suite is its episode's own tab
-                continue
-            cats.append({"kind": "suite", "id": s.suite_id, "label": _suite_label(s), "description": s.description, "episodes": list(s.packs)})
-        for r in self.store.packs():
+        for r in self.real_weeks():
             cats.append({"kind": "pack", "id": r["pack_id"], "label": _episode_label(r), "description": _episode_description(r), "episodes": [r["name"]]})
+        if include_artificial:
+            for s in self.suites.values():
+                if s.sealed or len(s.packs) < 2:  # a one-episode suite is its episode's own tab
+                    continue
+                cats.append({"kind": "suite", "id": s.suite_id, "label": _suite_label(s), "description": s.description, "episodes": list(s.packs)})
+            for r in self.store.packs():
+                if str(r.get("origin", "")) == "generated_fixture":
+                    cats.append({"kind": "pack", "id": r["pack_id"], "label": _episode_label(r), "description": _episode_description(r), "episodes": [r["name"]]})
         return cats
 
     def leaderboard(self, *, suite_id: str | None = None, pack_id: str | None = None) -> dict[str, Any]:
@@ -1233,8 +1256,17 @@ def _initialized_on_tape(pack: Pack, key: str) -> bool:
     return any(r["kind"] == "cl_init" and r["pool"] == key for r in pack.tape)
 
 
+FIXTURE_SCENARIO_NAMES = {
+    "gen_week_trending": "trending market",
+    "gen_week_reversal": "pump then reversal",
+    "gen_week_sparse_missing": "thin market with gaps",
+    "gen_week_liquidity_shift": "liquidity moves between pools",
+    "gen_dev_short": "short warm-up",
+}
+
+
 def _episode_label(row: dict[str, Any]) -> str:
-    """'gen_week_trending' -> 'Week: trending'; real data -> 'Base week 3' (the calendar stays sealed)."""
+    """'gen_week_trending' -> 'Week: trending'; real data -> 'Base week of 2026-09-07, v4 pools'."""
     name, is_full_week, duration_ms = row["name"], row["is_full_week"], row["duration_ms"]
     if str(row.get("origin", "")) != "generated_fixture":
         from .weeks import week_label
@@ -1244,12 +1276,13 @@ def _episode_label(row: dict[str, Any]) -> str:
         except (TypeError, ValueError):
             models = []
         protocol = "uniswap_v4" if any("v4" in str(m) for m in models) else "uniswap_v3" if any("v3" in str(m) for m in models) else "uniswap_v2"
-        return week_label(name, str(row.get("chain") or ""), protocol)
+        return week_label(name, str(row.get("chain") or ""), protocol, row.get("start_utc"), row.get("end_utc"))
     base = name.replace("gen_week_", "").replace("gen_", "").replace("_", " ")
+    scenario = FIXTURE_SCENARIO_NAMES.get(name, base)
     if is_full_week:
-        return f"Week: {base}"
+        return f"Practice week: {scenario} (artificial)"
     hours = float(duration_ms or 0) / 3_600_000
-    return f"{base} ({hours:g}h)" if hours else base
+    return f"Practice: {scenario}, {hours:g} hours (artificial)" if hours else f"Practice: {scenario} (artificial)"
 
 
 def _episode_description(row: dict[str, Any]) -> str:
@@ -1260,14 +1293,16 @@ def _episode_description(row: dict[str, Any]) -> str:
         summary = {}
     if str(row.get("origin", "")) == "generated_fixture":
         scenario = summary.get("scenario") or ""
-        return f"Artificial market with known rules. {scenario}".strip()
+        return f"Practice material, not real data: an artificial market with known rules, made for testing agents. {scenario}".strip()
     hours = float(row.get("duration_ms") or 0) / 3_600_000
     span = "7 days" if row.get("is_full_week") else f"{hours:g} hours"
     pools = summary.get("pools_executable")
-    return f"Real swaps recorded on {str(row.get('chain') or '').capitalize()} over {span}, replayed through the execution model with {pools} tradable pools under generic names. The calendar dates are sealed so an agent cannot look the period up. Gas and token taxes assumed standard. Not historical performance."
+    start, end = str(row.get("start_utc") or "")[:10], str(row.get("end_utc") or "")[:10]
+    when = f" from {start} to {end}" if start and end else ""
+    return f"Real swaps recorded on {str(row.get('chain') or '').capitalize()}{when} ({span}), replayed through the execution model with {pools} tradable pools. Inside a session the pools and tokens carry generic names, so an agent cannot look them up. Gas and token taxes assumed standard. Not historical performance."
 
 
 def _suite_label(s: SuiteDef) -> str:
     n = len(s.packs)
     weeks = all(name.startswith("gen_week_") for name in s.packs)
-    return f"All {n} weeks" if weeks else f"All {n} episodes ({s.suite_id})"
+    return f"Practice: all {n} artificial weeks" if weeks else f"Practice: all {n} episodes ({s.suite_id})"

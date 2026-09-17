@@ -20,14 +20,13 @@ jobs:
         run: |
           set -u
           curl -sS -m 60 "$BASE/api/v1/weeks" | jq '{paused, usage, items: [.items[] | {label, protocol, status, requests_used, request_budget, attempts, qualification, note, error, updated_at}]}'
-      - name: Validation of built weeks
+      # The validation report needs the pack itself; reading it through the API downloads the archive from
+      # the database on a cold instance, so it is not part of the routine probe. The gate summary is in
+      # GET /api/v1/packs (summary.gates) without a download.
+      - name: Gate summary of built weeks
         run: |
           set -u
-          for pid in $(curl -sS -m 60 "$BASE/api/v1/weeks" | jq -r '.items[] | select(.status=="built") | .pack_id'); do
-            echo "== $pid"
-            curl -sS -m 120 "$BASE/api/v1/packs/$pid/validation" | jq '{resulting_qualification, execution: (.gates[] | select(.gate=="execution_state") | {status, detail}), reconciliation: (.gates[] | select(.gate=="execution_state") | .reconciliation | {checkpoints, mismatch_count, fidelity_flag_count, reserve_adjustments, mismatches: (.mismatches[0:5]), fidelity_flags: (.fidelity_flags[0:5])})}'
-            curl -sS -m 120 "$BASE/api/v1/packs/$pid" | jq '{use_status, pools_total: .summary.pools_total, pools_executable: .summary.pools_executable, tape_events: .summary.tape_events, demoted: (.summary.universe.excluded_or_unsupported_counts // {})}'
-          done
+          curl -sS -m 60 "$BASE/api/v1/packs" | jq '[.items[] | select(.origin=="historical_reconstruction") | {name, use_status, period, pools_executable: .summary.pools_executable, tape_events: .summary.tape_events, gates: [.summary.gates[] | select(.status!="passed")]}]'
       - name: Leaderboard categories
         run: |
           curl -sS -m 60 "$BASE/api/v1/leaderboard?all=true" | jq '{categories: [.categories[]? | {id, label}], rows: (.rows | length)}' || true

@@ -120,7 +120,7 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
     for mcp_name, canonical in MCP_NAME_MAP.items():
         register(mcp_name, canonical, TOOLS[canonical])
 
-    @mcp.tool(name="enroll", description="Register your agent by name (same name + version = same agent) and get one session token per episode. No credential needed. Pass suite_id (default generated-practice-v1, four artificial weeks) or pack_id (e.g. gen_dev_short, a two-hour episode).", structured_output=True)
+    @mcp.tool(name="enroll", description="Register your agent by name (same name + version = same agent) and get one session token per week. No credential needed. With no arguments you play every real recorded week on the server; pass pack_id for one week, or suite_id for the operator's artificial test suites.", structured_output=True)
     def enroll(ctx: Context, agent_name: str, agent_version: str = "1", suite_id: str | None = None, pack_id: str | None = None) -> dict[str, Any]:
         try:
             if not public_runs():
@@ -128,7 +128,7 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
             req = request_of(ctx)
             if client_ip is not None and req is not None:
                 manager.rate_limit("runs", client_ip(req))
-            return {"status": "ok", "data": manager.enroll(agent={"name": agent_name, "version": agent_version, "runtime": "external"}, suite_id=None if pack_id else (suite_id or "generated-practice-v1"), pack_id=pack_id)}
+            return {"status": "ok", "data": manager.enroll(agent={"name": agent_name, "version": agent_version, "runtime": "external"}, suite_id=None if pack_id else suite_id, pack_id=pack_id)}
         except Exception as e:
             return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
 

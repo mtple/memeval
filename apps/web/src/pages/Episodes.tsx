@@ -35,11 +35,49 @@ export default function Episodes() {
 
   return (
     <main className="stack">
-      <h1>Episodes</h1>
+      <h1>Weeks</h1>
       <RealWeeks onBuilt={reload} />
       {error && <ErrorState error={error} retry={reload} />}
-      {loading && !packs && <Loading what="packs" />}
-      {packs && (
+      {loading && !packs && <Loading what="weeks" />}
+      {packs && role !== "admin" && (
+        <Card title="Weeks agents can play">
+          <p className="small muted">Real weeks are recorded from Base for the dates shown. Practice weeks are artificial markets with known rules, useful for testing an agent before it plays a real week.</p>
+          {packs.filter((p) => p.runnable).length === 0 ? (
+            <p className="muted">No week is ready yet.</p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Week</th>
+                    <th>Kind</th>
+                    <th>Dates</th>
+                    <th className="num">Pools</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...packs]
+                    .filter((p) => p.runnable)
+                    .sort((a, b) => (a.kind === b.kind ? (b.period?.start_utc ?? "").localeCompare(a.period?.start_utc ?? "") : a.kind === "real" ? -1 : 1))
+                    .map((p) => (
+                      <tr key={p.pack_id}>
+                        <td>{p.label ?? p.name}</td>
+                        <td>{p.kind === "real" ? <Badge tone="ok">Real data</Badge> : <Badge tone="warn">Practice (artificial)</Badge>}</td>
+                        <td className="small">{p.period ? `${p.period.start_utc.slice(0, 10)} to ${p.period.end_utc.slice(0, 10)}` : fmtDuration(p.duration_ms, p.is_full_week)}</td>
+                        <td className="num">{p.summary?.pools_executable ?? "?"}</td>
+                        <td className="small">
+                          <Link to={`/?pack=${p.pack_id}`}>Leaderboard</Link> · <Link to="/new">Run an agent</Link>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+      {packs && role === "admin" && (
         <>
           <div className="filters" role="group" aria-label="Filters">
             <Sel label="Chain" value={chain} onChange={setChain} options={uniq(packs.map((p) => p.chain))} />
@@ -395,12 +433,12 @@ function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
     return role === "admin" ? <p className="muted small">Real weeks are off: set BASE_RPC_URL on the server to let anyone add a past week.</p> : null;
   }
   return (
-    <Card title="Real weeks">
+    <Card title="Add a past week">
       <p>
-        Pick a past week and a venue, and the server records what actually happened on Base, read straight from chain logs, so agents can replay it. Uniswap v4 is where Clanker and Bankr launches trade; v2 pairs are the older constant-product pools. Collection takes a while; the week appears on the leaderboard when it is built.
+        Pick a Monday and a venue. The server records what actually happened on Base that week, straight from the chain, so agents can replay it. Uniswap v4 is where Clanker and Bankr tokens trade; v2 pairs are the older pools. Recording takes one to three hours; the week appears on the leaderboard when it is done.
       </p>
       <p className="small muted">
-        Sealed by design: once built, the week is called "Base week 3", its pools and tokens get generic names, and nothing public says which dates it covers. An agent cannot look the period up. Only the signed-in operator can see the calendar.
+        Weeks are labelled by their dates. Inside a session the pools and tokens carry generic names, so an agent cannot look a token's history up; the dates are for you, not for the agent.
       </p>
       {usage && (
         <p className="small muted">
@@ -461,7 +499,7 @@ function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
                 <tr key={j.job_id}>
                   <td>
                     {j.label}
-                    <div className="muted small">{j.period_start_utc ? `${j.period_start_utc.slice(0, 10)} to ${j.period_end_utc?.slice(0, 10)} (operator view)` : `${j.duration_hours >= 168 ? "7 days" : `${j.duration_hours}h`}, dates sealed`}</div>
+                    <div className="muted small">{j.period_start_utc ? `${j.period_start_utc.slice(0, 10)} to ${j.period_end_utc?.slice(0, 10)} UTC` : `${j.duration_hours >= 168 ? "7 days" : `${j.duration_hours}h`}`}</div>
                   </td>
                   <td>
                     <Badge tone={j.status === "built" ? "ok" : j.status === "failed" ? "bad" : "info"}>{j.status}</Badge>

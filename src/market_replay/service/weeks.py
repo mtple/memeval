@@ -189,18 +189,20 @@ class WeekJobs:
         return self.view(self.m.store.week_job(job_id))
 
     def view(self, row: dict[str, Any], role: str = "public") -> dict[str, Any]:
-        """Public views never carry the calendar; the operator's view does."""
+        """Dates are public (the leaderboard is labelled by them); pool and token names stay generic inside a session."""
         cfg = json.loads(row["config_json"])
         start, end = _parse(row["period_start_utc"]), _parse(row["period_end_utc"])
         hours = int((end - start).total_seconds() // 3600)
         out = {
             "job_id": row["job_id"],
             "name": row["name"],
-            "label": week_label(row["name"], row["chain"], row.get("protocol") or cfg.get("protocol") or "uniswap_v2"),
+            "label": week_label(row["name"], row["chain"], row.get("protocol") or cfg.get("protocol") or "uniswap_v2", row["period_start_utc"], row["period_end_utc"]),
             "chain": row["chain"],
             "protocol": row.get("protocol") or cfg.get("protocol") or "uniswap_v2",
             "duration_hours": hours,
-            "dates_sealed": True,
+            "period_start_utc": row["period_start_utc"],
+            "period_end_utc": row["period_end_utc"],
+            "dates_sealed": False,
             "status": row["status"],
             "requests_used": row["requests_used"],
             "request_budget": cfg["max_requests"],
@@ -213,7 +215,7 @@ class WeekJobs:
             "updated_at": row["updated_at"],
         }
         if role == "admin":
-            out.update(period_start_utc=row["period_start_utc"], period_end_utc=row["period_end_utc"], requested_by=row["requested_by"], dates_sealed=False)
+            out.update(requested_by=row["requested_by"])
         return out
 
     def _qualification(self, pack_id: str | None) -> str | None:
@@ -359,16 +361,24 @@ class WeekJobs:
         return {"uploaded": uploaded, "kept": len(seen) - uploaded}
 
 
-def week_label(name: str, chain: str, protocol: str | None = None) -> str:
-    """'base_week_03' -> 'Base week 3'; 'base_period_02_1h' -> 'Base period 2 (1h)'. The venue is named for
-    anything but the original v2 pairs ('Base week 4, v4 pools'); the calendar never is."""
+def week_label(name: str, chain: str, protocol: str | None = None, start_utc: str | None = None, end_utc: str | None = None) -> str:
+    """Real data is labelled by its calendar: 'Base week of 2026-09-07' (a shorter period: 'Base
+    2026-09-04 (1h)'), plus the venue for anything but v2 pairs ('..., v4 pools'). Without dates the
+    sealed sequence name is used ('Base week 3')."""
     parts = name.split("_")
     venue = PROTOCOLS.get(protocol or "", "")
     suffix = f", {venue}" if venue and protocol != "uniswap_v2" else ""
+    head = chain.capitalize()
+    if start_utc:
+        day = str(start_utc)[:10]
+        if len(parts) >= 3 and parts[1] == "week":
+            return f"{head} week of {day}{suffix}"
+        hours = parts[3] if len(parts) >= 4 and parts[1] == "period" else None
+        return f"{head} {day} ({hours}){suffix}" if hours else f"{head} {day}{suffix}"
     if len(parts) >= 3 and parts[1] == "week" and parts[2].isdigit():
-        return f"{chain.capitalize()} week {int(parts[2])}{suffix}"
+        return f"{head} week {int(parts[2])}{suffix}"
     if len(parts) >= 4 and parts[1] == "period" and parts[2].isdigit():
-        return f"{chain.capitalize()} period {int(parts[2])} ({parts[3]}){suffix}"
+        return f"{head} period {int(parts[2])} ({parts[3]}){suffix}"
     return name.replace("_", " ") + suffix
 
 

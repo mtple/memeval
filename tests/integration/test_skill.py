@@ -59,7 +59,8 @@ def test_enroll_returns_one_token_per_episode_without_any_credential(server):
     assert e["results_url"] == f"{srv.url}/?agent={e['agent_id']}" and e["skill_url"] == srv.url + "/skill.md"
     single = httpx.post(srv.url + "/api/v1/enroll", json={"agent": {"name": "bankr-skill-bot", "version": "2"}, "pack_id": "gen_dev_short"}).json()
     assert single["agent_id"] == e["agent_id"] and single["suite_id"] is None and len(single["runs"]) == 1
-    assert httpx.post(srv.url + "/api/v1/enroll", json={"agent": {"name": "x", "version": "1"}}).status_code == 400
+    r = httpx.post(srv.url + "/api/v1/enroll", json={"agent": {"name": "x", "version": "1"}}, timeout=300)  # default: every real week; none here, so the practice suite (generated on first use)
+    assert r.status_code == 201 and r.json()["suite_id"] == "generated-practice-v1" and len(r.json()["runs"]) == 4
 
 
 def test_the_skills_script_plays_a_suite_end_to_end(server):

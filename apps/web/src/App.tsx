@@ -14,12 +14,12 @@ import Results from "./pages/Results";
 import Compare from "./pages/Compare";
 import DataHealth from "./pages/DataHealth";
 
-const NAV: [string, string][] = [
-  ["/", "Leaderboard"],
-  ["/results", "Results"],
-  ["/episodes", "Episodes"],
-  ["/agents", "Agents"],
-  ["/compare", "Compare"],
+const NAV: [string, string, boolean][] = [
+  ["/", "Leaderboard", false],
+  ["/results", "Results", false],
+  ["/episodes", "Weeks", false],
+  ["/agents", "Agents", true],
+  ["/compare", "Compare", true],
 ];
 
 type Health = { status: string; dev_mode: boolean };
@@ -173,11 +173,12 @@ function NotConnected({ error, retry }: { error: ApiError | Error; retry: () => 
 }
 
 function Shell({ conn, recheck }: { conn: Conn; recheck: () => void }) {
+  const { role } = useRole();
   return (
     <>
       <nav className="topnav" aria-label="Primary">
         <span className="brand">Market Replay</span>
-        {NAV.map(([to, label]) => (
+        {NAV.filter(([, , operatorOnly]) => !operatorOnly || role === "admin").map(([to, label]) => (
           <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive ? "active" : "")}>
             {label}
           </NavLink>

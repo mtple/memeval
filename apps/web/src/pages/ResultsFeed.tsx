@@ -88,7 +88,7 @@ export function ResultCard({ run: r }: { run: Run }) {
       <div className="title">
         <strong>
           {r.agent_name ?? shortHash(r.agent_id)}
-          {r.agent_version ? <span className="muted"> v{r.agent_version}</span> : null} · {r.pack_name ?? shortHash(r.pack_id)}
+          {r.agent_version ? <span className="muted"> v{r.agent_version}</span> : null} · {r.pack_label ?? r.pack_name ?? shortHash(r.pack_id)}
         </strong>
         <RunStateBadge state={r.state} />
       </div>
