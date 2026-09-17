@@ -55,6 +55,9 @@ class PoolModel(StrEnum):
     # Recognised but unsupported by the CPMM adapter. They exist so imports can keep the data.
     UNISWAP_V3 = "uniswap_v3"
     UNISWAP_V4_HOOKED = "uniswap_v4_hooked"
+    # Concentrated-liquidity pools collected with the tick map; served by a CLMM adapter, never the CPMM one.
+    UNISWAP_V3_CL = "uniswap_v3_cl"
+    UNISWAP_V4_CL = "uniswap_v4_cl"
     BONDING_CURVE = "bonding_curve"
     UNKNOWN = "unknown"
 

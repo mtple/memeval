@@ -60,6 +60,8 @@ from .evm_rpc import (
 
 DEPLOYMENTS = yaml.safe_load((Path(__file__).parent / "deployments.yaml").read_text())
 BLOCK_INTERVAL_MS = 2000
+SUPPORTED_PROTOCOLS = frozenset({"uniswap_v2", "uniswap_v3", "uniswap_v4"})
+CL_PROTOCOLS = frozenset({"uniswap_v3", "uniswap_v4"})
 
 
 def iso_ms(s: str) -> int:
@@ -76,6 +78,8 @@ def load_config(path: Path) -> dict[str, Any]:
     missing = [k for k in required if k not in cfg]
     if missing:
         raise CollectionBlocked(f"collection config missing required keys: {missing}")
+    if cfg["protocol"] not in SUPPORTED_PROTOCOLS:
+        raise CollectionBlocked(f"unsupported protocol {cfg['protocol']!r}; expected one of {sorted(SUPPORTED_PROTOCOLS)}")
     if "rpc_url" in cfg:
         raise CollectionBlocked("put the endpoint in an environment variable named by rpc_url_env; never in the config file")
     return cfg
@@ -183,6 +187,10 @@ def run_collection(
     import os
     import time as _time
 
+    if yaml.safe_load(config_path.read_text()).get("protocol") in CL_PROTOCOLS:
+        from .uniswap_cl import run_cl_collection
+
+        return run_cl_collection(config_path, data_dir, transport=transport, rpc_url_override=rpc_url_override, sleep=sleep, deadline=deadline, store_bodies=store_bodies, budget_used=budget_used)
     cfg = load_config(config_path)
     out_dir = Path(cfg["out_dir"]) if Path(cfg["out_dir"]).is_absolute() else data_dir / cfg["out_dir"]
     work = out_dir.parent / (out_dir.name + "_work")

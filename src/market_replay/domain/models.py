@@ -65,14 +65,23 @@ class Pool(StrictModel):
     factory: str | None = None
     supported_by_cpmm: bool = True
     unsupported_reason: str | None = None
+    # concentrated liquidity (uniswap_v3_cl / uniswap_v4_cl)
+    fee_pips: int | None = None
+    tick_spacing: int | None = None
+    hooks: str | None = None
+    initial_sqrt_price_x96: str | None = None
+    initial_tick: int | None = None
+    initial_liquidity: str | None = None
+    initial_ticks: list[list[str]] = Field(default_factory=list)  # [tick, liquidity_net, liquidity_gross]
+    supported_by_clmm: bool = False
 
-    @field_validator("initial_reserve0", "initial_reserve1", mode="before")
+    @field_validator("initial_reserve0", "initial_reserve1", "initial_sqrt_price_x96", "initial_liquidity", mode="before")
     @classmethod
     def _raw(cls, v: Any) -> Any:
         return None if v is None else _validate_raw_str(v)
 
 
-TapeKind = Literal["swap", "mint", "burn", "sync", "restriction", "halt", "unhalt", "discovery"]
+TapeKind = Literal["swap", "mint", "burn", "sync", "restriction", "halt", "unhalt", "discovery", "cl_init", "cl_modify", "cl_swap"]
 
 
 class TapeEvent(StrictModel):
@@ -96,6 +105,16 @@ class TapeEvent(StrictModel):
     # sync checkpoint
     reserve0: str | None = None
     reserve1: str | None = None
+    # concentrated liquidity: cl_init / cl_modify / cl_swap (signed integers as decimal strings)
+    sqrt_price_x96: str | None = None
+    tick: int | None = None
+    tick_lower: int | None = None
+    tick_upper: int | None = None
+    liquidity_delta: str | None = None
+    sqrt_price_x96_after: str | None = None
+    liquidity_after: str | None = None
+    tick_after: int | None = None
+    fee_pips: int | None = None
     # restriction / halt
     payload: dict[str, Any] = Field(default_factory=dict)
     publication_utc_ms: int | None = None
@@ -103,7 +122,7 @@ class TapeEvent(StrictModel):
     available_utc_ms: int | None = None  # None -> never published to agents (observation dropout)
     availability_basis: AvailabilityBasis = AvailabilityBasis.UNKNOWN
 
-    @field_validator("amount_in", "amount_out_recorded", "amount0", "amount1", "reserve0", "reserve1", mode="before")
+    @field_validator("amount_in", "amount_out_recorded", "amount0", "amount1", "reserve0", "reserve1", "sqrt_price_x96", "liquidity_delta", "sqrt_price_x96_after", "liquidity_after", mode="before")
     @classmethod
     def _raw(cls, v: Any) -> Any:
         return None if v is None else _validate_raw_str(v)

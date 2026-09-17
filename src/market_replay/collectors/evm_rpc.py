@@ -14,6 +14,17 @@ TOPIC_MINT = event_topic("Mint(address,uint256,uint256)")
 TOPIC_BURN = event_topic("Burn(address,uint256,uint256,address)")
 TOPIC_SYNC = event_topic("Sync(uint112,uint112)")
 
+# Uniswap v3 (factory + per-pool contracts)
+TOPIC_V3_POOL_CREATED = event_topic("PoolCreated(address,address,uint24,int24,address)")
+TOPIC_V3_INITIALIZE = event_topic("Initialize(uint160,int24)")
+TOPIC_V3_MINT = event_topic("Mint(address,address,int24,int24,uint128,uint256,uint256)")
+TOPIC_V3_BURN = event_topic("Burn(address,int24,int24,uint128,uint256,uint256)")
+TOPIC_V3_SWAP = event_topic("Swap(address,address,int256,int256,uint160,uint128,int24)")
+# Uniswap v4 (all emitted by the PoolManager; PoolId is bytes32 in topic 1)
+TOPIC_V4_INITIALIZE = event_topic("Initialize(bytes32,address,address,uint24,int24,address,uint160,int24)")
+TOPIC_V4_MODIFY_LIQUIDITY = event_topic("ModifyLiquidity(bytes32,address,int24,int24,int256,bytes32)")
+TOPIC_V4_SWAP = event_topic("Swap(bytes32,address,int128,int128,uint160,uint128,int24,uint24)")
+
 SEL_ALL_PAIRS_LENGTH = selector("allPairsLength()")
 SEL_FEE_TO_SETTER = selector("feeToSetter()")
 SEL_TOKEN0 = selector("token0()")
@@ -21,6 +32,9 @@ SEL_TOKEN1 = selector("token1()")
 SEL_GET_RESERVES = selector("getReserves()")
 SEL_DECIMALS = selector("decimals()")
 SEL_SYMBOL = selector("symbol()")
+SEL_FEE_AMOUNT_TICK_SPACING = selector("feeAmountTickSpacing(uint24)")  # v3 factory
+SEL_SLOT0 = selector("slot0()")  # v3 pool
+SEL_OWNER = selector("owner()")  # v4 PoolManager (Owned)
 
 
 def _rpc_app_error(parsed: Any) -> str | None:
@@ -37,6 +51,17 @@ def hex_to_int(h: str) -> int:
 def word(data_hex: str, i: int) -> int:
     d = data_hex[2:] if data_hex.startswith("0x") else data_hex
     return int(d[i * 64 : (i + 1) * 64] or "0", 16)
+
+
+def sword(data_hex: str, i: int) -> int:
+    """Signed two's-complement word (ABI sign-extends int24/int128/int256 to 256 bits)."""
+    v = word(data_hex, i)
+    return v - (1 << 256) if v >> 255 else v
+
+
+def topic_int(topic: str) -> int:
+    """Signed integer packed into an indexed topic (e.g. int24 tickLower)."""
+    return sword(topic, 0)
 
 
 def topic_address(topic: str) -> str:
@@ -93,6 +118,30 @@ class RpcClient:
             setter = self.eth_call(factory, SEL_FEE_TO_SETTER)
             out["fee_to_setter"] = "0x" + setter[-40:]
             out["interface_ok"] = n >= 0 and len(setter) >= 42
+        except (ProviderError, ValueError, TypeError) as e:
+            out["interface_ok"] = False
+            out["error"] = str(e)
+        return out
+
+    def verify_v3_factory(self, factory: str) -> dict[str, Any]:
+        """Check the contract answers the v3 factory interface (fee tier 10000 has a tick spacing)."""
+        out: dict[str, Any] = {"factory": factory}
+        try:
+            spacing = hex_to_int(self.eth_call(factory, SEL_FEE_AMOUNT_TICK_SPACING + hex(10000)[2:].rjust(64, "0")))
+            out["tick_spacing_10000"] = spacing
+            out["interface_ok"] = spacing > 0
+        except (ProviderError, ValueError, TypeError) as e:
+            out["interface_ok"] = False
+            out["error"] = str(e)
+        return out
+
+    def verify_pool_manager(self, pool_manager: str) -> dict[str, Any]:
+        """Check the contract answers the v4 PoolManager ownership interface. Never guesses an address."""
+        out: dict[str, Any] = {"pool_manager": pool_manager}
+        try:
+            owner = self.eth_call(pool_manager, SEL_OWNER)
+            out["owner"] = "0x" + owner[-40:]
+            out["interface_ok"] = len(owner) >= 42
         except (ProviderError, ValueError, TypeError) as e:
             out["interface_ok"] = False
             out["error"] = str(e)

@@ -15,3 +15,25 @@ uniswap_v2:
     notes:
       - "Router is informational; the simulator never routes through it."
       - "Base L2 block interval is nominally 2000 ms; the collector verifies it with sampled headers."
+uniswap_v3:
+  base:
+    chain_id: 8453
+    factory: "0x33128a8fC17869897dcE68Ed026d694621f6FDfD"
+    wrapped_native: "0x4200000000000000000000000000000000000006"
+    source_url: "https://developers.uniswap.org/docs/protocols/v3/deployments"
+    verification_status: "runtime_interface_check_required"
+    notes:
+      - "The collector checks feeAmountTickSpacing(uint24) on the factory before reading any pool."
+      - "Swap amounts on the tape are pool deltas: positive = paid into the pool (the v3 event convention)."
+uniswap_v4:
+  base:
+    chain_id: 8453
+    pool_manager: "0x498581fF718922c3f8e6A244956aF099B2652b2b"
+    wrapped_native: "0x4200000000000000000000000000000000000006"
+    native_currency: "0x0000000000000000000000000000000000000000"
+    source_url: "https://developers.uniswap.org/docs/protocols/v4/deployments"
+    verification_status: "runtime_interface_check_required"
+    notes:
+      - "All pool events are emitted by the PoolManager keyed by PoolId (topic 1); pools have no address."
+      - "Native ETH (currency 0x0) is recorded as the wrapped-native numeraire asset; the pool inventory lists which pools use it."
+      - "v4 Swap event amounts are user deltas; the tape negates them so positive = paid into the pool, as in v3."
