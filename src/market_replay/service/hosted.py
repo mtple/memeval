@@ -9,7 +9,7 @@
     MARKET_REPLAY_CORS_ORIGINS             comma-separated browser origins (same-origin needs none)
     BASE_RPC_URL / RPC_URL                 read-only EVM RPC endpoint; when set, anyone can request a real past week
     MARKET_REPLAY_MAX_WEEKS_PER_DAY, MARKET_REPLAY_WEEK_MAX_REQUESTS, MARKET_REPLAY_WEEK_MAX_PAIRS,
-    MARKET_REPLAY_WEEK_MAX_REQUESTS_PER_DAY (rolling daily RPC request cap, default 15000),
+    MARKET_REPLAY_WEEK_MAX_REQUESTS_PER_DAY (rolling daily RPC request cap, default 25000),
     MARKET_REPLAY_WEEKS_PAUSED=1 (stops every tick; no RPC call is made),
     MARKET_REPLAY_WEEK_LOG_CHUNK, MARKET_REPLAY_WEEK_SLICE_SECONDS   collection caps and slice length
 """
@@ -59,7 +59,7 @@ def build_hosted_app() -> tuple[FastAPI, RunManager]:
         log_chunk_blocks=int(os.environ.get("MARKET_REPLAY_WEEK_LOG_CHUNK", "10000")),
         max_pairs=int(os.environ.get("MARKET_REPLAY_WEEK_MAX_PAIRS", "16")),
         max_jobs_per_day=int(os.environ.get("MARKET_REPLAY_MAX_WEEKS_PER_DAY", "3")),
-        max_requests_per_day=int(os.environ.get("MARKET_REPLAY_WEEK_MAX_REQUESTS_PER_DAY", "15000")),
+        max_requests_per_day=int(os.environ.get("MARKET_REPLAY_WEEK_MAX_REQUESTS_PER_DAY", "25000")),
     )
     boot = os.environ.get("MARKET_REPLAY_BOOTSTRAP") or ("all" if mgr.hosted else "")
     names = [] if boot in ("", "none") else (["gen_dev_short"] if boot == "dev" else list(FIXTURE_NAMES))

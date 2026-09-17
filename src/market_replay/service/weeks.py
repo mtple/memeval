@@ -54,7 +54,7 @@ class WeekJobs:
         log_chunk_blocks: int = 10000,
         max_pairs: int = 16,
         max_jobs_per_day: int = 3,
-        max_requests_per_day: int = 15000,
+        max_requests_per_day: int = 25000,
         default_protocol: str = "all",
         sync_every_requests: int = SYNC_EVERY_REQUESTS,
         selection_rule: str = "active_before_window_earliest_created_v1",

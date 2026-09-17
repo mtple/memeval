@@ -149,7 +149,7 @@ the Episodes page offers "Add this week" to everyone:
    operator's views carry the calendar. Failures show their reason on the Episodes page.
 
 Spending guard: `MARKET_REPLAY_WEEKS_PAUSED=1` stops every tick without an RPC call, and a rolling cap of `MARKET_REPLAY_WEEK_MAX_REQUESTS_PER_DAY` RPC requests (default
-15,000) stops every tick once reached. Both show on the Episodes page and in `GET /api/v1/weeks`.
+25,000) stops every tick once reached. Both show on the Episodes page and in `GET /api/v1/weeks`.
 A full v4 week costs roughly 12,000 to 16,000 requests, a v2 week under 1,000; check what your
 RPC provider charges per request before resuming.
 
