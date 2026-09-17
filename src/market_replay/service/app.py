@@ -85,7 +85,7 @@ class EnrollBody(BaseModel):
 class WeekBody(BaseModel):
     week_start: str = Field(min_length=10, max_length=25)
     period_end: str | None = None
-    protocol: str = Field(default="uniswap_v2", max_length=32)
+    protocol: str | None = Field(default=None, max_length=32)
 
 
 class SuiteRunBody(BaseModel):

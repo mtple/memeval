@@ -358,6 +358,9 @@ class BaseStore:
     def set_week_job_archive(self, job_id: str, archive: bytes | None) -> None:
         self.execute("UPDATE week_jobs SET work_archive=? WHERE job_id=?", (archive, job_id))
 
+    def delete_week_job(self, job_id: str) -> None:
+        self.execute("DELETE FROM week_jobs WHERE job_id=?", (job_id,))
+
     def week_job_file_index(self, job_id: str) -> dict[str, str]:
         """path -> sha256 of every synced work file (bodies stay in the store until asked for)."""
         return {r["path"]: r["sha256"] for r in self.query("SELECT path, sha256 FROM week_job_files WHERE job_id=?", (job_id,))}

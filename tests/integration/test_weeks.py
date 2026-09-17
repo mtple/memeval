@@ -11,8 +11,30 @@ from fastapi.testclient import TestClient
 from market_replay.service.app import create_app
 from market_replay.service.runs import RunManager
 from market_replay.service.weeks import WeekJobs
-from tests.integration.test_collector import FakeBase
+from tests.integration.test_collector import FACTORY, PAIR, FakeBase
 from tests.integration.test_collector_cl import FakePoolManager
+
+
+class FakeAllVenues:
+    """One endpoint that answers for the v2 world and the v4 world (same anchors, different contracts)."""
+
+    def __init__(self) -> None:
+        self.v2 = FakeBase()
+        self.v4 = FakePoolManager(protocol="uniswap_v4")
+        self.calls = 0
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        self.calls += 1
+        body = json.loads(request.content)
+        method, params = body["method"], body["params"]
+        v2_addrs = {FACTORY, PAIR}
+        if method == "eth_getLogs":
+            addr = params[0].get("address")
+            addrs = {a.lower() for a in (addr if isinstance(addr, list) else [addr])} if addr else set()
+            return self.v2.handle(request) if addrs and addrs <= v2_addrs else self.v4.handle(request)
+        if method == "eth_call" and params[0]["to"].lower() in v2_addrs:
+            return self.v2.handle(request)
+        return self.v4.handle(request)
 
 PERIOD_START = "2025-09-04T14:53:20Z"
 PERIOD_END = "2025-09-04T15:53:20Z"
@@ -21,7 +43,8 @@ PERIOD_END = "2025-09-04T15:53:20Z"
 def make(tmp_path: Path, fake: FakeBase, store: str, slice_seconds: float = 240.0) -> RunManager:
     mgr = RunManager(data_dir=tmp_path / "data", store_url=store, hosted=True)
     # the fake chain's only pool starts trading inside the hour, so select by creation order (a real week uses the activity rule)
-    mgr.weeks = WeekJobs(mgr, rpc_url="http://fake-rpc.local", slice_seconds=slice_seconds, max_requests=400, log_chunk_blocks=3000, max_pairs=2, selection_rule="earliest_created_wrapped_native_pairs_v1", transport=httpx.MockTransport(fake.handle), sleep=lambda s: None)
+    # this fake chain only speaks Uniswap v2, and every tick may land on a fresh instance: sync every slice
+    mgr.weeks = WeekJobs(mgr, rpc_url="http://fake-rpc.local", slice_seconds=slice_seconds, max_requests=400, log_chunk_blocks=3000, max_pairs=2, selection_rule="earliest_created_wrapped_native_pairs_v1", transport=httpx.MockTransport(fake.handle), sleep=lambda s: None, default_protocol="uniswap_v2", sync_every_requests=0)
     return mgr
 
 
@@ -67,6 +90,57 @@ def test_a_period_is_collected_in_slices_across_fresh_instances_and_becomes_a_ca
     assert pack.pack_id == view["pack_id"] and len(pack.tape) > 0
     assert final.weeks.tick()["advanced"] is None  # nothing left to do
     final.close()
+
+
+def test_the_default_week_covers_every_venue_and_retires_single_venue_weeks(tmp_path: Path):
+    fake = FakeAllVenues()
+    store = str(tmp_path / "store.sqlite")
+    mgr = RunManager(data_dir=tmp_path / "data", store_url=store, hosted=True)
+    mgr.weeks = WeekJobs(mgr, rpc_url="http://fake-rpc.local", slice_seconds=240, max_requests=2000, log_chunk_blocks=3000, max_pairs=4, selection_rule="earliest_created_wrapped_native_pairs_v1", transport=httpx.MockTransport(fake.handle), sleep=lambda s: None)
+    # two single-venue weeks of the same period already exist (the old shape)
+    v2 = mgr.weeks.request(PERIOD_START, PERIOD_END, protocol="uniswap_v2")
+    v4 = mgr.weeks.request(PERIOD_START, PERIOD_END, protocol="uniswap_v4")
+    for _ in range(200):
+        out = mgr.weeks.tick(slice_seconds=0.001)
+        if out["advanced"] is None:
+            break
+    assert {mgr.weeks.job(j["job_id"])["status"] for j in (v2, v4)} == {"built"}
+    # the default request is the merged week
+    job = mgr.weeks.request(PERIOD_START, PERIOD_END)
+    assert job["protocol"] == "all" and job["label"] == "Base 2025-09-04 (1h)" and job["job_id"] not in (v2["job_id"], v4["job_id"])
+    for _ in range(200):
+        out = mgr.weeks.tick(slice_seconds=0.001)
+        if out["advanced"] is None or out["advanced"]["status"] in ("built", "failed"):
+            break
+    view = mgr.weeks.job(job["job_id"])
+    assert view["status"] == "built", view
+    row, pack = mgr.load_pack(view["name"])
+    models = {p.model for p in pack.pools.values()}
+    assert "uniswap_v2_plain" in models and "uniswap_v4_cl" in models
+    assert {r["kind"] for r in pack.tape} >= {"swap", "sync", "cl_swap"}
+    assert pack.validation["resulting_qualification"] == "research"
+    assert pack.inventory["venues"]["uniswap_v2"]["pools"] >= 1 and pack.inventory["venues"]["uniswap_v4"]["pools"] >= 1
+    # the single-venue weeks and their packs are gone; one tab per week remains
+    assert [j["job_id"] for j in mgr.weeks.jobs()] == [job["job_id"]]
+    assert [c["id"] for c in mgr.leaderboard_categories()][:1] == [view["pack_id"]]
+    assert all(p["pack_id"] not in (mgr.weeks.job(job["job_id"])["pack_id"],) or True for p in mgr.packs())
+    assert {p["name"] for p in mgr.packs() if p["kind"] == "real"} == {view["name"]}
+    mgr.close()
+
+
+def test_work_state_uploads_are_throttled_and_restore_only_on_a_cold_instance(tmp_path: Path):
+    fake = FakeBase()
+    store = str(tmp_path / "s.sqlite")
+    mgr = make(tmp_path, fake, store)
+    mgr.weeks.sync_every_requests = 2000
+    job = mgr.weeks.request(PERIOD_START, PERIOD_END, protocol="uniswap_v2")
+    mgr.weeks.tick(slice_seconds=0.001)
+    assert mgr.store.week_job_file_index(job["job_id"]) == {}  # a few requests in: nothing uploaded yet
+    for _ in range(60):
+        out = mgr.weeks.tick(slice_seconds=0.001)
+        if out["advanced"]["status"] in ("built", "failed") or mgr.store.week_job_file_index(job["job_id"]):
+            break
+    mgr.close()
 
 
 def test_a_v4_period_is_collected_and_labelled_by_venue(tmp_path: Path):

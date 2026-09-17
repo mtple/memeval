@@ -61,7 +61,7 @@ from .evm_rpc import (
 ACTIVITY_BATCH = 400  # addresses per eth_getLogs filter in the activity scan (request-body caps)
 DEPLOYMENTS = yaml.safe_load((Path(__file__).parent / "deployments.yaml").read_text())
 BLOCK_INTERVAL_MS = 2000
-SUPPORTED_PROTOCOLS = frozenset({"uniswap_v2", "uniswap_v3", "uniswap_v4"})
+SUPPORTED_PROTOCOLS = frozenset({"uniswap_v2", "uniswap_v3", "uniswap_v4", "all"})
 CL_PROTOCOLS = frozenset({"uniswap_v3", "uniswap_v4"})
 
 
@@ -230,10 +230,15 @@ def run_collection(
     import os
     import time as _time
 
-    if yaml.safe_load(config_path.read_text()).get("protocol") in CL_PROTOCOLS:
+    protocol = yaml.safe_load(config_path.read_text()).get("protocol")
+    if protocol in CL_PROTOCOLS:
         from .uniswap_cl import run_cl_collection
 
         return run_cl_collection(config_path, data_dir, transport=transport, rpc_url_override=rpc_url_override, sleep=sleep, deadline=deadline, store_bodies=store_bodies, budget_used=budget_used)
+    if protocol == "all":
+        from .combined import run_combined_collection
+
+        return run_combined_collection(config_path, data_dir, transport=transport, rpc_url_override=rpc_url_override, sleep=sleep, deadline=deadline, store_bodies=store_bodies, budget_used=budget_used)
     cfg = load_config(config_path)
     out_dir = Path(cfg["out_dir"]) if Path(cfg["out_dir"]).is_absolute() else data_dir / cfg["out_dir"]
     work = out_dir.parent / (out_dir.name + "_work")

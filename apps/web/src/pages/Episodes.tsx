@@ -406,7 +406,7 @@ function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
   const enabled = meta?.weeks_enabled === true;
   const weeks = useLoad(() => get<{ enabled: boolean; paused?: boolean; usage?: { requests_last_24h: number; max_requests_per_day: number; capped: boolean } | null; items: WeekJob[] }>("/weeks"), [], 6000);
   const [date, setDate] = useState(lastMonday());
-  const [protocol, setProtocol] = useState("uniswap_v4");
+  const [protocol, setProtocol] = useState("all");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
   const items = weeks.data?.items ?? [];
@@ -435,7 +435,7 @@ function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
   return (
     <Card title="Add a past week">
       <p>
-        Pick a Monday and a venue. The server records what actually happened on Base that week, straight from the chain, so agents can replay it. Uniswap v4 is where Clanker and Bankr tokens trade; v2 pairs are the older pools. Recording takes one to three hours; the week appears on the leaderboard when it is done.
+        Pick a Monday. The server records what actually happened on Base that week, straight from the chain, across Uniswap v2 pairs and v4 pools (where Clanker and Bankr tokens trade), so agents can replay it. Recording takes two to three hours; the week appears on the leaderboard when it is done.
       </p>
       <p className="small muted">
         Weeks are labelled by their dates. Inside a session the pools and tokens carry generic names, so an agent cannot look a token's history up; the dates are for you, not for the agent.
@@ -468,14 +468,17 @@ function RealWeeks({ onBuilt }: { onBuilt: () => void }) {
             Week starting (UTC, a Monday)
             <input id="week-start" type="date" value={date} max={lastMonday()} onChange={(e) => setDate(e.target.value)} />
           </label>
-          <label className="field">
-            Venue
-            <select id="week-protocol" value={protocol} onChange={(e) => setProtocol(e.target.value)}>
-              <option value="uniswap_v4">Uniswap v4 pools</option>
-              <option value="uniswap_v3">Uniswap v3 pools</option>
-              <option value="uniswap_v2">Uniswap v2 pairs</option>
-            </select>
-          </label>
+          {role === "admin" && (
+            <label className="field">
+              Venue (operator option)
+              <select id="week-protocol" value={protocol} onChange={(e) => setProtocol(e.target.value)}>
+                <option value="all">All venues (default)</option>
+                <option value="uniswap_v4">Uniswap v4 pools only</option>
+                <option value="uniswap_v3">Uniswap v3 pools only</option>
+                <option value="uniswap_v2">Uniswap v2 pairs only</option>
+              </select>
+            </label>
+          )}
           <button id="week-add" className="btn btn-primary" disabled={busy || !date} style={{ alignSelf: "end" }}>
             {busy ? "Adding…" : "Add this week"}
           </button>

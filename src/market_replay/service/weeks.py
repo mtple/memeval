@@ -33,10 +33,12 @@ COLLECTOR_VERSION = "2026-09-17.4"
 # Venues a week can be recorded from. v2 pairs are constant-product; v3/v4 pools are concentrated
 # liquidity (v4 is where Clanker/Bankr launches trade, behind hooks).
 PROTOCOLS = {
+    "all": "all venues",  # one week, every pool type: the default
     "uniswap_v2": "v2 pairs",
     "uniswap_v3": "v3 pools",
     "uniswap_v4": "v4 pools",
 }
+SYNC_EVERY_REQUESTS = 2000  # upload the working files to the store only this often (database transfer is scarce); RPC work is cheap to redo
 MAX_PROVIDER_RETRIES = 6
 LEASE_GRACE_SECONDS = 90  # a slice may overrun its deadline by one request plus the save
 
@@ -53,6 +55,8 @@ class WeekJobs:
         max_pairs: int = 16,
         max_jobs_per_day: int = 3,
         max_requests_per_day: int = 15000,
+        default_protocol: str = "all",
+        sync_every_requests: int = SYNC_EVERY_REQUESTS,
         selection_rule: str = "active_before_window_earliest_created_v1",
         transport: httpx.BaseTransport | None = None,
         sleep=None,
@@ -72,6 +76,8 @@ class WeekJobs:
         self.max_pairs = max_pairs
         self.max_jobs_per_day = max_jobs_per_day
         self.max_requests_per_day = max_requests_per_day
+        self.default_protocol = default_protocol
+        self.sync_every_requests = sync_every_requests
         self.selection_rule = selection_rule
         self.transport = transport
         self.sleep = sleep
@@ -81,10 +87,11 @@ class WeekJobs:
         return bool(self.rpc_url)
 
     # ------------------------------------------------------------------ requests
-    def request(self, start_utc: str, end_utc: str | None = None, *, requested_by: str = "", chain: str = "base", protocol: str = "uniswap_v2") -> dict[str, Any]:
+    def request(self, start_utc: str, end_utc: str | None = None, *, requested_by: str = "", chain: str = "base", protocol: str | None = None) -> dict[str, Any]:
         """Queue a period (a week from `start_utc` unless `end_utc` is given). Idempotent per period and venue."""
         if not self.enabled:
             raise ApiError(503, "no RPC endpoint is configured on this server (BASE_RPC_URL); real weeks cannot be collected", "WEEKS_DISABLED")
+        protocol = protocol or self.default_protocol
         if protocol not in PROTOCOLS:
             raise ApiError(400, f"unknown venue {protocol!r}; one of {sorted(PROTOCOLS)}", "INVALID")
         start = _parse(start_utc)
@@ -116,7 +123,9 @@ class WeekJobs:
             "period_end_utc": _iso(end),
             "discovery_window_start_utc": _iso(start - timedelta(days=7 if is_week else 1)),
             "prehistory_hours": 24 if is_week else 1,
-            "selection_rule": self.selection_rule if protocol == "uniswap_v2" else "active_before_window_plus_window_launches_v1",
+            "selection_rule": self.selection_rule if protocol in ("uniswap_v2", "all") else "active_before_window_plus_window_launches_v1",
+            "selection_rule_cl": "active_before_window_plus_window_launches_v1",
+            "venues": ["uniswap_v2", "uniswap_v4"],
             "max_launches": self.max_pairs // 2,
             "launch_min_swaps": 20,
             "activity_lookback_blocks": 43200 if is_week else 5400,
@@ -306,9 +315,15 @@ class WeekJobs:
             shutil.rmtree(work, ignore_errors=True)
             self.m.store.delete_week_job_files(row["job_id"])
             self.m.store.set_week_job_archive(row["job_id"], None)
+            if (row.get("protocol") or cfg.get("protocol")) == "all":
+                self._retire_single_venue_weeks(row)
         elif status == "in_progress_resumable":
             fields.update(status="collecting")
-            self._save_work(row["job_id"], work)
+            last = int(cfg.get("synced_at_requests", 0))
+            if used - last >= self.sync_every_requests:
+                self._save_work(row["job_id"], work)
+                cfg["synced_at_requests"] = used
+                fields["config_json"] = json.dumps(cfg, sort_keys=True)
         elif status == "provider_error_resumable":
             attempts = int(row["attempts"]) + 1
             fields.update(attempts=attempts, status="collecting" if attempts < MAX_PROVIDER_RETRIES else "failed", error=str(res.get("reason"))[:400])
@@ -319,12 +334,25 @@ class WeekJobs:
         self.m.store.update_week_job(row["job_id"], **fields)
         return self.view(self.m.store.week_job(row["job_id"]))
 
+    def _retire_single_venue_weeks(self, merged: dict[str, Any]) -> None:
+        """A merged week replaces the single-venue weeks of the same period: their packs and jobs go, so the
+        leaderboard shows one tab per week. Runs on the old packs keep their reports."""
+        for other in self.m.store.week_jobs():
+            if other["job_id"] == merged["job_id"] or (other.get("protocol") or "uniswap_v2") == "all":
+                continue
+            if other["chain"] != merged["chain"] or other["period_start_utc"] != merged["period_start_utc"] or other["period_end_utc"] != merged["period_end_utc"]:
+                continue
+            if other.get("pack_id"):
+                self.m.forget_pack(other["pack_id"])
+            self.m.store.delete_week_job_files(other["job_id"])
+            self.m.store.delete_week_job(other["job_id"])
+
     # ------------------------------------------------------------------ work directory sync
     # The collector's working state (checkpoints, coverage ledger, one raw-log file per pool) lives in
     # the store between slices so any instance can continue. Only files whose content changed since the
     # last slice travel: a week's worth of logs is written once, not re-uploaded every three minutes.
     def _restore_work(self, job_id: str, work: Path) -> None:
-        if (work / "checkpoints.json").exists():
+        if work.exists() and any(work.iterdir()):
             return  # same instance (or a warm filesystem) still has it
         index = self.m.store.week_job_file_index(job_id)
         if not index:
@@ -367,7 +395,7 @@ def week_label(name: str, chain: str, protocol: str | None = None, start_utc: st
     sealed sequence name is used ('Base week 3')."""
     parts = name.split("_")
     venue = PROTOCOLS.get(protocol or "", "")
-    suffix = f", {venue}" if venue and protocol != "uniswap_v2" else ""
+    suffix = f", {venue}" if venue and protocol not in ("uniswap_v2", "all") else ""
     head = chain.capitalize()
     if start_utc:
         day = str(start_utc)[:10]

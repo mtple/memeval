@@ -119,15 +119,19 @@ historical collection (run `make collect` locally and import the pack into a loc
 Set `BASE_RPC_URL` (or `RPC_URL`) on the server to a read-only EVM RPC endpoint for Base. Then
 the Episodes page offers "Add this week" to everyone:
 
-1. `POST /api/v1/weeks {week_start, protocol}` queues the week (idempotent per period and
-   venue; at most `MARKET_REPLAY_MAX_WEEKS_PER_DAY` new weeks a day, default 3). `protocol` is
-   `uniswap_v4` (where Clanker and Bankr launches trade), `uniswap_v3` or `uniswap_v2`.
+1. `POST /api/v1/weeks {week_start}` queues the week (idempotent per period; at most
+   `MARKET_REPLAY_MAX_WEEKS_PER_DAY` new weeks a day, default 3). By default a week covers every
+   venue: Uniswap v2 pairs and v4 pools (where Clanker and Bankr launches trade) are collected one
+   after the other and merged into one dataset, so the leaderboard has one tab per week. The
+   operator may pass `protocol` (`uniswap_v2`, `uniswap_v3`, `uniswap_v4`) for a single venue;
+   when a merged week for the same period is built, single-venue weeks of that period are retired.
 2. The server collects it in time slices (`MARKET_REPLAY_WEEK_SLICE_SECONDS`, default 200) so it
    fits a serverless invocation. A tick that finds a slice already running anywhere returns
    `busy` at once (a non-blocking database lock plus a lease); it never queues. After each
    slice the collector's working files (checkpoints, coverage ledger, one raw-log file per
    pool) sync to the `week_job_files` table, uploading only the files that changed, and the
-   next slice can run on any instance. Slices are triggered by a Vercel cron every minute
+   next slice can run on any instance. Uploads happen only every 2,000 requests (database transfer
+   is the scarce resource; RPC work is cheap to redo after a cold start). Slices are triggered by a Vercel cron every minute
    (`/api/v1/weeks/tick`), by the `weeks-watch` GitHub workflow every ten minutes, and by any
    open Episodes page.
 3. The frozen universe is `MARKET_REPLAY_WEEK_MAX_PAIRS` pools (default 16). v2 weeks take
