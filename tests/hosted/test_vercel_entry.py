@@ -130,6 +130,9 @@ def test_registered_fixture_is_not_regenerated_on_a_fresh_instance(tmp_path):
 
 
 def test_hosted_bootstrap_runs_on_first_request_not_on_health(monkeypatch, tmp_path):
+    import market_replay.service.runs as runs_mod
+
+    monkeypatch.setattr(runs_mod, "WEEKS_DIR", tmp_path / "no-weeks")
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("MARKET_REPLAY_BOOTSTRAP", "dev")
     monkeypatch.setenv("MARKET_REPLAY_HOSTED", "1")
