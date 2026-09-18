@@ -1035,12 +1035,24 @@ class RunManager:
         self.store.insert_suite_run(suite_run_id, suite_id, agent_id, now_iso(), run_ids)
         return {"suite_run_id": suite_run_id, "suite_id": suite_id, "agent_id": agent_id, "run_ids": run_ids, "runs": [self.run_view(r) for r in run_ids]}
 
-    def enroll(self, *, agent: dict[str, Any], suite_id: str | None = None, pack_id: str | None = None) -> dict[str, Any]:
+    ONE_NAME_WINDOW_S = 2 * 3600.0
+
+    def enroll(self, *, agent: dict[str, Any], suite_id: str | None = None, pack_id: str | None = None, client_key: str | None = None) -> dict[str, Any]:
         """Self-serve: register (or reuse) the agent and create one external-client run per episode.
 
         Returns every run's one-time session credential. This is the whole onboarding for a
-        bring-your-own agent: no operator, no account.
+        bring-your-own agent: no operator, no account. One name per agent: an address that enrolled
+        under one name recently may not enroll a second name (a new version of the same name is
+        fine), so a name stays one agent's reputation instead of one per strategy.
         """
+        name = str(agent.get("name", "")).strip()
+        if client_key:
+            now = time.time()
+            recent = [k.split(":", 1)[1] for k in self.store.rate_event_kinds("enroll_name:", client_key, now - self.ONE_NAME_WINDOW_S)]
+            if recent and name.lower() not in recent:
+                raise ApiError(409, f"one name per agent: this address already enrolled as {recent[0]!r}. Keep that name; to try another strategy, enroll the same name with a new version.", "ONE_NAME")
+            if name.lower() not in recent:
+                self.store.add_rate_event("enroll_name:" + name.lower(), client_key, now)
         view = self.register_or_reuse_agent(name=str(agent.get("name", "")), version=str(agent.get("version", "1")), runtime=str(agent.get("runtime", "external")), capabilities=list(agent.get("capabilities") or []), config=dict(agent.get("config") or {}))
         agent_id = view["agent_id"]
         runs: list[dict[str, Any]] = []

@@ -266,6 +266,11 @@ class BaseStore:
         row = self.one("SELECT COUNT(*) AS n FROM rate_events WHERE kind=? AND key=? AND ts>=?", (kind, key, float(since_ts)))
         return int(row["n"]) if row else 0
 
+    def rate_event_kinds(self, prefix: str, key: str, since_ts: float) -> list[str]:
+        """Distinct event kinds starting with ``prefix`` recorded for ``key`` since ``since_ts``."""
+        rows = self.query("SELECT DISTINCT kind FROM rate_events WHERE key=? AND ts>=? AND kind LIKE ?", (key, float(since_ts), prefix + "%"))
+        return [str(r["kind"]) for r in rows]
+
     def add_rate_event(self, kind: str, key: str, ts: float) -> None:
         self.execute("INSERT INTO rate_events (kind, key, ts) VALUES (?, ?, ?)", (kind, key, float(ts)))
         # Keep the table small: anything older than a day is irrelevant to every window we use.

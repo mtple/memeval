@@ -145,6 +145,11 @@ def test_leaderboard_ranks_agents_per_category_and_join_serves_the_skill(tmp_pat
     assert join.status_code == 200 and join.text.startswith("---\nname: market-replay")
     enrolled = c.post("/api/v1/enroll", json={"agent": {"name": "holder", "version": "1"}, "pack_id": "gen_dev_short"}).json()
     assert enrolled["results_url"].endswith(f"/?agent={enrolled['agent_id']}")
+    # one name per agent: a second name from the same address is refused; a new version of the same name is not
+    second = c.post("/api/v1/enroll", json={"agent": {"name": "holder-momentum", "version": "1"}, "pack_id": "gen_dev_short"})
+    assert second.status_code == 409 and second.json()["code"] == "ONE_NAME" and "holder" in second.json()["message"]
+    again = c.post("/api/v1/enroll", json={"agent": {"name": "Holder", "version": "2"}, "pack_id": "gen_dev_short"})
+    assert again.status_code == 201
     mgr.close()
 
 

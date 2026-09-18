@@ -21,6 +21,7 @@ REPO = Path(__file__).resolve().parents[2]
 @pytest.fixture(scope="module")
 def server(tmp_path_factory, dev_pack_dir):
     mgr = RunManager(data_dir=tmp_path_factory.mktemp("skilldata"))
+    mgr.ONE_NAME_WINDOW_S = 0.0  # several agents share this test client's address; the one-name rule has its own test
     srv = EmbeddedServer(mgr, "adm_skill").start()
     srv.admin().post("/api/v1/packs/import", json={"path": str(dev_pack_dir), "name": "gen_dev_short"}).raise_for_status()
     yield srv, mgr

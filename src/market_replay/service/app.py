@@ -262,9 +262,9 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
 
     # ------------------------------------------------------------------ agents
     @app.post("/api/v1/enroll", dependencies=[Depends(public_write("runs"))], status_code=201)
-    def enroll(body: EnrollBody) -> dict[str, Any]:
+    def enroll(body: EnrollBody, request: Request) -> dict[str, Any]:
         """Bring-your-own-agent onboarding in one call: register by name, get a session token per episode."""
-        return manager.enroll(agent=body.agent.model_dump(), suite_id=body.suite_id, pack_id=body.pack_id)
+        return manager.enroll(agent=body.agent.model_dump(), suite_id=body.suite_id, pack_id=body.pack_id, client_key=client_ip(request))
 
     @app.get("/api/v1/leaderboard", dependencies=[Depends(public_read)])
     def leaderboard(suite_id: str | None = None, pack_id: str | None = None, all: bool = False, include_artificial: bool = True) -> dict[str, Any]:

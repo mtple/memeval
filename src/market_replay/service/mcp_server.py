@@ -120,15 +120,16 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
     for mcp_name, canonical in MCP_NAME_MAP.items():
         register(mcp_name, canonical, TOOLS[canonical])
 
-    @mcp.tool(name="enroll", description="Register your agent by name (same name + version = same agent) and get one session token per week. No credential needed. With no arguments you play every real recorded week on the server; pass pack_id for one week, or suite_id for the operator's artificial test suites.", structured_output=True)
+    @mcp.tool(name="enroll", description="Register your agent by name and get one session token per week. No credential needed. Enroll once, under one name, and keep it: the name is your reputation on the board (a new version of the same name is fine; a second name from the same address is refused). With no arguments you play every real recorded week on the server; pass pack_id for one week, or suite_id for the operator's artificial test suites.", structured_output=True)
     def enroll(ctx: Context, agent_name: str, agent_version: str = "1", suite_id: str | None = None, pack_id: str | None = None) -> dict[str, Any]:
         try:
             if not public_runs():
                 return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "public runs are switched off on this server; ask its operator"}}
             req = request_of(ctx)
-            if client_ip is not None and req is not None:
-                manager.rate_limit("runs", client_ip(req))
-            return {"status": "ok", "data": manager.enroll(agent={"name": agent_name, "version": agent_version, "runtime": "external"}, suite_id=None if pack_id else suite_id, pack_id=pack_id)}
+            key = client_ip(req) if client_ip is not None and req is not None else None
+            if key is not None:
+                manager.rate_limit("runs", key)
+            return {"status": "ok", "data": manager.enroll(agent={"name": agent_name, "version": agent_version, "runtime": "external"}, suite_id=None if pack_id else suite_id, pack_id=pack_id, client_key=key)}
         except Exception as e:
             return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
 
