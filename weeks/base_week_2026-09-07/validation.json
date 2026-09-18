@@ -1,0 +1,105 @@
+{
+  "executable_failure": false,
+  "gates": [
+    {
+      "detail": "canonical ids, decimals and denominations present",
+      "gate": "identity",
+      "note": "symbol collisions are allowed and never merge assets",
+      "status": "passed",
+      "symbol_collisions": []
+    },
+    {
+      "detail": "selection rule per_venue_v1: uniswap_v2: active_before_window_earliest_created_v1; uniswap_v4: active_before_window_plus_window_launches_v1; candidates=54828 selected=16 unsupported=24037 missing=0",
+      "gate": "universe",
+      "pools_without_discovery_time": [],
+      "status": "passed"
+    },
+    {
+      "detail": "event/available/received times distinguished and ordered",
+      "gate": "temporal_ordering",
+      "status": "passed"
+    },
+    {
+      "detail": "coverage intervals by state: {'completed_and_checked': 28}",
+      "gate": "trade_coverage",
+      "status": "passed"
+    },
+    {
+      "detail": "executable pools=16 (cpmm=4 cl=12) missing_initial_state=0 checkpoints=13412 mismatches=0 fidelity_flags=0; reserve checkpoints re-anchored: {'explained': 6}",
+      "gate": "execution_state",
+      "pools_missing_initial_state": [],
+      "reconciliation": {
+        "adjustment_rule": "every Sync re-anchors the reference to the chain; an orphan Sync (direct transfer followed by sync()) is an explained adjustment; any other non-zero delta, even one wei, is a material mismatch",
+        "checkpoints": 13412,
+        "fidelity_flag_count": 0,
+        "fidelity_flags": [],
+        "mismatch_count": 0,
+        "mismatches": [],
+        "recorded_output_below_model_max": 4,
+        "reserve_adjustments": {
+          "explained": 6
+        },
+        "reserve_adjustments_by_pool": {
+          "8453:uniswap_v2:0x96e22b2f94e1f567bf0241114dd2aeedadbcad85": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x20019c5d778b8ffcd2adfd35da9e68c2b86f065bac66c8033f35c2eac0543759": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x47eac8ecc36aa809edf4b42cc81f73f3a03767be8ede16d132403a3c5598c2d4": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x4fda998c1a60ed356bbe581d8d7a2fe8f59e152b0aa63f2c187252c8f352ce21": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x9c6551e0a1279c1193a5bb5ec11320afcc761a52cfb44fa728c1c16240e8d69e": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xb8fdd2628d091bf205bc0d7fac362e6f4ece779f3b2589e47636f0f4449200da": {
+            "explained": 1
+          }
+        },
+        "rounding_rule": "CPMM: floor division per Uniswap v2 getAmountOut; CL: Uniswap v3 SwapMath/SqrtPriceMath rounding per step; exact integers"
+      },
+      "reconciliation_untested": false,
+      "status": "passed"
+    },
+    {
+      "detail": "unsupported pool models are excluded from the CPMM and CLMM adapters",
+      "gate": "mechanics",
+      "status": "passed",
+      "token_behavior_basis": "assumed_standard_transfer",
+      "unsupported_pools_kept": 24037
+    },
+    {
+      "detail": "declared policy liquidate_all_holdings_via_direct_pool_v1; unresolved states remain visible in reports",
+      "gate": "valuation",
+      "status": "passed"
+    },
+    {
+      "detail": "public descriptor is allowlisted; aliases keyed per run; runtime scanner enforced in service",
+      "gate": "anonymization",
+      "status": "passed"
+    },
+    {
+      "detail": "storage=public_chain_data_via_configured_rpc; endpoint terms not reviewed here processing=research redistribution=not_cleared serving=local_only",
+      "gate": "provenance_rights",
+      "redistribution_enabled": false,
+      "status": "passed"
+    },
+    {
+      "detail": "pack_id pack_ec73d0bf0ece41478a2d9ef2cc5282c6 content-addressed; params hash 05d4a5ca14dd...; validator pack_validator_v1",
+      "gate": "reproducibility",
+      "status": "passed"
+    }
+  ],
+  "notes": [
+    "Passing gates means the pack meets declared mechanical/data requirements. It does not mean the simulator predicts live profitability."
+  ],
+  "origin": "historical_reconstruction",
+  "pack_id": "pack_ec73d0bf0ece41478a2d9ef2cc5282c6",
+  "predictive_validity": "not_established",
+  "requested_qualification": "research",
+  "resulting_qualification": "research",
+  "validator_version": "pack_validator_v1"
+}
