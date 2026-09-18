@@ -47,7 +47,7 @@ Fixture profile (`fixture_default_v1`, test settings): 2000 ms blocks, 100 ms da
 readiness (after that block's external events), confirmation one block later, 5000 ms quote
 TTL, 1500 ms observation availability delay, settlement tail of 2 blocks. Research profile
 (`base_research_v1`, assumptions): 2000 ms Base blocks verified by sampled headers, 250 ms
-data/quote latency, 1000 ms submit, 4000 ms availability delay, gas assumed 0 until a recorded
+data/quote latency, 1000 ms submit, 4000 ms availability delay, gas the sampled median of the period's recorded swaps (0 until a recorded
 fee series is imported. None of these are measured Base latencies.
 
 The competence-oriented suite charges these fixed latencies, not an LLM's wall-clock; wall
@@ -57,6 +57,9 @@ clock and inference usage are recorded separately.
 
 `gas_cost_raw` per included transaction (fill or revert) in the numeraire, reserved at
 submit together with the principal. Fixtures: 50 raw CASH (artificial sensitivity value).
+Real days: the median of `gasUsed x effectiveGasPrice + l1Fee` over a sample of about 200 of the
+swaps recorded in the period (`gas_basis` names the sample size; `coverage.gas_sample` holds the
+quartiles and the L1 share). One number for the whole day, not the fee at each block.
 Pre-submission rejections pay nothing.
 
 ## Valuation policy `liquidate_all_holdings_via_direct_pool_v1`

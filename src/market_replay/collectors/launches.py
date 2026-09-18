@@ -332,6 +332,32 @@ def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, 
         demoted = demote_unreconciled_pools(pools_out, tape)
         for dm in demoted:
             note(f"{dm['pool']}: demoted from execution: {dm['reason']}")
+        # 5b. gas: the median cost of a sample of the recorded swaps themselves. On Base a swap pays L2
+        # execution (gasUsed x effectiveGasPrice) plus an L1 data fee (the receipt's l1Fee); both count.
+        gas = ck.get("gas_sample")
+        if gas is None:
+            txs = sorted({r["tx"] for r in tape if r["kind"] in ("swap", "cl_swap") and r.get("tx")})
+            want = max(1, int(cfg.get("gas_sample_size", 200)))
+            step = max(1, len(txs) // want)
+            sample = txs[::step][:want]
+            costs: list[int] = []
+            l1_total = 0
+            for i, tx in enumerate(sample):
+                slice_check()
+                rc = rpc.transaction_receipt(tx)
+                if not rc or rc.get("gasUsed") is None:
+                    continue
+                l1 = hex_to_int(rc.get("l1Fee") or "0x0")
+                costs.append(hex_to_int(rc["gasUsed"]) * hex_to_int(rc.get("effectiveGasPrice") or "0x0") + l1)
+                l1_total += l1
+                if i % 50 == 49:
+                    ck.set("gas_partial", {"done": i + 1})
+            costs.sort()
+            q = lambda f: str(costs[min(len(costs) - 1, int(f * len(costs)))]) if costs else "0"  # noqa: E731
+            gas = {"sampled": len(sample), "observed": len(costs), "recorded_swap_txs": len(txs), "median_raw": q(0.5), "p25_raw": q(0.25), "p75_raw": q(0.75), "l1_fee_share": round(l1_total / sum(costs), 3) if costs else None, "basis": "eth_getTransactionReceipt of recorded swaps: gasUsed x effectiveGasPrice + l1Fee"}
+            ck.set("gas_sample", gas)
+            note(f"gas: median {gas['median_raw']} wei per swap from {gas['observed']} of {gas['sampled']} sampled receipts ({len(txs)} recorded swap txs); L1 data fee share {gas['l1_fee_share']}")
+        gas_basis = f"median_cost_of_{gas['observed']}_sampled_recorded_swap_receipts_v1" if int(gas["median_raw"]) > 0 else "assumed_zero_until_recorded_fee_series_imported"
         # 6. pack
         from ..datasets.builder import build_pack, make_period
         from ..datasets.execution_params import historical_research_params
@@ -341,7 +367,7 @@ def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, 
         assets_rows = [{"key": f"{chain_id}:{tok}", "chain_id": chain_id, "address": tok, "decimals": a["decimals"] if a["decimals"] is not None else 18, "symbol": "WETH" if tok == wn else None, "name": None, "is_numeraire": tok == wn, "created_block": None, "created_time_utc_ms": None, "discovery_available_utc_ms": block_time_ms(blocks["period_start"]), "fixture_rules": {"decimals_basis": a.get("basis", "unknown")}} for tok, a in assets.items() if tok == wn or any(p["asset0"].endswith(tok) or p["asset1"].endswith(tok) for p in pools_out)]
         if not any(r["is_numeraire"] for r in assets_rows):
             assets_rows.append({"key": f"{chain_id}:{wn}", "chain_id": chain_id, "address": wn, "decimals": 18, "symbol": "WETH", "name": None, "is_numeraire": True, "created_block": None, "created_time_utc_ms": None, "discovery_available_utc_ms": block_time_ms(blocks["period_start"]), "fixture_rules": {}})
-        coverage = {"schema": "coverage_v1", "basis": "evm_rpc_logs", "intervals": [{"object_ref": p["key"], "field": "swaps", "start_utc_ms": p["created_time_utc_ms"], "end_utc_ms": block_time_ms(blocks["period_end"]), "state": "completed_and_checked", "evidence": "bulk eth_getLogs ranges returned without truncation error; provider indexing completeness not independently established"} for p in pools_out], "ledger": ledger.rows, "budget": budget.as_dict(), "unsupported_events": []}
+        coverage = {"schema": "coverage_v1", "basis": "evm_rpc_logs", "intervals": [{"object_ref": p["key"], "field": "swaps", "start_utc_ms": p["created_time_utc_ms"], "end_utc_ms": block_time_ms(blocks["period_end"]), "state": "completed_and_checked", "evidence": "bulk eth_getLogs ranges returned without truncation error; provider indexing completeness not independently established"} for p in pools_out], "ledger": ledger.rows, "budget": budget.as_dict(), "unsupported_events": [], "gas_sample": gas}
         counts = {"no_wrapped_native_leg": len(excluded), "fewer_than_min_swaps": len(quiet), "missing_state": len(missing), "demoted_after_reconciliation": len(demoted)}
         pack = build_pack(
             out_dir,
@@ -355,7 +381,7 @@ def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, 
             assets=assets_rows,
             pools=pools_out,
             tape=tape,
-            params=historical_research_params(block_interval_ms=BLOCK_INTERVAL_MS, availability_delay_ms=delay_ms),
+            params=historical_research_params(block_interval_ms=BLOCK_INTERVAL_MS, availability_delay_ms=delay_ms, gas_cost_raw=gas["median_raw"], gas_basis=gas_basis, notes=["Latency and availability values are assumptions, not measurements.", "Gas per included transaction is the median cost (L2 execution plus L1 data fee) of a sample of the swaps recorded in this period; the sample summary is in coverage.gas_sample."]),
             coverage=coverage,
             numeraire=f"{chain_id}:{wn}",
             numeraire_alias="NATIVE",

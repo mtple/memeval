@@ -137,6 +137,16 @@ def run_combined_collection(
     }
 
 
+def _gas_from(packs: list[Pack]) -> dict[str, Any]:
+    """The merged pack charges the gas one of its parts measured (the launches sub-pack samples receipts);
+    parts that measured nothing contribute nothing. Zero stays zero, with its 'assumed' basis."""
+    measured = [p for p in packs if int(p.params.gas_cost_raw) > 0]
+    if not measured:
+        return {}
+    best = max(measured, key=lambda p: int(p.params.gas_cost_raw))
+    return {"gas_cost_raw": best.params.gas_cost_raw, "gas_basis": best.params.gas_basis, "notes": list(best.params.notes)}
+
+
 def merge_packs(out_dir: Path, packs: list[Pack], cfg: dict[str, Any], decision_log: list[str]) -> Pack:
     """One pack from several venues' packs of the same period: assets and pools are unioned, the tapes are
     interleaved by block and log index, coverage and inventories are concatenated. Everything the
@@ -225,7 +235,7 @@ def merge_packs(out_dir: Path, packs: list[Pack], cfg: dict[str, Any], decision_
         assets=list(assets.values()),
         pools=list(pools.values()),
         tape=tape,
-        params=historical_research_params(block_interval_ms=BLOCK_INTERVAL_MS, availability_delay_ms=delay_ms),
+        params=historical_research_params(block_interval_ms=BLOCK_INTERVAL_MS, availability_delay_ms=delay_ms, **_gas_from(packs)),
         coverage=coverage,
         numeraire=m0.numeraire,
         numeraire_alias=m0.numeraire_alias,

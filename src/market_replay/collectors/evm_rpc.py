@@ -95,6 +95,9 @@ class RpcClient:
             return None
         return hex_to_int(b["timestamp"]) * 1000
 
+    def transaction_receipt(self, tx_hash: str) -> dict[str, Any] | None:
+        return self.call("eth_getTransactionReceipt", [tx_hash])
+
     def eth_call(self, to: str, data: str, block: str | int = "latest") -> str:
         blk = hex(block) if isinstance(block, int) else block
         return self.call("eth_call", [{"to": to, "data": data}, blk])

@@ -98,6 +98,8 @@ class FakeBase:
 
         if method == "eth_chainId":
             return ok(hex(8453))
+        if method == "eth_getTransactionReceipt":  # a Base receipt: L2 execution plus the L1 data fee
+            return ok({"transactionHash": params[0], "gasUsed": hex(173_040), "effectiveGasPrice": hex(100_000_000), "l1Fee": hex(10_000_000_000_000)})
         if method == "eth_blockNumber":
             return ok(hex(self.latest))
         if method == "eth_getBlockByNumber":

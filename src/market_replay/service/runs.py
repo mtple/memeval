@@ -23,6 +23,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from ..datasets.generator import dev_short_config, generate_pack, standard_suite_configs
 from ..datasets.pack import Pack, PackError
 from ..datasets.validator import validate_pack
@@ -191,8 +193,17 @@ class RunManager:
         for path in sorted(p for p in WEEKS_DIR.iterdir() if (p / "manifest.yaml").exists()):
             row = self.store.pack(path.name)
             if row is not None and row["path"] == str(path.resolve()):
-                out.append(self._pack_view(row))
-                continue
+                try:
+                    on_disk = str((yaml.safe_load((path / "manifest.yaml").read_text()) or {}).get("pack_id"))
+                except (OSError, ValueError):
+                    on_disk = row["pack_id"]
+                if on_disk == row["pack_id"]:
+                    out.append(self._pack_view(row))
+                    continue
+                # The directory was re-recorded: retire the old row under a distinct name so lookups by
+                # name reach the new pack, then register the new one below.
+                self.store.execute("UPDATE packs SET use_status=?, name=? WHERE pack_id=?", (str(UseStatus.WITHDRAWN), f"{row['name']}@{row['pack_id'][-8:]}", row["pack_id"]))
+                print(f"[market-replay] {row['name']} re-recorded: {row['pack_id']} withdrawn", file=sys.stderr)
             try:
                 out.append(self.register_pack(path, path.name))
             except (PackError, ApiError, ValueError, OSError) as e:  # one broken directory must not take the site down

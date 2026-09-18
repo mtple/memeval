@@ -28,6 +28,9 @@ def test_every_traded_launch_inside_the_period_is_recorded_and_discoverable_from
         assert pool.initial_state_basis == "pool_initialized_inside_window"
         assert pool.discovery_available_utc_ms == pool.created_time_utc_ms + 4000  # discoverable from creation, not from a swap count
     assert any(r["kind"] == "cl_init" for r in pack.tape) and pack.validation["resulting_qualification"] == "research"
+    # gas per fill is the median cost of sampled recorded swap receipts: L2 execution plus the L1 data fee
+    assert pack.params.gas_cost == 173_040 * 100_000_000 + 10_000_000_000_000 and pack.params.gas_basis.startswith("median_cost_of_")
+    assert pack.coverage["gas_sample"]["observed"] >= 1 and pack.coverage["gas_sample"]["l1_fee_share"] > 0
     # resumable: a second run over the same work directory reads no logs again
     calls = fake.calls
     res2 = run_launch_collection(p, tmp_path, transport=httpx.MockTransport(fake.handle), rpc_url_override="http://fake-rpc.local", sleep=lambda s: None)
@@ -47,3 +50,15 @@ def test_a_combined_week_can_carry_every_launch_next_to_the_established_pools(tm
     pack = Pack.load(tmp_path / "packs" / "week_all")
     assert "all_launches_in_window_v1" in pack.manifest.universe.selection_rule_version
     assert pack.inventory["venues"]["all_launches_in_window_v1"]["pools"] >= 1
+    # the merged pack charges the launches' measured gas, and a quote shows it
+    from market_replay.engine.session import Session
+
+    assert pack.params.gas_cost == 173_040 * 100_000_000 + 10_000_000_000_000
+    s = Session.create(session_id="ses_gas", pack=pack, bankroll_raw=10**18, mask_seed="m", engine_seed="e")
+    s.handle("r", "session.describe", {})
+    s.handle("r", "clock.advance", {"to_ms": 600_000})
+    items = s.handle("r", "markets.list", {"filters": {"execution_supported_only": True}}).data["items"]
+    live = [i for i in items if i.get("numeraire_depth_raw") not in (None, "0")]
+    assert live, items
+    q = s.handle("r", "broker.quote", {"pool_id": live[0]["pool_id"], "asset_in": "NATIVE", "amount_in_raw": str(int(live[0]["numeraire_depth_raw"]) // 5000)})
+    assert q.status == "ok" and q.data["gas_cost_raw"] == str(pack.params.gas_cost), q

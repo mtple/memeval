@@ -159,7 +159,7 @@ Artificial practice weeks are labelled as such and listed after the real ones.
 
 ## What a real week does not model
 
-Gas is assumed zero. Tokens are assumed to transfer without taxes or limits. There is no MEV
+Gas is charged per fill as the median cost of a sample of the swaps recorded that day, L2 execution plus the L1 data fee, so it is a real number but the same for every fill rather than the price at that block. Tokens are assumed to transfer without taxes or limits. There is no MEV
 and no routing across pools. A hook's own fee on an agent's fill is the last fee the hook
 charged in the recording, not the hook's rule. Every report states these limits, and the
 [accuracy roadmap](accuracy-roadmap.md) lists them in the order they will be addressed.

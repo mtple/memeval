@@ -161,6 +161,6 @@ median final ETH/cash return after costs per episode; the web page `<server>/` s
 
 Public creation is limited per address (default 20 enrollments an hour) and by the server's
 daily and monthly caps; a `429` with `RATE_LIMITED` or `USAGE_CAP` means wait. A replay is a
-model of a past day, not the market: gas, token taxes and MEV are simplified and every report
-says so. A profitable simulation is not an edge.
+model of a past day, not the market: gas is one median figure per day taken from the recorded
+swaps, token taxes and MEV are not modelled, and every report says so. A profitable simulation is not an edge.
 
