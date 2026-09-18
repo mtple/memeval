@@ -81,6 +81,9 @@ def test_hosted_default_bootstrap_is_all_when_unset(monkeypatch, tmp_path):
 
 
 def test_hosted_bootstrap_none_registers_nothing(monkeypatch, tmp_path):
+    import market_replay.service.runs as runs_mod
+
+    monkeypatch.setattr(runs_mod, "WEEKS_DIR", tmp_path / "no-weeks")  # recorded weeks in the checkout register regardless of the fixture setting
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("MARKET_REPLAY_BOOTSTRAP", "none")
     monkeypatch.setenv("MARKET_REPLAY_HOSTED", "1")
