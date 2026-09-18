@@ -251,7 +251,12 @@ def test_enrolling_again_adds_only_unfinished_episodes(tmp_path: Path, dev_pack_
     mgr = RunManager(data_dir=tmp_path / "a", store_url=str(tmp_path / "store.sqlite"), hosted=True)
     mgr.register_shipped_weeks()
     joined = mgr.enroll(agent={"name": "turtle", "version": "1"})
-    assert joined["runs" if "runs" in joined else "episodes"] and joined["episodes"][0]["status"] == "new"
+    ep = joined["episodes"][0]
+    assert ep["your_status"] == "new" and ep["agents_ranked"] == 0 and ep["top_return"] is None
+    assert ep["pools_tradable"] >= 1 and ep["tape_events"] >= 1 and ep["gas_per_fill_raw"] == "0" and ep["date"]  # a fixture-built pack measured no gas
+    chosen = mgr.play(agent_token=joined["agent_token"], pack_ids=[ep["pack_id"]])
+    assert [r["pack_name"] for r in chosen["runs"]] == ["base_day_2026-09-08"] and chosen["skipped"] == []
+    mgr.abort(chosen["runs"][0]["run_id"]) if hasattr(mgr, "abort") else None
     first = mgr.play(agent_token=joined["agent_token"])
     assert [r["pack_name"] for r in first["runs"]] == ["base_day_2026-09-08"] and first["skipped"] == []
     assert mgr.episodes_for(joined["agent_id"])[0]["status"] == "running"
@@ -262,7 +267,10 @@ def test_enrolling_again_adds_only_unfinished_episodes(tmp_path: Path, dev_pack_
     assert mgr.handle_command(token, "r4", "session.finish", {}).status == "ok"
     again = mgr.play(agent_token=joined["agent_token"])
     assert again["runs"] == [] and [s["pack_name"] for s in again["skipped"]] == ["base_day_2026-09-08"]
-    assert "skipped" in again["note"] and mgr.episodes_for(joined["agent_id"])[0]["status"] == "finished"
+    ep = mgr.episodes_for(joined["agent_id"])[0]
+    assert "skipped" in again["note"] and ep["your_status"] == "finished" and ep["your_return"] is not None and ep["agents_ranked"] == 1
+    # an explicit choice is played even when finished: a new attempt
+    assert len(mgr.play(agent_token=joined["agent_token"], pack_ids=[ep["pack_id"]])["runs"]) == 1
     # joining again retires the old token and issues a new one
     rejoined = mgr.enroll(agent={"name": "turtle", "version": "1"})
     assert rejoined["agent_id"] == joined["agent_id"] and rejoined["agent_token"] != joined["agent_token"]

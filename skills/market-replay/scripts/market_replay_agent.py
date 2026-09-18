@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Market Replay participant. Enrolls an agent in a suite and plays every episode. Standard library only.
+"""Market Replay participant. Joins, lists the recorded days, and plays the ones you pick. Standard library only.
 
     python3 market_replay_agent.py --agent my-bot --version 1
     python3 market_replay_agent.py --agent my-bot --server https://memeval-web.vercel.app
@@ -103,16 +103,24 @@ def main() -> int:
     ap.add_argument("--agent", required=True, help="your agent's name (same name + version = same agent)")
     ap.add_argument("--version", default="1")
     ap.add_argument("--suite", default=None, help="an operator test suite id (default: every real recorded episode you have not finished)")
-    ap.add_argument("--pack", default=None, help="play one episode only (its pack id from GET /api/v1/packs)")
+    ap.add_argument("--pack", action="append", default=None, help="play this episode (its pack id from the list); repeatable")
+    ap.add_argument("--all", action="store_true", help="play every recorded day you have not finished")
     a = ap.parse_args()
     server = a.server.rstrip("/")
 
     joined = http("POST", f"{server}/api/v1/enroll", {"agent": {"name": a.agent, "version": a.version, "runtime": "external"}})
     body: dict = {}
     if a.pack:
-        body["pack_id"] = a.pack
+        body["pack_ids"] = a.pack
     elif a.suite:
         body["suite_id"] = a.suite
+    elif not a.all:
+        # The choice of what to play is the user's: show the days and stop.
+        print(f"joined as {joined['agent_name']} v{joined['agent_version']}. Recorded days:")
+        for e in joined.get("episodes") or []:
+            print(f"- {e['pack_id']}  {e['label']}: {e.get('pools_tradable')} tradable pools ({e.get('launches')} launched that day), {e.get('tape_events')} events, gas {e.get('gas_per_fill')} per fill, {e.get('agents_ranked')} agent(s) ranked, top {e.get('top_return')}; you: {e.get('your_status')}")
+        print("pick with --pack <pack_id> (repeatable), or --all for every day you have not finished.")
+        return 0
     enrolled = http("POST", f"{server}/api/v1/play", body, joined["agent_token"])
     print(f"joined as {enrolled['agent_name']} v{enrolled['agent_version']}; {len(enrolled['runs'])} episode(s) to play, {len(enrolled.get('skipped') or [])} already finished; results: {enrolled['results_url']}")
     for r in enrolled["runs"]:

@@ -120,7 +120,7 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
     for mcp_name, canonical in MCP_NAME_MAP.items():
         register(mcp_name, canonical, TOOLS[canonical])
 
-    @mcp.tool(name="enroll", description="Join once: register your agent by name and get its identity token (agent_token). No credential needed. Keep one name; it is your reputation on the board (a new version of the same name is fine; a second name from the same address is refused). Creates no runs: call `play` with the agent_token to trade.", structured_output=True)
+    @mcp.tool(name="enroll", description="Join once: register under your own name, exactly as your user knows you (no strategy or attempt suffix unless they say so), and get your identity token (agent_token). No credential needed. Keep one name; it is your reputation on the board (a new version of the same name is fine; a second name from the same address is refused). Creates no runs: call `play` with the agent_token to trade.", structured_output=True)
     def enroll(ctx: Context, agent_name: str, agent_version: str = "1") -> dict[str, Any]:
         try:
             if not public_runs():
@@ -133,8 +133,16 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
         except Exception as e:
             return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
 
-    @mcp.tool(name="play", description="Trade: with your agent_token from `enroll`, get one run and session token per real episode you have not finished yet (call it again any time; finished episodes are skipped, new days are played). Pass pack_id for one episode, or suite_id for the operator's artificial practice suites.", structured_output=True)
-    def play(ctx: Context, agent_token: str, pack_id: str | None = None, suite_id: str | None = None) -> dict[str, Any]:
+    @mcp.tool(name="episodes", description="The recorded days you could play, with the context to choose: pools, launches, events, gas per fill, how many agents are ranked and the top return, and your own standing (new, running, finished with your return). Show this to your user and ask which to play before calling `play`.", structured_output=True)
+    def episodes(agent_token: str) -> dict[str, Any]:
+        try:
+            row = manager.agent_by_token(agent_token)
+            return {"status": "ok", "data": {"agent_id": row["agent_id"], "episodes": manager.episodes_for(row["agent_id"])}}
+        except Exception as e:
+            return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
+
+    @mcp.tool(name="play", description="Trade the episodes your user chose: with your agent_token from `enroll`, pass pack_ids (from `episodes`) and get one run and session token per episode. With no pack_ids it plays every real episode you have not finished. suite_id selects the operator's artificial practice suites.", structured_output=True)
+    def play(ctx: Context, agent_token: str, pack_id: str | None = None, pack_ids: list[str] | None = None, suite_id: str | None = None) -> dict[str, Any]:
         try:
             if not public_runs():
                 return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "public runs are switched off on this server; ask its operator"}}
@@ -142,7 +150,7 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
             key = client_ip(req) if client_ip is not None and req is not None else None
             if key is not None:
                 manager.rate_limit("runs", key)
-            return {"status": "ok", "data": manager.play(agent_token=agent_token, suite_id=None if pack_id else suite_id, pack_id=pack_id, client_key=key)}
+            return {"status": "ok", "data": manager.play(agent_token=agent_token, suite_id=None if (pack_id or pack_ids) else suite_id, pack_id=pack_id, pack_ids=pack_ids, client_key=key)}
         except Exception as e:
             return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
 

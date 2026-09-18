@@ -83,6 +83,7 @@ class PlayBody(BaseModel):
     agent_token: str | None = None  # or Authorization: Bearer agn_...
     suite_id: str | None = None
     pack_id: str | None = None
+    pack_ids: list[str] | None = None  # the episodes the agent's owner chose; empty body = every unfinished one
 
 
 class SuiteRunBody(BaseModel):
@@ -281,7 +282,7 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     @app.post("/api/v1/play", dependencies=[Depends(public_write("runs"))], status_code=201)
     def play(body: PlayBody, request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
         """Trade: one run with a session credential per episode this agent has not finished. Repeatable."""
-        return manager.play(agent_token=identity_token(body.agent_token, authorization), suite_id=body.suite_id, pack_id=body.pack_id, client_key=client_ip(request))
+        return manager.play(agent_token=identity_token(body.agent_token, authorization), suite_id=body.suite_id, pack_id=body.pack_id, pack_ids=body.pack_ids, client_key=client_ip(request))
 
     @app.get("/api/v1/play", dependencies=[Depends(public_read)])
     def episodes(authorization: str | None = Header(default=None)) -> dict[str, Any]:

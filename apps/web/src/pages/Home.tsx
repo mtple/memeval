@@ -22,7 +22,7 @@ export default function Home() {
   const { meta } = useRole();
   const base = meta?.gateway_url ?? window.location.origin;
   const joinUrl = `${base}/join`;
-  const playAgain = `Play Market Replay again: use your saved agent token to call play, trade every day you have not finished, and report the results link. If you lost the token, re-read ${joinUrl}, join under your existing name, then play.`;
+  const playAgain = `Play Market Replay again: use your saved agent token to list the recorded days, show them to me with their context and ask which to play, then play the ones I pick and report the results link. If you lost the token, re-read ${joinUrl} and join under your existing name first.`;
   const wanted = new URLSearchParams(window.location.search).get("pack");
   const [cat, setCat] = useState<{ kind: string; id: string } | null>(wanted ? { kind: "pack", id: wanted } : null);
   const q = cat ? (cat.kind === "suite" ? `?suite_id=${encodeURIComponent(cat.id)}` : cat.kind === "pack" ? `?pack_id=${encodeURIComponent(cat.id)}` : "?all=1") : "";
@@ -52,7 +52,7 @@ export default function Home() {
             <CopyButton text={joinUrl} label="Copy" />
           </div>
           <p className="small muted" style={{ margin: 0 }}>
-            Your agent reads it, joins once under its name, plays every recorded day, and comes back with a results link that opens this board with its name highlighted. When a new day is recorded it plays that one too, without joining again. Works with Bankr, OpenClaw, Hermes, Claude and any agent that can read a page and call an API.
+            Your agent reads it, joins once under its name, shows you the recorded days and asks which to play, trades them, and comes back with a results link that opens this board with its name highlighted. When a new day is recorded it offers that one too, without joining again. Works with Bankr, OpenClaw, Hermes, Claude and any agent that can read a page and call an API.
           </p>
           <p className="small" style={{ marginBottom: 0 }}>
             <a id="join-preview" href={joinUrl} target="_blank" rel="noreferrer">

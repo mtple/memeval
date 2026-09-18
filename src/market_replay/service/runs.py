@@ -118,6 +118,7 @@ class RunManager:
         self.max_runs_per_hour_per_ip = int(max_runs_per_hour_per_ip if max_runs_per_hour_per_ip is not None else os.environ.get("MARKET_REPLAY_MAX_RUNS_PER_HOUR_PER_IP", "20"))
         self._packs: dict[str, Pack] = {}
         self._contexts: dict[str, RunContext] = {}
+        self._episode_ctx_cache: dict[str, dict[str, Any]] = {}
         self._global = threading.RLock()
         self.gateway_url = "http://127.0.0.1:8000"
         if suites_path is None:
@@ -1115,18 +1116,65 @@ class RunManager:
             raise ApiError(401, "unknown or retired agent token; join again (POST /api/v1/enroll with the same name and version) to get a new one", "UNAUTHORIZED")
         return row
 
+    def _episode_context(self, row: dict[str, Any]) -> dict[str, Any]:
+        """What an agent's owner needs to choose an episode: size, launches, gas, and who is on its board.
+        Read once per pack per process from the small pack files; never the tape."""
+        cached = self._episode_ctx_cache.get(row["pack_id"])
+        if cached is None:
+            summary = json.loads(row.get("summary_json") or "{}")
+            path = Path(row["path"])
+            try:
+                params = yaml.safe_load((path / "execution_params.yaml").read_text()) or {}
+            except (OSError, ValueError):
+                params = {}
+            launches = None
+            candidates = None
+            try:
+                inv = json.loads((path / "inventory.json").read_text())
+                launches = ((inv.get("venues") or {}).get("all_launches_in_window_v1") or {}).get("pools")
+                candidates = inv.get("candidate_count")
+            except (OSError, ValueError):
+                pass
+            gas = int(params.get("gas_cost_raw") or 0)
+            dec = int(summary.get("numeraire_decimals") or 18)
+            cached = {
+                "date": str(row.get("start_utc") or "")[:10] or None,
+                "duration_ms": row.get("duration_ms"),
+                "pools_tradable": summary.get("pools_executable"),
+                "launches": launches,
+                "pools_created": candidates,
+                "tape_events": summary.get("tape_events"),
+                "gas_per_fill_raw": str(gas),
+                "gas_per_fill": f"{gas / 10**dec:.9f}".rstrip("0").rstrip(".") if gas else "0",
+                "gas_basis": params.get("gas_basis"),
+            }
+            self._episode_ctx_cache[row["pack_id"]] = cached
+        return dict(cached)
+
     def episodes_for(self, agent_id: str) -> list[dict[str, Any]]:
-        """Every real episode on the server with this agent's standing on it: new, running or finished."""
+        """Every real episode on the server, with the context to choose between them and this agent's
+        standing on each: new, running or finished (with its return)."""
         out = []
         for r in self.real_weeks():
             mine = self.store.runs(agent_id=agent_id, pack_id=r["pack_id"])
             done = [x for x in mine if x["state"] == str(RunState.COMPLETED) and (self._result_summary(x.get("report_json")) or {}).get("primary_metric") == "final_cash_return_v1"]
             open_ = [x for x in mine if x["state"] not in TERMINAL]
             status = "finished" if done else "running" if open_ else "new"
-            out.append({"pack_id": r["pack_id"], "pack_name": r["name"], "label": _episode_label(r), "status": status, "run_id": (done or open_ or [{}])[-1].get("run_id")})
+            board = self.leaderboard(pack_id=r["pack_id"])["rows"]
+            item = {"pack_id": r["pack_id"], "pack_name": r["name"], "label": _episode_label(r), **self._episode_context(r)}
+            item.update({
+                "agents_ranked": len(board),
+                "top_return": board[0].get("median_return") if board else None,
+                "your_status": status,
+                "your_run_id": (done or open_ or [{}])[-1].get("run_id"),
+                "your_return": (self._result_summary(done[-1].get("report_json")) or {}).get("headline_return") if done else None,
+                "status": status,  # kept for older clients
+                "run_id": (done or open_ or [{}])[-1].get("run_id"),
+            })
+            out.append(item)
         return out
 
-    def play(self, *, agent_token: str, suite_id: str | None = None, pack_id: str | None = None, client_key: str | None = None) -> dict[str, Any]:
+    def play(self, *, agent_token: str, suite_id: str | None = None, pack_id: str | None = None, pack_ids: list[str] | None = None, client_key: str | None = None) -> dict[str, Any]:
         """Create one external-client run per episode this agent has not finished (or for one pack, or an
         operator suite) and return their one-time session credentials. Call it as often as you like: an
         episode you already completed is skipped, a new day on the server is played."""
@@ -1150,8 +1198,10 @@ class RunManager:
                 assert r is not None
                 runs.append(self.create_run(agent_id=agent_id, pack_ref=r["pack_id"], mode=s.mode, bankroll_raw=s.bankroll_raw, mask_seed=f"{s.mask_seed}:{name}", engine_seed=f"{s.engine_seed}:{name}", isolation=s.isolation, suite_id=suite_id, suite_run_id=suite_run_id))
             self.store.insert_suite_run(suite_run_id, suite_id, agent_id, now_iso(), [r["run_id"] for r in runs])
-        elif pack_id:
-            runs.append(self.create_run(agent_id=agent_id, pack_ref=pack_id))
+        elif pack_ids or pack_id:
+            # An explicit choice is played as asked, finished or not: a new attempt on that episode.
+            for ref in list(pack_ids or []) + ([pack_id] if pack_id else []):
+                runs.append(self.create_run(agent_id=agent_id, pack_ref=ref))
         else:
             # No choice made: every real episode on the server this agent has not finished; on a server
             # without one yet, the practice suite.

@@ -65,6 +65,8 @@ def test_join_then_play_returns_one_token_per_episode_without_any_credential(ser
     assert run["pack_name"] == "gen_dev_short" and run["session_credential"]["token"].startswith("agt_")
     single = httpx.post(srv.url + "/api/v1/play", json={"agent_token": joined["agent_token"], "pack_id": "gen_dev_short"}).json()
     assert single["agent_id"] == e["agent_id"] and single["suite_id"] is None and len(single["runs"]) == 1
+    chosen = httpx.post(srv.url + "/api/v1/play", headers=auth, json={"pack_ids": ["gen_dev_short", "gen_dev_short"]}).json()
+    assert len(chosen["runs"]) == 2  # what the user chose, as asked
     assert httpx.post(srv.url + "/api/v1/play", json={"pack_id": "gen_dev_short"}).status_code == 401  # no identity, no runs
     assert httpx.post(srv.url + "/api/v1/play", headers={"Authorization": "Bearer " + run["session_credential"]["token"]}, json={}).status_code == 403  # a session token is not an identity
     x = httpx.post(srv.url + "/api/v1/enroll", json={"agent": {"name": "x", "version": "1"}}).json()
@@ -113,7 +115,7 @@ def test_mcp_agent_enrolls_and_plays_without_headers(server):
                 return names, denied, enrolled, desc, adv, status
 
     names, denied, enrolled, desc, adv, status = asyncio.run(go())
-    assert {"enroll", "play", "run_status", "session_describe", "broker_submit", "session_finish"} <= names
+    assert {"enroll", "episodes", "play", "run_status", "session_describe", "broker_submit", "session_finish"} <= names
     assert denied["status"] == "error" and denied["error"]["code"] == "UNAUTHORIZED"
     assert enrolled["status"] == "ok" and enrolled["data"]["agent_name"] == "mcp-skill-bot"
     assert desc["status"] == "ok" and desc["data"]["episode"]["duration_ms"] > 0
