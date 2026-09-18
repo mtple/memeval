@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from fractions import Fraction
 
@@ -59,8 +60,8 @@ def to_relative(events: list[TapeEvent] | list[dict], start_utc_ms: int) -> list
                 block=int(d["block"]),
                 log_index=int(d["log_index"]),
                 time_ms=int(d["time_utc_ms"]) - start_utc_ms,
-                kind=str(d["kind"]),
-                pool=str(d["pool"]),
+                kind=sys.intern(str(d["kind"])),
+                pool=sys.intern(str(d["pool"])),
                 tx=d.get("tx"),
                 wallet=d.get("wallet"),
                 asset_in=d.get("asset_in"),
@@ -72,7 +73,7 @@ def to_relative(events: list[TapeEvent] | list[dict], start_utc_ms: int) -> list
                 reserve1=_opt_int(d.get("reserve1")),
                 payload=dict(d.get("payload") or {}),
                 available_ms=(int(avail) - start_utc_ms) if avail is not None else None,
-                availability_basis=str(d.get("availability_basis") or "unknown"),
+                availability_basis=sys.intern(str(d.get("availability_basis") or "unknown")),
                 sqrt_price_x96=_opt_int(d.get("sqrt_price_x96")),
                 tick=_opt_int(d.get("tick")),
                 tick_lower=_opt_int(d.get("tick_lower")),

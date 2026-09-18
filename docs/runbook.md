@@ -128,8 +128,10 @@ make week START=2026-09-07           # about two hours; 12,000 to 16,000 RPC req
 git add weeks/base_week_2026-09-07 && git commit -m "Base week of 2026-09-07" && git push
 ```
 
-`make week` records every venue (Uniswap v2 pairs and v4 pools, where Clanker and Bankr launches
-trade) into one pack, validates it, and writes it only when it qualifies as research data. A week
+`make week` records every pool launched inside the week on Uniswap v2, v3 and v4 (with an ETH leg
+and at least one swap) plus a fixed set of established pools into one pack, validates it, and
+writes it only when it qualifies as research data. `market-replay week --universe sampled` is the
+older sixteen-pool recording. A week
 that does not qualify is reported with the failing gate; do not commit it. An interrupted recording
 keeps its working files under `weeks/<name>_work/` (ignored by git) and resumes when the same
 command runs again. The optional `collect-week` GitHub workflow runs the same command on GitHub's

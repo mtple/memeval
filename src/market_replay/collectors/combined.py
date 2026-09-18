@@ -2,7 +2,8 @@
 its own), then merges their packs into one. One leaderboard per week, whatever pool type a swap
 happened in.
 
-Config: ``protocol: all`` plus ``venues`` (default ``["uniswap_v2", "uniswap_v4"]``) and ``venue_pairs``
+Config: ``protocol: all`` plus ``venues`` (default ``["uniswap_v2", "uniswap_v4"]``), ``venue_pairs``, and
+``include_launches`` (every pool launched inside the period, from ``launches.py``, merged in)
 (pools per venue; default splits ``max_pairs`` three quarters to v4, the rest to v2). Every other key is
 passed to each venue's collector unchanged, except the selection rule: v2 takes ``selection_rule``,
 concentrated-liquidity venues take ``selection_rule_cl`` (launches from inside the week by default).
@@ -93,7 +94,34 @@ def run_combined_collection(
         done.write_text(json.dumps({k: v for k, v in res.items() if k != "work_dir"}, default=str))
         results[venue] = res
         logs.extend(f"[{venue}] {line}" for line in res.get("decision_log", []))
-    pack = merge_packs(out_dir, [Pack.load(work / v) for v in venues], cfg, logs)
+    parts = list(venues)
+    if cfg.get("include_launches"):
+        # Every launch of the period, in bulk (see launches.py); the venues above supply the established pools.
+        from .launches import run_launch_collection
+
+        done = work / "launches_result.json"
+        if done.exists() and (work / "launches" / "manifest.yaml").exists():
+            res = json.loads(done.read_text())
+        else:
+            sub_cfg = {k: v for k, v in cfg.items() if k not in ("venues", "venue_pairs", "include_launches")}
+            sub_cfg["venues"] = [str(v) for v in (cfg.get("launch_venues") or venues)]
+            sub_cfg["out_dir"] = f"{rel_work}/launches" if not Path(cfg["out_dir"]).is_absolute() else str(work / "launches")
+            sub_path = work / "launches.yaml"
+            sub_path.write_text(yaml.safe_dump(sub_cfg, sort_keys=False))
+            res = run_launch_collection(sub_path, data_dir, transport=transport, rpc_url_override=rpc_url_override, sleep=sleep, deadline=deadline, store_bodies=store_bodies, budget_used=used)
+            used = int(res.get("budget", {}).get("requests", used))
+            if res["status"] != "pack_built":
+                res = dict(res)
+                res["venue"] = "launches"
+                res["work_dir"] = str(work)
+                res["decision_log"] = logs + [f"[launches] {line}" for line in res.get("decision_log", [])]
+                res["budget"] = {**res.get("budget", {}), "requests": used}
+                return res
+            done.write_text(json.dumps({k: v for k, v in res.items() if k != "work_dir"}, default=str))
+        results["launches"] = res
+        logs.extend(f"[launches] {line}" for line in res.get("decision_log", []))
+        parts.append("launches")
+    pack = merge_packs(out_dir, [Pack.load(work / v) for v in parts], cfg, logs)
     tape_events = pack.tape_count
     return {
         "status": "pack_built",
@@ -103,7 +131,7 @@ def run_combined_collection(
         "qualification": pack.validation["resulting_qualification"],
         "tape_events": tape_events,
         "pools": len(pack.pools),
-        "venues": {v: {"pools": results[v].get("pools"), "tape_events": results[v].get("tape_events"), "qualification": results[v].get("qualification")} for v in venues},
+        "venues": {v: {"pools": results[v].get("pools"), "tape_events": results[v].get("tape_events"), "qualification": results[v].get("qualification")} for v in parts},
         "budget": {"requests": used},
         "decision_log": logs + [f"merged {len(venues)} venues into one pack: {len(pack.pools)} pools, {tape_events} events"],
     }
@@ -153,8 +181,8 @@ def merge_packs(out_dir: Path, packs: list[Pack], cfg: dict[str, Any], decision_
             inventory[key].extend(inv.get(key, []))
         inventory["candidate_count"] += int(inv.get("candidate_count", 0) or 0)
         inventory["selected_count"] += int(inv.get("selected_count", 0) or 0)
-        proto = next(iter(p.pools.values())).protocol if p.pools else m.universe.selection_rule_version
-        inventory["venues"][proto] = {"pools": len(p.pools), "tape_events": len(p.tape), "qualification": p.validation.get("resulting_qualification")}
+        proto = m.universe.selection_rule_version if m.universe.selection_rule_version.startswith("all_launches") else (next(iter(p.pools.values())).protocol if p.pools else m.universe.selection_rule_version)
+        inventory["venues"][proto] = {"pools": len(p.pools), "tape_events": p.tape_count, "qualification": p.validation.get("resulting_qualification")}
         u = m.universe
         factories.extend(f for f in u.factories if f not in factories)
         models.extend(x for x in u.pool_models if x not in models)

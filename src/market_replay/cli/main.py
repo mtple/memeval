@@ -287,12 +287,16 @@ def week(
     start: str = typer.Option(..., "--start", help="week start, UTC date (YYYY-MM-DD)"),
     end: str | None = typer.Option(None, "--end", help="period end (default: start + 7 days)"),
     out: Path = typer.Option(REPO_ROOT / "weeks", "--out", help="directory the finished week is written into (committed to the repository)"),
-    max_pairs: int = typer.Option(16, help="pools in the frozen universe (three quarters v4, the rest v2)"),
+    max_pairs: int = typer.Option(16, help="established pools (trading before the week): 4 v2 pairs, 4 v3 pools, 8 v4 pools by default"),
+    universe: str = typer.Option("launches", help="'launches': every pool launched inside the week plus the established pools; 'sampled': established pools plus a sample of launches"),
+    min_swaps: int = typer.Option(1, help="launches with fewer swaps inside the week are left out of the tape (counted in the inventory)"),
     max_requests: int = typer.Option(40000, help="hard RPC request budget"),
     log_chunk_blocks: int = typer.Option(10000, help="eth_getLogs block range per request (halved on provider errors; capped to the provider's limit)"),
     rpc_url_env: str = typer.Option("BASE_RPC_URL", help="name of the environment variable holding the read-only RPC endpoint"),
 ) -> None:
-    """Record one real week of Base trading (every venue) into weeks/<name>, ready to commit.
+    """Record one real week of Base trading into weeks/<name>, ready to commit: every pool launched
+    inside the week on Uniswap v2, v3 and v4 (the noise an agent has to pick through) plus a fixed
+    set of established pools.
 
     Reads the chain through your own RPC endpoint (about two hours and 12,000 to 16,000 requests for a
     week), validates the result, and writes the pack only when it qualifies as research data. Commit
@@ -325,8 +329,11 @@ def week(
         "discovery_window_start_utc": iso(t0 - timedelta(days=7 if is_week else 1)),
         "prehistory_hours": 24 if is_week else 1,
         "selection_rule": "active_before_window_earliest_created_v1",
-        "selection_rule_cl": "active_before_window_plus_window_launches_v1",
-        "venues": ["uniswap_v2", "uniswap_v4"],
+        "selection_rule_cl": "active_before_window_earliest_created_v1" if universe == "launches" else "active_before_window_plus_window_launches_v1",
+        "venues": ["uniswap_v2", "uniswap_v3", "uniswap_v4"] if universe == "launches" else ["uniswap_v2", "uniswap_v4"],
+        "venue_pairs": {"uniswap_v2": max_pairs // 4, "uniswap_v3": max_pairs // 4, "uniswap_v4": max_pairs - 2 * (max_pairs // 4)} if universe == "launches" else None,
+        "include_launches": universe == "launches",
+        "min_swaps": min_swaps,
         "max_launches": max_pairs // 2,
         "launch_min_swaps": 20,
         "activity_lookback_blocks": 43200 if is_week else 5400,

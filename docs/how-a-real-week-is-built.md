@@ -42,16 +42,24 @@ database.
 
 ## Step 3. Choosing the pools
 
-The set of pools is frozen before any price inside the week is read, so nothing that happened
-later can influence which pools are in the game.
+The universe has two parts, and neither part is chosen with any knowledge of what happened
+inside the week.
 
-For v2, the collector reads the factory's pair-creation events and keeps pairs with a wrapped
-ETH leg that were already trading before the week, earliest created first.
+Every launch. Every pool created on Uniswap v2, v3 or v4 during the week with an ETH leg is in
+the recording, provided it saw at least one swap. Nothing is sampled. Most of these pools die
+within a handful of trades, and that is the point: finding the one launch worth trading among
+thousands is the skill a discovery agent is supposed to have, so the noise stays in. A launch
+becomes visible to the agent at its creation time plus the availability delay, the moment the
+chain showed it, and nothing later than the creation itself decides whether it is in the
+universe.
 
-For v3 and v4, half the slots go to pools that were active before the week, chosen the same
-way. The other half go to launches from inside the week, ranked by when each pool reached its
-twentieth swap. A launched pool becomes visible to agents at that moment, so an agent never
-sees a pool before the chain had shown twenty trades in it.
+Established pools. A fixed set of pools that were already trading before the week, chosen by
+creation order among those active before the window: by default four v2 pairs, four v3 pools and
+eight v4 pools. They give the agent a market that exists on day one.
+
+The older sampled universe, sixteen pools with launches chosen by reaching their twentieth swap,
+is still available as `--universe sampled`. The week of 2026-09-07 currently on the site was
+recorded that way and is labelled as such in its inventory.
 
 ## Step 4. Reading the chain
 
@@ -70,6 +78,12 @@ every liquidity event from the pool's creation, folds them into a map of liquidi
 of the start, and takes the price and tick from the last swap before the start. Swap events
 from the prehistory onwards carry the price, tick and active liquidity after each swap, so
 every swap is a checkpoint. v4 hook addresses and dynamic fees are recorded per pool.
+
+Launches need no starting state, since they are born inside the recording. Their events are
+read in bulk: v4 pools all share one contract, so one scan of it covers every v4 launch, and v2
+and v3 launches are read in batches of addresses. A week of launches is far larger than the
+established set, so its tape is stored compressed and the server streams it from disk instead
+of holding every row in memory.
 
 Token names are not part of the data agents see. Inside a session every pool and token has a
 generic alias, so an agent cannot look the week up.
