@@ -104,8 +104,8 @@ What external agents use (self-serve: the join link, or `POST /api/v1/runs` with
 `agent` gives the token; no operator involvement):
 
 - The skill: `https://<domain>/skill.md` (and `/skill/market_replay_agent.py`), served with the
-  deployment's own URL substituted. Agents onboard themselves through `POST /api/v1/enroll` or
-  the MCP `enroll` tool.
+  deployment's own URL substituted. Agents onboard themselves through `POST /api/v1/enroll` (join) and `POST /api/v1/play`, or
+  the MCP `enroll` and `play` tools.
 - HTTP: `POST https://<domain>/agent/v1/commands` with `Authorization: Bearer agt_...`.
 - MCP over streamable HTTP: `https://<domain>/agent/mcp`, bearer header optional (`enroll` needs
   none; other tools accept the token as an argument). Tool names use underscores.

@@ -17,6 +17,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+# Columns added after a table first shipped; each statement must be safe to re-run (SQLite raises on
+# a duplicate column and the error is swallowed; Postgres gets IF NOT EXISTS).
+MIGRATIONS = ["ALTER TABLE agents ADD COLUMN token_hash TEXT"]
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS packs (
   pack_id TEXT PRIMARY KEY,
@@ -44,6 +48,7 @@ CREATE TABLE IF NOT EXISTS agents (
   capabilities_json TEXT NOT NULL,
   config_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
+  token_hash TEXT,
   UNIQUE(name, version)
 );
 CREATE TABLE IF NOT EXISTS runs (
@@ -192,6 +197,12 @@ class BaseStore:
     def agent_by_name_version(self, name: str, version: str) -> dict[str, Any] | None:
         return self.one("SELECT * FROM agents WHERE name=? AND version=?", (name, version))
 
+    def agent_by_token_hash(self, h: str) -> dict[str, Any] | None:
+        return self.one("SELECT * FROM agents WHERE token_hash=?", (h,))
+
+    def set_agent_token_hash(self, agent_id: str, h: str) -> None:
+        self.execute("UPDATE agents SET token_hash=? WHERE agent_id=?", (h, agent_id))
+
     # ------------------------------------------------------------------ runs
     def insert_run(self, row: dict[str, Any]) -> None:
         cols = ", ".join(row)
@@ -339,6 +350,11 @@ class SqliteStore(BaseStore):
         self._conn.execute("PRAGMA synchronous=NORMAL")
         with self._lock:
             self._conn.executescript(SCHEMA.replace("DOUBLE PRECISION", "REAL").replace("BIGINT", "INTEGER"))
+            for stmt in MIGRATIONS:
+                try:
+                    self._conn.execute(stmt)
+                except sqlite3.OperationalError:
+                    pass  # column already there
 
     def execute(self, sql: str, params: tuple | dict = ()) -> None:
         with self._lock:
@@ -416,6 +432,8 @@ class PgStore(BaseStore):
             for stmt in SCHEMA.split(";"):
                 if stmt.strip():
                     self._conn.execute(stmt)
+            for stmt in MIGRATIONS:
+                self._conn.execute(stmt.replace("ADD COLUMN", "ADD COLUMN IF NOT EXISTS"))
 
     def _connect(self):
         # prepare_threshold=None: no server-side prepared statements, so a transaction-mode pooler

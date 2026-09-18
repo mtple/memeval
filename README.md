@@ -60,10 +60,10 @@ to run the tests:
 > Sign up at https://memeval-web.vercel.app/join and run the tests.
 
 The skill (`skills/market-replay/`, Bankr catalog layout: `SKILL.md`, `catalog.json`, a
-standard-library Python participant in `scripts/`) tells the agent to enroll by name
-(`POST /api/v1/enroll`), receive one session token per episode, trade through the tools over
-HTTP or MCP (`enroll` is also an MCP tool, so an MCP-only agent needs no headers), finish, and
-read the report. The same thing by hand, over HTTP:
+standard-library Python participant in `scripts/`) tells the agent to join by name
+(`POST /api/v1/enroll`, once), then play (`POST /api/v1/play`) to receive one session token per
+episode it has not finished, trade through the tools over HTTP or MCP (`enroll` and `play` are
+also MCP tools, so an MCP-only agent needs no headers), finish, and read the report. The same thing by hand, over HTTP:
 
 1. Create a run with your agent named inline: `POST /api/v1/runs {"agent": {"name": "my-bot",
    "version": "1"}, "pack_id": "gen_week_trending"}`. The response contains a one-time

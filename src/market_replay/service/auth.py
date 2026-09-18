@@ -1,8 +1,10 @@
 """Bearer credentials with two privilege levels.
 
 * Admin token: control plane (packs, agents, runs, comparisons, exports, data health).
-* Agent token: bound to exactly one run/session; can only call the agent plane and
-  only for its own session. Agent tokens can never reach the control plane.
+* Session token (agt_): bound to exactly one run/session; can only call the agent plane and
+  only for its own session.
+* Identity token (agn_): handed out when an agent joins; it can create that agent's runs (play)
+  and list its episodes, nothing else. Neither kind can reach the control plane.
 """
 
 from __future__ import annotations
@@ -19,6 +21,11 @@ def new_admin_token() -> str:
 
 def new_agent_token() -> str:
     return "agt_" + secrets.token_urlsafe(24)
+
+
+def new_identity_token() -> str:
+    """The credential an agent keeps after joining: it creates runs for that agent and nothing else."""
+    return "agn_" + secrets.token_urlsafe(24)
 
 
 def token_hash(token: str) -> str:

@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from market_replay.service.app import create_app
-from market_replay.service.runs import RunManager
+from market_replay.service.runs import ApiError, RunManager
 
 ADMIN = {"Authorization": "Bearer adm_public_test"}
 
@@ -143,12 +143,14 @@ def test_leaderboard_ranks_agents_per_category_and_join_serves_the_skill(tmp_pat
     assert c.get("/api/v1/leaderboard?all=1").json()["category"]["kind"] == "all"
     join = c.get("/join")
     assert join.status_code == 200 and join.text.startswith("---\nname: market-replay")
-    enrolled = c.post("/api/v1/enroll", json={"agent": {"name": "holder", "version": "1"}, "pack_id": "gen_dev_short"}).json()
-    assert enrolled["results_url"].endswith(f"/?agent={enrolled['agent_id']}")
+    enrolled = c.post("/api/v1/enroll", json={"agent": {"name": "holder", "version": "1"}}).json()
+    assert enrolled["results_url"].endswith(f"/?agent={enrolled['agent_id']}") and enrolled["agent_token"].startswith("agn_")
+    played = c.post("/api/v1/play", headers={"Authorization": "Bearer " + enrolled["agent_token"]}, json={"pack_id": "gen_dev_short"})
+    assert played.status_code == 201 and len(played.json()["runs"]) == 1
     # one name per agent: a second name from the same address is refused; a new version of the same name is not
-    second = c.post("/api/v1/enroll", json={"agent": {"name": "holder-momentum", "version": "1"}, "pack_id": "gen_dev_short"})
+    second = c.post("/api/v1/enroll", json={"agent": {"name": "holder-momentum", "version": "1"}})
     assert second.status_code == 409 and second.json()["code"] == "ONE_NAME" and "holder" in second.json()["message"]
-    again = c.post("/api/v1/enroll", json={"agent": {"name": "Holder", "version": "2"}, "pack_id": "gen_dev_short"})
+    again = c.post("/api/v1/enroll", json={"agent": {"name": "Holder", "version": "2"}})
     assert again.status_code == 201
     mgr.close()
 
@@ -203,7 +205,8 @@ def test_listing_runs_never_rebuilds_a_session(tmp_path: Path, dev_pack_dir: Pat
     store = str(tmp_path / "store.sqlite")
     a = RunManager(data_dir=tmp_path / "a", store_url=store, hosted=True)
     a.import_pack(dev_pack_dir, "gen_dev_short")
-    enrolled = a.enroll(agent={"name": "walker", "version": "1"}, pack_id="gen_dev_short")
+    joined = a.enroll(agent={"name": "walker", "version": "1"})
+    enrolled = a.play(agent_token=joined["agent_token"], pack_id="gen_dev_short")
     token = enrolled["runs"][0]["session_credential"]["token"]
     a.handle_command(token, "r1", "session.describe", {})
     a.handle_command(token, "r2", "clock.advance", {"to_ms": 600_000})
@@ -240,17 +243,25 @@ def test_enrolling_again_adds_only_unfinished_episodes(tmp_path: Path, dev_pack_
     monkeypatch.setattr(runs_mod, "WEEKS_DIR", weeks)
     mgr = RunManager(data_dir=tmp_path / "a", store_url=str(tmp_path / "store.sqlite"), hosted=True)
     mgr.register_shipped_weeks()
-    first = mgr.enroll(agent={"name": "turtle", "version": "1"})
+    joined = mgr.enroll(agent={"name": "turtle", "version": "1"})
+    assert joined["runs" if "runs" in joined else "episodes"] and joined["episodes"][0]["status"] == "new"
+    first = mgr.play(agent_token=joined["agent_token"])
     assert [r["pack_name"] for r in first["runs"]] == ["base_day_2026-09-08"] and first["skipped"] == []
+    assert mgr.episodes_for(joined["agent_id"])[0]["status"] == "running"
     token = first["runs"][0]["session_credential"]["token"]
     mgr.handle_command(token, "r1", "session.describe", {})
     duration = mgr.handle_command(token, "r2", "session.describe", {}).data["episode"]["duration_ms"]
     mgr.handle_command(token, "r3", "clock.advance", {"to_ms": duration})
     assert mgr.handle_command(token, "r4", "session.finish", {}).status == "ok"
-    again = mgr.enroll(agent={"name": "turtle", "version": "1"})
+    again = mgr.play(agent_token=joined["agent_token"])
     assert again["runs"] == [] and [s["pack_name"] for s in again["skipped"]] == ["base_day_2026-09-08"]
-    assert "skipped" in again["note"]
+    assert "skipped" in again["note"] and mgr.episodes_for(joined["agent_id"])[0]["status"] == "finished"
+    # joining again retires the old token and issues a new one
+    rejoined = mgr.enroll(agent={"name": "turtle", "version": "1"})
+    assert rejoined["agent_id"] == joined["agent_id"] and rejoined["agent_token"] != joined["agent_token"]
+    with pytest.raises(ApiError):
+        mgr.play(agent_token=joined["agent_token"])
     # a new version of the name starts fresh
     v2 = mgr.enroll(agent={"name": "turtle", "version": "2"})
-    assert [r["pack_name"] for r in v2["runs"]] == ["base_day_2026-09-08"]
+    assert [r["pack_name"] for r in mgr.play(agent_token=v2["agent_token"])["runs"]] == ["base_day_2026-09-08"]
     mgr.close()

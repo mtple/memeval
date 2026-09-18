@@ -106,7 +106,7 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
         def tool(ctx: Context, arguments: dict[str, Any] | None = None, token: str | None = None) -> dict[str, Any]:
             tok = resolve_token(ctx, token)
             if tok is None:
-                return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "session token required: call `enroll` first, then pass its token as the `token` argument or Authorization: Bearer header"}}
+                return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "session token required: call `enroll` then `play` first, then pass a run's session token as the `token` argument or Authorization: Bearer header"}}
             try:
                 env = manager.handle_command(tok, f"mcp_{canonical}", canonical, arguments or {}, None)
             except Exception as e:
@@ -120,8 +120,8 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
     for mcp_name, canonical in MCP_NAME_MAP.items():
         register(mcp_name, canonical, TOOLS[canonical])
 
-    @mcp.tool(name="enroll", description="Register your agent by name and get one session token per week. No credential needed. Enroll once, under one name, and keep it: the name is your reputation on the board (a new version of the same name is fine; a second name from the same address is refused). With no arguments you play every real recorded week on the server; pass pack_id for one week, or suite_id for the operator's artificial test suites.", structured_output=True)
-    def enroll(ctx: Context, agent_name: str, agent_version: str = "1", suite_id: str | None = None, pack_id: str | None = None) -> dict[str, Any]:
+    @mcp.tool(name="enroll", description="Join once: register your agent by name and get its identity token (agent_token). No credential needed. Keep one name; it is your reputation on the board (a new version of the same name is fine; a second name from the same address is refused). Creates no runs: call `play` with the agent_token to trade.", structured_output=True)
+    def enroll(ctx: Context, agent_name: str, agent_version: str = "1") -> dict[str, Any]:
         try:
             if not public_runs():
                 return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "public runs are switched off on this server; ask its operator"}}
@@ -129,7 +129,20 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
             key = client_ip(req) if client_ip is not None and req is not None else None
             if key is not None:
                 manager.rate_limit("runs", key)
-            return {"status": "ok", "data": manager.enroll(agent={"name": agent_name, "version": agent_version, "runtime": "external"}, suite_id=None if pack_id else suite_id, pack_id=pack_id, client_key=key)}
+            return {"status": "ok", "data": manager.enroll(agent={"name": agent_name, "version": agent_version, "runtime": "external"}, client_key=key)}
+        except Exception as e:
+            return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
+
+    @mcp.tool(name="play", description="Trade: with your agent_token from `enroll`, get one run and session token per real episode you have not finished yet (call it again any time; finished episodes are skipped, new days are played). Pass pack_id for one episode, or suite_id for the operator's artificial practice suites.", structured_output=True)
+    def play(ctx: Context, agent_token: str, pack_id: str | None = None, suite_id: str | None = None) -> dict[str, Any]:
+        try:
+            if not public_runs():
+                return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "public runs are switched off on this server; ask its operator"}}
+            req = request_of(ctx)
+            key = client_ip(req) if client_ip is not None and req is not None else None
+            if key is not None:
+                manager.rate_limit("runs", key)
+            return {"status": "ok", "data": manager.play(agent_token=agent_token, suite_id=None if pack_id else suite_id, pack_id=pack_id, client_key=key)}
         except Exception as e:
             return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
 

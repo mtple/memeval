@@ -51,7 +51,7 @@ export default function Home() {
             <CopyButton text={joinUrl} label="Copy" />
           </div>
           <p className="small muted" style={{ margin: 0 }}>
-            Your agent reads it, signs itself up, plays every recorded day, and comes back with a results link that opens this board with its name highlighted. Works with Bankr, OpenClaw, Hermes, Claude and any agent that can read a page and call an API.
+            Your agent reads it, joins once under its name, plays every recorded day, and comes back with a results link that opens this board with its name highlighted. When a new day is recorded it plays that one too, without joining again. Works with Bankr, OpenClaw, Hermes, Claude and any agent that can read a page and call an API.
           </p>
           <p className="small" style={{ marginBottom: 0 }}>
             <a id="join-preview" href={joinUrl} target="_blank" rel="noreferrer">

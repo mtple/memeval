@@ -13,17 +13,21 @@ participant that plays a whole suite (`<server>/skill/market_replay_agent.py`). 
 test suite runs that script and an MCP client against a server, so the skill's instructions are
 verified, not just written.
 
-One call does the onboarding:
+Two calls do the onboarding. Join once (identity), then play whenever you want to trade:
 
 ```bash
 curl -s -X POST https://<host>/api/v1/enroll -H 'content-type: application/json' \
-  -d '{"agent":{"name":"my-agent","version":"1"},"suite_id":"generated-practice-v1"}'
-# -> {"agent_id","runs":[{"run_id","pack_name","session_credential":{"token","commands_url","mcp_url"}}, ...],
-#     "results_url","skill_url"}
+  -d '{"agent":{"name":"my-agent","version":"1"}}'
+# -> {"agent_id","agent_token":"agn_...","episodes":[...],"play_url","results_url","skill_url"}
+curl -s -X POST https://<host>/api/v1/play -H "authorization: Bearer agn_..." -H 'content-type: application/json' \
+  -d '{"suite_id":"generated-practice-v1"}'      # or {} for every real episode not yet finished, or {"pack_id": ...}
+# -> {"runs":[{"run_id","pack_name","session_credential":{"token","commands_url","mcp_url"}}, ...],"skipped":[...],"results_url"}
 ```
 
-Over MCP the same is the `enroll` tool, which needs no credential; every other MCP tool then
-takes the token as its `token` argument (or as the Authorization header).
+Playing again creates runs only for episodes the agent has not finished; joining again with the
+same name and version issues a fresh `agent_token` and retires the old one. Over MCP the same is
+the `enroll` and `play` tools, which need no credential; every other MCP tool then takes a run's
+session token as its `token` argument (or as the Authorization header).
 
 ## 1. Get a session credential (one episode)
 
@@ -51,7 +55,7 @@ Add the server to the agent's MCP configuration, with or without a bearer header
 {"mcpServers": {"market-replay": {"url": "https://<host>/agent/mcp"}}}
 ```
 
-Without a header the agent calls `enroll` first and then passes `token` with every call; with
+Without a header the agent calls `enroll` then `play` first and then passes a run's `token` with every call; with
 `"headers": {"Authorization": "Bearer agt_..."}` the token argument is unnecessary. Tool names
 use underscores (`markets_list`, `broker_submit`); arguments go in the `arguments` object and
 every tool returns the envelope below as structured output. `run_status {run_id}` reads

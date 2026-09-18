@@ -77,6 +77,10 @@ class RunBody(BaseModel):
 
 class EnrollBody(BaseModel):
     agent: InlineAgentBody
+
+
+class PlayBody(BaseModel):
+    agent_token: str | None = None  # or Authorization: Bearer agn_...
     suite_id: str | None = None
     pack_id: str | None = None
 
@@ -170,6 +174,8 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
         supplied = authorization[7:]
         if supplied.startswith("agt_"):
             raise HTTPException(403, {"code": "FORBIDDEN", "message": "agent credentials cannot access the control plane"})
+        if supplied.startswith("agn_"):
+            return "public"  # an agent's identity token: a public caller that the play endpoints resolve themselves
         if not constant_time_equal(supplied, token):
             raise HTTPException(403, {"code": "FORBIDDEN", "message": "invalid admin token"})
         return "admin"
@@ -263,8 +269,25 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     # ------------------------------------------------------------------ agents
     @app.post("/api/v1/enroll", dependencies=[Depends(public_write("runs"))], status_code=201)
     def enroll(body: EnrollBody, request: Request) -> dict[str, Any]:
-        """Bring-your-own-agent onboarding in one call: register by name, get a session token per episode."""
-        return manager.enroll(agent=body.agent.model_dump(), suite_id=body.suite_id, pack_id=body.pack_id, client_key=client_ip(request))
+        """Join: register by name (once) and receive the agent's identity token. Playing is a separate call."""
+        return manager.enroll(agent=body.agent.model_dump(), client_key=client_ip(request))
+
+    def identity_token(body_token: str | None, authorization: str | None) -> str:
+        supplied = authorization[7:] if authorization and authorization.startswith("Bearer ") else (body_token or "")
+        if not supplied.startswith("agn_"):
+            raise HTTPException(401, {"code": "UNAUTHORIZED", "message": "agent identity token (agn_...) required: the agent_token from joining, as Authorization: Bearer or in the body"})
+        return supplied
+
+    @app.post("/api/v1/play", dependencies=[Depends(public_write("runs"))], status_code=201)
+    def play(body: PlayBody, request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+        """Trade: one run with a session credential per episode this agent has not finished. Repeatable."""
+        return manager.play(agent_token=identity_token(body.agent_token, authorization), suite_id=body.suite_id, pack_id=body.pack_id, client_key=client_ip(request))
+
+    @app.get("/api/v1/play", dependencies=[Depends(public_read)])
+    def episodes(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+        """What this agent could play: every real episode with its standing on it (new, running, finished)."""
+        row = manager.agent_by_token(identity_token(None, authorization))
+        return {"agent_id": row["agent_id"], "episodes": manager.episodes_for(row["agent_id"])}
 
     @app.get("/api/v1/leaderboard", dependencies=[Depends(public_read)])
     def leaderboard(suite_id: str | None = None, pack_id: str | None = None, all: bool = False, include_artificial: bool = True) -> dict[str, Any]:

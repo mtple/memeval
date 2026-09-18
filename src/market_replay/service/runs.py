@@ -38,7 +38,7 @@ from ..observations.store import basis_for
 from ..runners.inprocess import run_example_inprocess
 from ..runners.restricted import launch_restricted
 from ..runners.trusted import PY_EXAMPLES, TS_EXAMPLES, LaunchSpec, launch
-from .auth import new_agent_token, token_hash
+from .auth import new_agent_token, new_identity_token, token_hash
 from .db import BaseStore, open_store
 from .suites import SuiteDef, default_suites_text, load_suites, suite_public
 
@@ -1039,13 +1039,14 @@ class RunManager:
 
     ONE_NAME_WINDOW_S = 2 * 3600.0
 
-    def enroll(self, *, agent: dict[str, Any], suite_id: str | None = None, pack_id: str | None = None, client_key: str | None = None) -> dict[str, Any]:
-        """Self-serve: register (or reuse) the agent and create one external-client run per episode.
+    def enroll(self, *, agent: dict[str, Any], client_key: str | None = None) -> dict[str, Any]:
+        """Join: register (or reuse) the agent and hand it its identity token. Creates no runs; that is
+        ``play``, which an agent calls whenever it wants to trade what it has not finished yet.
 
-        Returns every run's one-time session credential. This is the whole onboarding for a
-        bring-your-own agent: no operator, no account. One name per agent: an address that enrolled
-        under one name recently may not enroll a second name (a new version of the same name is
-        fine), so a name stays one agent's reputation instead of one per strategy.
+        One name per agent: an address that enrolled under one name recently may not enroll a second
+        name (a new version of the same name is fine), so a name stays one agent's reputation instead
+        of one per strategy. Joining again with the same name and version issues a fresh identity
+        token and retires the previous one.
         """
         name = str(agent.get("name", "")).strip()
         if client_key:
@@ -1055,8 +1056,45 @@ class RunManager:
                 raise ApiError(409, f"one name per agent: this address already enrolled as {recent[0]!r}. Keep that name; to try another strategy, enroll the same name with a new version.", "ONE_NAME")
             if name.lower() not in recent:
                 self.store.add_rate_event("enroll_name:" + name.lower(), client_key, now)
-        view = self.register_or_reuse_agent(name=str(agent.get("name", "")), version=str(agent.get("version", "1")), runtime=str(agent.get("runtime", "external")), capabilities=list(agent.get("capabilities") or []), config=dict(agent.get("config") or {}))
+        view = self.register_or_reuse_agent(name=name, version=str(agent.get("version", "1")), runtime=str(agent.get("runtime", "external")), capabilities=list(agent.get("capabilities") or []), config=dict(agent.get("config") or {}))
         agent_id = view["agent_id"]
+        token = new_identity_token()
+        self.store.set_agent_token_hash(agent_id, token_hash(token))
+        return {
+            "agent_id": agent_id,
+            "agent_name": view["name"],
+            "agent_version": view["version"],
+            "agent_token": token,
+            "episodes": self.episodes_for(agent_id),
+            "play_url": self.gateway_url + "/api/v1/play",
+            "results_url": f"{self.gateway_url}/?agent={agent_id}",
+            "skill_url": self.gateway_url + "/skill.md",
+            "note": "Joined. Keep agent_token: POST play_url with it (Authorization: Bearer) whenever you want to trade; it creates one run per episode you have not finished and returns their session credentials. Joining again with the same name and version replaces the token.",
+        }
+
+    def agent_by_token(self, token: str) -> dict[str, Any]:
+        row = self.store.agent_by_token_hash(token_hash(token)) if token else None
+        if row is None:
+            raise ApiError(401, "unknown or retired agent token; join again (POST /api/v1/enroll with the same name and version) to get a new one", "UNAUTHORIZED")
+        return row
+
+    def episodes_for(self, agent_id: str) -> list[dict[str, Any]]:
+        """Every real episode on the server with this agent's standing on it: new, running or finished."""
+        out = []
+        for r in self.real_weeks():
+            mine = self.store.runs(agent_id=agent_id, pack_id=r["pack_id"])
+            done = [x for x in mine if x["state"] == str(RunState.COMPLETED)]
+            open_ = [x for x in mine if x["state"] not in TERMINAL]
+            status = "finished" if done else "running" if open_ else "new"
+            out.append({"pack_id": r["pack_id"], "pack_name": r["name"], "label": _episode_label(r), "status": status, "run_id": (done or open_ or [{}])[-1].get("run_id")})
+        return out
+
+    def play(self, *, agent_token: str, suite_id: str | None = None, pack_id: str | None = None, client_key: str | None = None) -> dict[str, Any]:
+        """Create one external-client run per episode this agent has not finished (or for one pack, or an
+        operator suite) and return their one-time session credentials. Call it as often as you like: an
+        episode you already completed is skipped, a new day on the server is played."""
+        agent_id = self.agent_by_token(agent_token)["agent_id"]
+        view = self.agent_view(agent_id)
         runs: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
         suite_run_id: str | None = None
@@ -1078,14 +1116,13 @@ class RunManager:
         elif pack_id:
             runs.append(self.create_run(agent_id=agent_id, pack_ref=pack_id))
         else:
-            # No choice made: every real week on the server; on a server without one yet, the practice suite.
+            # No choice made: every real episode on the server this agent has not finished; on a server
+            # without one yet, the practice suite.
             weeks = self.real_weeks()
             if not weeks:
                 if "generated-practice-v1" in self.suites:
-                    return self.enroll(agent=agent, suite_id="generated-practice-v1")
-                raise ApiError(409, "no week is available on this server yet; pass suite_id or pack_id", "NO_WEEKS")
-            # Enrolling again adds only what this agent has not finished, so a returning agent plays the new
-            # episode and nothing it already completed.
+                    return self.play(agent_token=agent_token, suite_id="generated-practice-v1", client_key=client_key)
+                raise ApiError(409, "no episode is available on this server yet; pass suite_id or pack_id", "NO_WEEKS")
             for r in weeks:
                 done = [x for x in self.store.runs(agent_id=agent_id, pack_id=r["pack_id"]) if x["state"] == str(RunState.COMPLETED)]
                 if done:
@@ -1101,8 +1138,7 @@ class RunManager:
             "runs": [{"run_id": r["run_id"], "pack_id": r["pack_id"], "pack_name": r["pack_name"], "episode_id": r["episode_id"], "mode": r["mode"], "bankroll_raw": r["bankroll_raw"], "session_credential": r["session_credential"]} for r in runs],
             "skipped": skipped,
             "results_url": f"{self.gateway_url}/?agent={agent_id}",
-            "skill_url": self.gateway_url + "/skill.md",
-            "note": "Each session_credential is shown once and works only for its run. Call session.finish when done; the report appears at results_url." + (" Episodes this agent already finished are listed under skipped and not replayed; enroll a new version of the name to play them again." if skipped else ""),
+            "note": "Each session_credential is shown once and works only for its run. Call session.finish when done; the report appears at results_url." + (" Episodes you already finished are under skipped; play a new version of your name to trade them again." if skipped else "") + ("" if runs else " Nothing new to play right now."),
         }
 
     # ------------------------------------------------------------------ leaderboard
