@@ -72,14 +72,17 @@ class PoolObservations:
         i = bisect.bisect_right(self._avail_keys, as_of)
         return self.trades[:i]
 
+    def visible_count(self, as_of: int) -> int:
+        return bisect.bisect_right(self._avail_keys, as_of)
+
     def visible_between(self, start_ms: int, end_ms: int, as_of: int) -> list[TradeObs]:
         """Trades with event_ms in [start, end] whose availability <= as_of. end is clamped by caller."""
         vis = self.visible(as_of)
         return [t for t in vis if start_ms <= t.event_ms <= end_ms]
 
     def last_visible(self, as_of: int) -> TradeObs | None:
-        vis = self.visible(as_of)
-        return vis[-1] if vis else None
+        i = bisect.bisect_right(self._avail_keys, as_of)
+        return self.trades[i - 1] if i else None
 
     def coverage_state(self, start_ms: int, end_ms: int) -> CoverageState:
         """Coverage of [start, end) for swaps: complete only if fully covered by completed spans."""

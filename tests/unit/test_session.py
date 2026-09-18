@@ -145,3 +145,16 @@ def test_episode_end_blocks_new_actions(fresh_pack: Pack):
     assert env.status == "error" and env.error.code == "EPISODE_ENDED"
     fin = s.handle("r", "session.finish", {})
     assert fin.status == "ok" and fin.data["finished"]
+
+
+def test_markets_list_sorts_and_filters_for_discovery(fresh_pack: Pack):
+    s = make(fresh_pack)
+    s.handle("r", "clock.advance", {"to_ms": 60 * 60_000})  # the development fixture is a two-hour episode
+    newest = s.handle("r", "markets.list", {"sort": "newest", "limit": 500}).data
+    assert newest["sort"] == "newest" and [r["listed_ms"] for r in newest["items"]] == sorted((r["listed_ms"] for r in newest["items"]), reverse=True)
+    busiest = s.handle("r", "markets.list", {"sort": "most_traded", "limit": 500}).data["items"]
+    assert [r["visible_trade_count"] for r in busiest] == sorted((r["visible_trade_count"] for r in busiest), reverse=True)
+    quiet_cut = s.handle("r", "markets.list", {"filters": {"min_visible_trades": busiest[0]["visible_trade_count"]}}).data
+    assert quiet_cut["total_currently_discoverable"] >= 1 and all(r["visible_trade_count"] >= busiest[0]["visible_trade_count"] for r in quiet_cut["items"])
+    bad = s.handle("r", "markets.list", {"sort": "richest"})
+    assert bad.status == "error" and bad.error.code == "INVALID_REQUEST"

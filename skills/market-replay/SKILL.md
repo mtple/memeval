@@ -94,7 +94,7 @@ run; read it and continue.
 | Tool | Arguments | What you get |
 |---|---|---|
 | `session.describe` | – | `episode.duration_ms`, `numeraire.asset_id` (the cash asset) and decimals, `bankroll_raw`, budgets, latency assumptions, limitations |
-| `markets.list` | `limit, cursor, filters{execution_supported_only, min_age_ms, ...}` | pools you can currently see: `pool_id, base_asset_id, quote_asset_id, ...` |
+| `markets.list` | `limit, cursor, sort (pool_id, newest, most_traded, recently_traded), filters{execution_supported_only, min_age_ms, max_age_ms, active_since_ms, min_visible_trades, venue_model}` | pools you can currently see, with `listed_ms`, `last_trade_ms`, `visible_trade_count`. A real week lists every pool launched that week, thousands of them; most die within a few trades. Discovery is your job: page through `newest` launches, watch `most_traded`, and decide. |
 | `markets.get` | `pool_id` | metadata, last visible trade, restrictions |
 | `market.trades` | `pool_id, start_ms, end_ms, limit, cursor` | trades visible as of now |
 | `market.candles` | `pool_id, interval_ms, start_ms, end_ms` | closed bars with completeness and gaps |

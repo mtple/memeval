@@ -30,7 +30,7 @@ from .simulation import INF, Simulation, SubmitRejected, cl_supported, cpmm_supp
 
 TOOLS: dict[str, str] = {
     "session.describe": "Capabilities, limits, relative horizon, numeraire, assumptions and virtual clock.",
-    "markets.list": "Paginated currently discoverable pools with point-in-time filters.",
+    "markets.list": "Paginated currently discoverable pools with point-in-time filters; sort by newest, most_traded or recently_traded to find launches worth a look.",
     "markets.get": "Time-qualified metadata and available current observations for one pool.",
     "market.trades": "Bounded visible trade history ending at or before virtual now.",
     "market.candles": "Generic OHLCV over visible trades with explicit completeness handling.",
@@ -64,6 +64,7 @@ UNSUPPORTED_CAPABILITIES = [
 ]
 
 KNOWN_NAMESPACES = {"session", "markets", "market", "broker", "portfolio", "clock"}
+MARKETS_SORTS = frozenset({"pool_id", "newest", "most_traded", "recently_traded"})
 DATA_TOOLS = {"markets.list", "markets.get", "market.trades", "market.candles", "market.liquidity", "market.restrictions"}
 FREE_TOOLS = {"session.describe", "broker.order", "portfolio.get", "portfolio.history", "session.finish"}
 
@@ -480,32 +481,49 @@ class Session:
         active_since = self._int_arg(filters, "active_since_ms")
         venue = filters.get("venue_model")
         supported_only = bool(filters.get("execution_supported_only", False))
+        min_trades = self._int_arg(filters, "min_visible_trades")
+        sort = str(args.get("sort") or "pool_id")
+        if sort not in MARKETS_SORTS:
+            raise SessionError(ErrorCode.INVALID_REQUEST, f"sort must be one of {sorted(MARKETS_SORTS)}")
         discovered = self.sim.discovered_pools(self.now)
         rows = []
         for key in discovered:
+            # cheap fields first: a week of every launch lists thousands of pools per call
+            listed = self.sim.pool_discovery_ms.get(key, self.now)
+            age = self.now - listed
+            if min_age is not None and age < min_age:
+                continue
+            if max_age is not None and age > max_age:
+                continue
+            obs = self.sim.obs[key]
+            n = obs.visible_count(self.now)
+            if min_trades is not None and n < min_trades:
+                continue
+            last = obs.last_visible(self.now)
+            if active_since is not None and (last is None or last.event_ms < active_since):
+                continue
             pub = self._pool_public(key)
-            if min_age is not None and pub["age_ms"] < min_age:
-                continue
-            if max_age is not None and pub["age_ms"] > max_age:
-                continue
             if venue is not None and pub["venue_model"] != venue:
                 continue
             if supported_only and not pub["execution_supported"]:
                 continue
-            if active_since is not None:
-                last = self.sim.obs[key].last_visible(self.now)
-                if last is None or last.event_ms < active_since:
-                    continue
-            last = self.sim.obs[key].last_visible(self.now)
             pub["last_trade_ms"] = last.event_ms if last else None
-            pub["visible_trade_count"] = len(self.sim.obs[key].visible(self.now))
+            pub["visible_trade_count"] = n
             rows.append(pub)
-        rows.sort(key=lambda r: r["pool_id"])
+        if sort == "newest":
+            rows.sort(key=lambda r: (-(r["listed_ms"] or 0), r["pool_id"]))
+        elif sort == "most_traded":
+            rows.sort(key=lambda r: (-r["visible_trade_count"], r["pool_id"]))
+        elif sort == "recently_traded":
+            rows.sort(key=lambda r: (-(r["last_trade_ms"] if r["last_trade_ms"] is not None else -1), r["pool_id"]))
+        else:
+            rows.sort(key=lambda r: r["pool_id"])
         page = rows[cursor : cursor + limit]
         next_cursor = cursor + limit if cursor + limit < len(rows) else None
         data = {
             "items": page,
             "next_cursor": next_cursor,
+            "sort": sort,
             "total_currently_discoverable": len(rows),
             "as_of_ms": self.now,
             "note": "Totals count only pools discoverable at as_of_ms; future listings are not disclosed.",
