@@ -816,12 +816,11 @@ class RunManager:
             "has_report": row["report_json"] is not None,
             "result_summary": self._result_summary(row["report_json"]),
         }
+        # Live detail comes only from a session this instance already holds. Rebuilding one means
+        # replaying every command the agent ever sent through the week's data, which is the agent's
+        # own command path's job (once per instance), never a listing's: a run list on a cold
+        # instance would otherwise replay every unfinished run before answering.
         ctx = self._contexts.get(run_id)
-        if ctx is None and row["state"] not in TERMINAL:
-            try:
-                ctx = self._ctx(run_id)
-            except ApiError:
-                ctx = None
         if ctx is not None:
             s = ctx.session
             v = s.sim.value_portfolio()

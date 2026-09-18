@@ -190,3 +190,24 @@ def test_category_labels_and_descriptions_for_real_and_artificial_weeks():
     assert _episode_label(real) == "Base week of 2026-09-08"
     d = _episode_description(real)
     assert "Real swaps recorded on Base from 2026-09-08 to 2026-09-15 (7 days)" in d and "16 tradable pools" in d and "generic names" in d
+
+
+def test_listing_runs_never_rebuilds_a_session(tmp_path: Path, dev_pack_dir: Path, monkeypatch):
+    """A fresh instance answers a run list from the stored rows alone; replaying an unfinished run's
+    trace is the agent's own command path's job, once per instance."""
+    import market_replay.service.runs as runs_mod
+
+    store = str(tmp_path / "store.sqlite")
+    a = RunManager(data_dir=tmp_path / "a", store_url=store, hosted=True)
+    a.import_pack(dev_pack_dir, "gen_dev_short")
+    enrolled = a.enroll(agent={"name": "walker", "version": "1"}, pack_id="gen_dev_short")
+    token = enrolled["runs"][0]["session_credential"]["token"]
+    a.handle_command(token, "r1", "session.describe", {})
+    a.handle_command(token, "r2", "clock.advance", {"to_ms": 600_000})
+    assert "live" in a.run_view(enrolled["runs"][0]["run_id"])  # this instance holds the session
+    a.close()
+    b = RunManager(data_dir=tmp_path / "b", store_url=store, hosted=True)
+    monkeypatch.setattr(runs_mod, "replay_trace", lambda *args, **kw: (_ for _ in ()).throw(AssertionError("a listing replayed a trace")))
+    rows = b.runs()
+    assert len(rows) == 1 and rows[0]["state"] == "running" and rows[0]["clock_ms"] == 600_000 and "live" not in rows[0]
+    b.close()
