@@ -74,8 +74,10 @@ creation order among those active before the window: by default four v2 pairs, f
 eight v4 pools. They give the agent a market that exists on day one.
 
 The older sampled universe, sixteen pools with launches chosen by reaching their twentieth swap,
-is still available as `--universe sampled`. The week of 2026-09-07 currently on the site was
-recorded that way and is labelled as such in its inventory.
+is still available as `--universe sampled` for local experiments. It is not what the site offers:
+a hand-picked cast has no noise to discover, so the sampled week that was on the site was
+withdrawn once the first all-launches day shipped. Removing a pack directory from the repository
+withdraws it on the next deploy; runs already finished on it keep their reports.
 
 ## Step 4. Reading the chain
 

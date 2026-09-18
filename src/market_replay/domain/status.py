@@ -43,6 +43,7 @@ class UseStatus(StrEnum):
     QUALIFIED_FOR_NAMED_SUITE = "qualified_for_named_suite"
     DIAGNOSTIC_ONLY = "diagnostic_only"
     REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"  # its files were removed from the repository; existing runs keep their reports
 
 
 class PredictiveValidity(StrEnum):

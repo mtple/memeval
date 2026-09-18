@@ -28,7 +28,7 @@ from ..datasets.pack import Pack, PackError
 from ..datasets.validator import validate_pack
 from ..domain.envelope import Envelope
 from ..domain.models import PublicDescriptor
-from ..domain.status import ErrorCode, Isolation, RunState
+from ..domain.status import ErrorCode, Isolation, RunState, UseStatus
 from ..engine.session import TOOLS, UNSUPPORTED_CAPABILITIES, Session, replay_trace
 from ..evaluation.compare import pair_runs
 from ..evaluation.report import ENGINE_VERSION, build_report
@@ -177,6 +177,15 @@ class RunManager:
         downloaded. A week already registered from this same path is left alone; a moved or new one
         is (re)registered from its committed validation report, without replaying it."""
         out = []
+        # A week whose directory was removed from the repository is withdrawn: it leaves the catalogue
+        # and the leaderboard, and its finished runs keep their reports.
+        for row in self.store.packs():
+            if row["use_status"] not in ("demo", "research", "qualified_for_named_suite") or not row.get("path"):
+                continue
+            shipped = Path(row["path"]).resolve().parent == WEEKS_DIR.resolve()
+            if shipped and not (Path(row["path"]) / "manifest.yaml").exists() and not (WEEKS_DIR / row["name"] / "manifest.yaml").exists():
+                self.store.execute("UPDATE packs SET use_status=? WHERE pack_id=?", (str(UseStatus.WITHDRAWN), row["pack_id"]))
+                print(f"[market-replay] {row['name']} withdrawn: its files are no longer in the repository", file=sys.stderr)
         if not WEEKS_DIR.is_dir():
             return out
         for path in sorted(p for p in WEEKS_DIR.iterdir() if (p / "manifest.yaml").exists()):

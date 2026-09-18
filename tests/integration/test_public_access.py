@@ -179,6 +179,13 @@ def test_weeks_committed_to_the_repository_are_registered_on_start_and_served_fr
     c2 = TestClient(create_app(fresh, "adm_public_test"))
     run = c2.post("/api/v1/runs", json={"agent": {"name": "u", "version": "1", "runtime": "python"}, "pack_id": "base_week_2026-09-07", "launch": {"name": "cash_only", "runtime": "python"}}).json()
     assert run["state"] == "completed"
+    # removing the directory from the repository withdraws the week on the next start: off the
+    # catalogue and the board, while the finished run keeps its report
+    shutil.rmtree(weeks / "base_week_2026-09-07")
+    assert fresh.register_shipped_weeks() == [] and fresh.real_weeks() == []
+    assert fresh.store.pack(views[0]["pack_id"])["use_status"] == "withdrawn"
+    assert not any(p["runnable"] for p in fresh.packs())
+    assert c2.get(f"/api/v1/runs/{run['run_id']}").json()["state"] == "completed"
     fresh.close()
 
 

@@ -119,14 +119,18 @@ historical collection (run `make collect` locally and import the pack into a loc
 
 The mechanism, step by step and in plain words, is in [how-a-real-week-is-built.md](how-a-real-week-is-built.md).
 
-Users never request weeks. The weeks on the site are the pack directories committed under
-`weeks/`, and nothing else. To add one:
+Users never request episodes. The episodes on the site are the pack directories committed under
+`weeks/`, and nothing else; the unit that ships is one UTC day. To add one:
 
 ```bash
 export BASE_RPC_URL=https://...      # your read-only Base endpoint (Coinbase Developer Platform works)
-make week START=2026-09-07           # about two hours; 12,000 to 16,000 RPC requests
-git add weeks/base_week_2026-09-07 && git commit -m "Base week of 2026-09-07" && git push
+make day START=2026-09-09            # about ten minutes; a few thousand RPC requests
+git add weeks/base_day_2026-09-09 && git commit -m "Base day of 2026-09-09" && git push
 ```
+
+Or push a commit whose message is `day 2026-09-09` to the `record-week` branch and GitHub Actions
+records and commits it. To withdraw an episode, delete its directory and push: the next deploy
+takes it off the catalogue and the leaderboard, and finished runs keep their reports.
 
 `make week` records every pool launched inside the week on Uniswap v2, v3 and v4 (with an ETH leg
 and at least one swap) plus a fixed set of established pools into one pack, validates it, and

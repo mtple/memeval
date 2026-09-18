@@ -24,7 +24,10 @@ OUT = Path(__file__).parent / "output"
 def ui_server(tmp_path_factory, dev_pack_dir):
     if not (WEB_DIST / "index.html").exists():
         pytest.skip("web UI not built (run `make build`)")
+    import market_replay.service.runs as runs_mod
+
     data = tmp_path_factory.mktemp("uidata")
+    saved, runs_mod.WEEKS_DIR = runs_mod.WEEKS_DIR, tmp_path_factory.mktemp("no_weeks")  # the recorded days in the checkout are not fixtures
     mgr = RunManager(data_dir=data)
     srv = EmbeddedServer(mgr, "adm_ui_token").start()
     admin = srv.admin()
@@ -34,6 +37,7 @@ def ui_server(tmp_path_factory, dev_pack_dir):
     mgr.wait_for_run(run["run_id"], 120)
     yield srv, run["run_id"]
     srv.stop()
+    runs_mod.WEEKS_DIR = saved
 
 
 def _chromium_path() -> str | None:
