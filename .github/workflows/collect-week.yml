@@ -57,8 +57,9 @@ jobs:
           msg="$COMMIT_MESSAGE"
           days="${DAYS:-1}"
           case "$msg" in
-            day\ *|trial\ *) days=1 ;;
-            record\ *|survey\ *|stats\ *) days=7 ;;
+            *week*) days=7 ;;
+            day\ *|trial\ *|stats\ *) days=1 ;;
+            record\ *|survey\ *) days=7 ;;
           esac
           start=$(python3 -c "
           import datetime as dt, os, re
@@ -112,6 +113,14 @@ jobs:
         run: |
           du -sh weeks/${{ steps.pick.outputs.name }}_work || true
           uv run python scripts/launch_log_stats.py weeks/${{ steps.pick.outputs.name }}_work | tee stats.json
+          for f in weeks/${{ steps.pick.outputs.name }}_work/*/validation.json weeks/${{ steps.pick.outputs.name }}_work/launches_result.json; do
+            [ -f "$f" ] && { echo "== $f"; python3 -c "
+          import json,sys; d=json.load(open('$f'))
+          print('qualification:', d.get('resulting_qualification') or d.get('qualification'))
+          for g in d.get('gates', []):
+              if g.get('status') != 'passed': print(json.dumps(g)[:3000])
+          "; }
+          done
           echo "SURVEY_ONLY=1" >> "$GITHUB_ENV"
       - name: Keep the stats
         if: startsWith(github.event.head_commit.message, 'stats')
