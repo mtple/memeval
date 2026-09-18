@@ -923,6 +923,20 @@ class RunManager:
                 report.get("run", {}).pop(k, None)
         return report
 
+    def trade_review(self, run_id: str) -> dict[str, Any]:
+        """Opt-in review of a terminal run. Rebuild the cache if needed; never change its trace."""
+        from ..evaluation.trade_review import build_trade_review
+
+        with self.store.run_lock(run_id):
+            row = self.store.run(run_id)
+            if row is None:
+                raise ApiError(404, "unknown run", "NOT_FOUND")
+            if row["state"] not in TERMINAL:
+                raise ApiError(409, "Trade review is available after the run ends.", "RUN_ACTIVE")
+            ctx = self._ctx(run_id)
+            self._catch_up(ctx)
+            return build_trade_review(ctx.session)
+
     def observed(self, run_id: str, pool_id: str | None = None, interval_ms: int = 60_000) -> dict[str, Any]:
         """Agent-visible view for the Run screen: only observations available at the current clock."""
         ctx = self._ctx(run_id)
@@ -1386,4 +1400,5 @@ def _suite_label(s: SuiteDef) -> str:
     n = len(s.packs)
     weeks = all(name.startswith("gen_week_") for name in s.packs)
     return f"Practice: all {n} artificial weeks" if weeks else f"Practice: all {n} episodes ({s.suite_id})"
+
 

@@ -14,7 +14,7 @@ const num = (s: string | null | undefined): number | null => {
 
 type Gap = { start_ms: number; end_ms: number; reason: string };
 
-export function CandleChart({ bars, gaps, clockMs, width = 720, height = 220 }: { bars: Bar[]; gaps: Gap[]; clockMs: number; width?: number; height?: number }) {
+export function CandleChart({ bars, gaps, clockMs, markers = [], width = 720, height = 220 }: { bars: Bar[]; gaps: Gap[]; clockMs: number; markers?: { time_ms: number; price: string; label: string; side: string }[]; width?: number; height?: number }) {
   // Hard guard: never render anything at or beyond the virtual clock.
   const visible = bars.filter((b) => b.start_ms < clockMs && !b.synthetic_empty_bar && b.close !== null);
   if (visible.length === 0) {
@@ -27,8 +27,9 @@ export function CandleChart({ bars, gaps, clockMs, width = 720, height = 220 }: 
   const pad = { l: 56, r: 8, t: 8, b: 22 };
   const first = visible[0]!;
   const last = visible[visible.length - 1]!;
-  const t0 = first.start_ms;
-  const t1 = Math.min(clockMs, last.end_ms);
+  const eligibleMarkers = markers.filter(m => m.time_ms <= clockMs && num(m.price) !== null);
+  const t0 = eligibleMarkers.reduce((v, m) => Math.min(v, m.time_ms), first.start_ms);
+  const t1 = eligibleMarkers.reduce((v, m) => Math.max(v, m.time_ms), Math.min(clockMs, last.end_ms));
   const xs = (t: number) => pad.l + ((t - t0) / Math.max(1, t1 - t0)) * (width - pad.l - pad.r);
   let lo = Infinity;
   let hi = -Infinity;
@@ -40,6 +41,8 @@ export function CandleChart({ bars, gaps, clockMs, width = 720, height = 220 }: 
       }
     }
   }
+  const visibleMarkers = markers.filter(m => m.time_ms <= clockMs && m.time_ms >= t0 && m.time_ms <= t1 && num(m.price) !== null);
+  for (const m of visibleMarkers) { lo = Math.min(lo, Number(m.price)); hi = Math.max(hi, Number(m.price)); }
   if (!Number.isFinite(lo) || !Number.isFinite(hi)) return <div className="chart-empty">Prices not numeric.</div>;
   if (hi === lo) {
     hi += 1;
@@ -80,6 +83,11 @@ export function CandleChart({ bars, gaps, clockMs, width = 720, height = 220 }: 
           </g>
         );
       })}
+      {visibleMarkers.map((m, i) => <g key={`${m.time_ms}-${i}`} role="img" aria-label={`${m.label} at ${fmtRel(m.time_ms)}, price ${m.price}`}>
+        <title>{`${m.label} at ${fmtRel(m.time_ms)} · ${m.price}`}</title>
+        <circle cx={xs(m.time_ms)} cy={ys(Number(m.price))} r={5} fill={m.side === "buy" ? "#168047" : "#be4535"} stroke="white" />
+        <text x={xs(m.time_ms)} y={Math.max(12, ys(Number(m.price)) - 9)} textAnchor="middle" fill="currentColor" fontSize="11">{m.side === "buy" ? "B" : "S"}</text>
+      </g>)}
       <line x1={xs(t1)} x2={xs(t1)} y1={pad.t} y2={height - pad.b} className="clock-line" />
       <text x={pad.l} y={height - 6} className="axis">
         {fmtRel(t0)}
@@ -136,3 +144,4 @@ export function EquitySparkline({ points, clockMs, width = 720, height = 90 }: {
     </svg>
   );
 }
+

@@ -1,3 +1,4 @@
+import { TradeReview } from "../TradeReview";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { get, post, type Report, type ReplayResult, type Run } from "../api";
@@ -94,6 +95,7 @@ export default function Results() {
             )}
           </Card>
 
+          <TradeReview key={id} runId={id} />
           <Card title="How much to trust this">
             <ul className="plain" style={{ paddingLeft: 18 }}>
               {DIMENSION_ORDER.map((k) => (
@@ -350,4 +352,5 @@ function InvTable({ rows }: { rows: { asset_id: string; quantity_raw: string; re
     </div>
   );
 }
+
 

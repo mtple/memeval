@@ -396,6 +396,10 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
         # Results are public, but only the operator sees the unredacted (de-aliased) report.
         return manager.report(run_id, role if caller == "admin" else "participant")
 
+    @app.get("/api/v1/runs/{run_id}/trade-review", dependencies=[Depends(public_read)])
+    def trade_review(run_id: str) -> dict[str, Any]:
+        return manager.trade_review(run_id)
+
     @app.get("/api/v1/runs/{run_id}/observed", dependencies=[Depends(public_read)])
     def run_observed(run_id: str, pool_id: str | None = None, interval_ms: int = 60_000) -> dict[str, Any]:
         return manager.observed(run_id, pool_id, interval_ms)
@@ -467,3 +471,4 @@ def default_manager() -> RunManager:
     data_dir = Path(os.environ.get("MARKET_REPLAY_DATA_DIR", str(REPO_ROOT / "data")))
     dev_mode = os.environ.get("MARKET_REPLAY_DEV_MODE", "1") != "0"
     return RunManager(data_dir=data_dir, dev_mode=dev_mode)
+
