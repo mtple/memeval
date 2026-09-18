@@ -85,6 +85,11 @@ jobs:
           curl -sSfO "$BASE/skill/market_replay_agent.py"
           python3 market_replay_agent.py --server "$BASE" --agent smoke-skill-bot --version 1 --suite generated-dev-v1 | tee out.txt
           grep -q "finished at" out.txt
+          # The report of the run it just played must be readable by anyone (participant view, redacted)
+          rid=$(grep -oE 'run_[0-9a-f]+' out.txt | head -1)
+          code=$(curl -sS -m 60 -o report.json -w '%{http_code}' "$BASE/api/v1/runs/$rid/report")
+          [ "$code" = "200" ] || { echo "participant report answered $code"; head -c 400 report.json; exit 1; }
+          grep -q '"primary_metric"' report.json
 
       # Only on demand: a full run per recorded week takes a while.
       - name: Agent runs every recorded week through the skill script
