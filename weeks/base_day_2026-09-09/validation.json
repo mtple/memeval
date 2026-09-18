@@ -1,0 +1,1071 @@
+{
+  "executable_failure": false,
+  "gates": [
+    {
+      "detail": "canonical ids, decimals and denominations present",
+      "gate": "identity",
+      "note": "symbol collisions are allowed and never merge assets",
+      "status": "passed",
+      "symbol_collisions": []
+    },
+    {
+      "detail": "selection rule per_venue_v1: uniswap_v2: active_before_window_earliest_created_v1; uniswap_v3: active_before_window_earliest_created_v1; uniswap_v4: active_before_window_earliest_created_v1; all_launches_in_window_v1: all_launches_in_window_v1; candidates=16626 selected=2360 unsupported=7326 missing=0",
+      "gate": "universe",
+      "pools_without_discovery_time": [],
+      "status": "passed"
+    },
+    {
+      "detail": "event/available/received times distinguished and ordered",
+      "gate": "temporal_ordering",
+      "status": "passed"
+    },
+    {
+      "detail": "coverage intervals by state: {'completed_and_checked': 2370}",
+      "gate": "trade_coverage",
+      "status": "passed"
+    },
+    {
+      "detail": "executable pools=2316 (cpmm=489 cl=1827) missing_initial_state=0 checkpoints=174282 mismatches=0 fidelity_flags=0; reserve checkpoints re-anchored: {'explained': 335}",
+      "gate": "execution_state",
+      "pools_missing_initial_state": [],
+      "reconciliation": {
+        "adjustment_rule": "every Sync re-anchors the reference to the chain; an orphan Sync (direct transfer followed by sync()) is an explained adjustment; any other non-zero delta, even one wei, is a material mismatch",
+        "checkpoints": 174282,
+        "fidelity_flag_count": 0,
+        "fidelity_flags": [],
+        "mismatch_count": 0,
+        "mismatches": [],
+        "recorded_output_below_model_max": 95,
+        "reserve_adjustments": {
+          "explained": 335
+        },
+        "reserve_adjustments_by_pool": {
+          "8453:uniswap_v4:0x0089ff68a7d5a9028501688b22e17950d4c12aeaa6e83aa49a6cec62b9ab1f4d": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x011dce384d73810dfba78a25f0811d17f968761a0a061253831c8a86a335f21b": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x029932526cb9b5781c241665e7ee2a1d16790290dad4cfb836f11b164090c450": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x034253ae18a748f012037889d84c7e6d33a976276f0959a2a320993cb77051de": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x037c5a7559aabaa3c029cd1cf7102ac40a392a51cb769a005e55245040caaedb": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x03880247d56d585e3ef1fe9d48704ed09421107d26bcbaf3c3db4e00b2578fc3": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x043661ee8370a64399a99549cf4f6f0112f43e941ec13b1bbb24665a89cb3a13": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x054c95df53d8122bf7b05548911aee0cffcf372f10907fbe389a4a8d9553efb6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x059fcf04f17ce9da3fb3ad6335053e9be26a8e546ada7a0445733e3a77c1468e": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x0642ec997fe9526330ac0aa7cc99c633e9d4661e2bc79a1543310817c3b409d2": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x07176cb1ee1cbd492ed42dbc359ff3a879a1cb89d160db5631fd333785ce02cc": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x0749e9ffb4a7121cd01fc118c08dc3574451251907c3e095a03eca1435a9b7f2": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x081ca290ae699d4d9900870d4a42d619f639626bd8d5bb9e9caf587345322d6c": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x08ebcf66c315cbbd999c80be1a80a89a12ed1abdb907b5569a212c42971d1544": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x0ad0c9e76360e6994915b9bc3ddbf5bbda9c1974b87435db7be8edca647125b7": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x0bf69ab3993b3d13ba27e988149c125ebded1e3d4cb09cbf45b50379bd39848e": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x0d4ca95c27731075a00f7a1f131c83672762062a4fc95ba9f62ac580555a5a14": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x0e1b613f3de1883f97b4503a2784f5ed19c695acc6b00f022df9456e516ec36b": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x0ea47d42fc2d020f81f63d826e79c91043a04b7a311587fa3d4bcfc38c4db912": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x0f457198b5c175c9f5c3ac1888b371683a48ce2913bb96eda420399a60f843c0": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x1021238a48c1fd113121deaded0f0638f001ed64a56922705427cec92f355a6a": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x10384bfd170f44b86dbb6fde368d6274af2350269dab5dd2b524233f1daccd47": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x109f29e98d338e9c5b410a1db9f92b7dc313183e7f1801d29d15e9c5e56e7b23": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x112a3d443c37d5ac5a9cf7352064427066ca05023f402142fca3c63261d5a14e": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x11dca15376f3ce107be37f16060545095e05dfb56251b466e5ec86849bd09bb3": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x11e1c8bea9b55f1c4c3ec0ee03bbbe628008b0c6de5ba880a1100b30fa4263a9": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x12392d9fd398a10f2aad1f149b77306dae725bf2344bd58fd6866a664577b52b": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x12dabae82a8173b6260d280123da22870a02f9422d451cea3fac052b6ed72865": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x13303bf6a302a4153cf7ab1678cd0c9983508469553832d36189a1ccaf489fe0": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x13706840048d132fdc15676780c23d954bc948a0be1238d1514070d9c4d77182": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x13adc70bb7ade4ca6a9803dd5274e0a5c714362226d6b49a8ac9fd7a691e6094": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x13aefec06ab8c1edc8fc53a47f2b1c1885a97fd06fd917cec45c601dca57fe07": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x1472e5cda3a62050ea5f8e85a1841d22969b87ef8c60f67f1047f4ff32a21c6b": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x14a388439ee338c32965d2939ddd9d0b611ac11137dd7d8ea6df4958198e75b5": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x15a1f2c5384c04cc741ce2d591f374a647b5dcb70a637b570521695375b4a8c2": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x17efa43f116b7757f40b645d1d805cbd7d33e7471dc05aa6712a9aac264d87e6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x180d438affbeb9134e27e683af5ee24cdddaa6269dfed6f2f40a3fcf2c44940b": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x1848260646caa627e9c4be23cf8bef9f73b2484a62ac321a552e88e17061aef4": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x1965555a4e84354c3083fd1b68b48886abc8b69f945c89f770b33c9b72a341a4": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x1973b08312fe5d15d9d3638826da84e3edfbcbda2510392f0b4129fc8087e08b": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x19d59bc0dc24618d280cbb8b9943d233269fc7138ee7e8f5223dc3711dcf5b3d": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x1a8690e5c5461b2d56e20c44e9366c82c7b87caec9b9a1d59688d1d2ee914a64": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x1b476cd8e290ecece0764c2c6527ce47bd994c84a953948320ac195ab92c855c": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x1c68a86f6ae978a28c791a7ad63b71468a57eeec9de1b1ec9e0c4e3e2b6dc3d1": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x1c6de6b1744508e59c7260ff4d3cc369b52b1570e1dc11609af3dc9345dce958": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x1cbb70fc09dcfec3f0e0da7c2c89dbddba6749604f4fcaab37a69c52d0828486": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x1cc4046cf614c631a4fb4d23266a80635af07b9cfe3d5cf9ec09b77acc01a756": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x1d9560fbb268f659e9f2d7b3ecc893f17138b501e77dc414479897a67033534c": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x1eac83895cafb5199a0f2ac3fa45b459b2956e8bf00d8a0f262f9c3de37cc791": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x1eb5054ff182c2122229adb31b6f47aa732068f6ed1152626380b6f1c2e564a4": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x1f3eb1f352dbe9cda20ef0534a4dfe9a7e283305800b162aedd42481d78afa31": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x2113bed2b09bed27d827aa138863eaf94a56331d86cdcb8ed48381e2a9e1131f": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x212be9536cab850e8c48be947f70fc7baf47c3e5e76f1c2960041b170a7acf54": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x22499fa771f69529a6d16f9cad0a1e97553a74dc919a0967a3ea8a5641867e27": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x22dad5dfb36cacc0ed048546a36c4cb5f506154ced2ebfb3511edfaac780f68b": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x232be8c1f8e6b19d0b855438103a2f972876d42526b94574b39e0ab3b2e3e8b6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x24ee166411c9f7b2c841f8e6e698e492b0afd11e1e2493cf64e0983666f4d0e8": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x26472d268436af565741fb26ead4c7903e88cd33335a86b408d9f03e15bc7dbe": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x27187e5d7a3bb5f703094228baf89ec5b7b448899a181a52521bb641f5b85bb6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x27fbc8be2d8c02b3444ade791c36d47fcd5bada90c9b2c1376195b025e8a3353": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x28e450bcd41b6f01c07b88259c637a216f386e0398ed2bbca5759d1b90d80732": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x292ced8e28c096180f175ee61dce4ba520c72f2a3c321eff14915289be29a53a": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x2a43c64403713d5c917b2f3f62a7d2d46e335987057c8673802fd5bda3744896": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x2ab9186174bb854f8b1e998f5cfc91328a69c71e500dbbb608a5e86f8e116c09": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x2b802301f90742028adf1740e25ee94179bec16bf8c68198eadb2c445299c1f8": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x2ba3e0f31e98fab6bcb8bde4c9db9ff26516efbd9332ee54c29b9ef5de8e7efc": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x2bafdf69485f6cad8b978eb4a8e30e02d3dac3c12344763f041da8605a91f316": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x2bd39fcf227f697f4243b2c06d0268339eaf06f57b6cd4943e010a5dd64eeebb": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x2c2a7b2b41a17cfdfa59d4d5b6da0e381b01b6b476b2276c8d44a42a7b92ac1a": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x2c92c315dd1d2ef57f85e1c867e7bfb9d8d6ef091681445bee105d0d3a09c7f2": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x2dcad0b2c0f2d6caca4575de04eba696e02ed4ae82768c0d08e15fc5ffcf8074": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x2e313fb13ee40eb9d3a5697815698b83031f959926bcc6657d7e932583d80781": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x2e3c2f1167fa6dcb0c61030e713901979708e00471660adbad282224695d15e4": {
+            "explained": 2
+          },
+          "8453:uniswap_v4:0x2e86154d980e5634b2675d4e2d1a0d136f434e04d88224dbaeee0903b61dc776": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x3021b5ef9fa1caf6660d196c5e20104bdd919445d3cd76e34535476aa2aa6e4d": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x30f56a0bc63374994ff9fd0e095580d295e51427138eb9b9d2f977e483cce43b": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x316ac781446cef526491820b92166eb4c08eaa9eec0eaaf6bd8d350fa8b391b5": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x3198d6d612f2f8ade99534d8062d4c740a0f7a41ea2b8f77473a5db1bfd4607d": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x328286847f6ab09bdfe8f87bdb00058e6ce647a4bdfa79fcd0ded9a37720efb6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x3302df5a4025e109ff2ebb61f9e222a7f5759ac9c0c2af29623a0fef4eb9d9b7": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x331e2f4f774b2e5cbbc84fc5a11ec16860d3e7100dfafc12bed4b129dd5e32d3": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x33960598a494ca7a104d06f59fc7fbf359f2d60c31b371a9447fc2c12ce4e136": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x33dc90682532643c074b68e90ef880962913ef420cbe3a813f32b18b1cd24c96": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x34069ebc9519a2cfadf34b71b6cabe9605a04433ada57f76afb901266ae129ea": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x341f943971604d51a0e14f5d102fd82c2d26b9ea64ac04a9105d79d2d63233bf": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x36611fb9f8a9fdb2ff628be18c07c8beeb91ccccd9b50263e5ed22ab4d52e2f0": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x3689f8cc89d0f46ecf697d2e3ee1e59ae72de24c8d54d3220b78dd0b2d41b021": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x3736540411ee56a262d0063b60ad204543e712007abde5f20816bae9fafa035b": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x37edbd1fba801c77faf953257d2ca2a7dcb66e0d0d5d28df21f8f7a5c51ac930": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x37f934698333df3a8b5ea435e144250ee98d840ec46798c274198c476b4bd321": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x3967a097db71c129ebd9f69a370f5b9a57f5d9fa6b2f3a6b3117c33aeab531ee": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x3daa9dba2697071aa68ced68fc23a9a0b1b175b1771451b7f81d9c3e132f9989": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x3dec51d1093cfd6ebd492de30f785d515bf92909ec3cbd3c8b3ced0dfb673a4a": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x3f47d1ed99a92e6f0f092826c421909f8b795c025133d059daed31b27ca5025d": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x404f533fc1c86279a8b8174e410160c6b1bf239ef532ff0cdb605256f537ee4c": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x405dbc9fdfca035d5df40769272f50ff5ae7fdd488ca5042c0f2dbf91b7eec91": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x408cdd0abb78c1023fc0b2d0a57116c8000403b5b95382aef3d3aec2fed20a00": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x40f0a6df98e351a5101b796b984902e296068b1a456cbcd57dcb66f0fbe8afff": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x415a07a9b8eb3599928e98ad9051c713ec914a17c820e1248593f7c60f835d0b": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x41a281a3ea23205ff5dd02a63bcacd067b07c6d52ec3affabd45a65ccac90935": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x431c70b563faf0f536862aed0f0ea2759315f0b30193fd0f5607247e78d98b78": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x43a03c8390bee0a3d694e864e649dda42b623156b5d01363f5bd38e1fdff7283": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x445aa87b234f522f117e08ae8de7c3745cc6b6abe3de5ed2cc138991802707ce": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x446bb5292aad3b4cc221d5511a74e340e657129c68fb74d9e12a79a186c0e561": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x465fcb1093fef2ea32b438227dbd759e36e5702534ffdbddd99ec5023825c983": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x47a37a22979598a9528fd6b30557e9909e6aa35ddc172a995383c369d32532fb": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x481d652d2e55fd2a1f4c2cc78fdf2650247c051af396943cc6dacf68174dbfd4": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x48640d3bd08f95aad4b8f4e248d48b2d27aafc2366b35253dfa5b3d5cb33dfac": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x49b668df3f701ff5dd83404a1c32960a0f27794d064832f08d892809089a6a37": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x4a8b2dabb86f19098ed49ee0e839b7b83d3c2d79f003b3756cbec90866b389d6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x4abbbdd17fa498b9d20a823e4b3a731ae06511683030c708db6d600dfb04caf0": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x4aeeebe2eee43890f0d133c041ed742c9af6c02f6d68539415dbad0f3d15a422": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x4b6fc5338e6ac132a28bfb3873b7ceaadc33db5ad94b1861faf7644bb6b73afe": {
+            "explained": 2
+          },
+          "8453:uniswap_v4:0x4c08f8b541049a885b2c2811bc1483377052731bd39946d7eb49cfb967d28bc6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x4d3ac0345673baea241fb070aab76920860610bc07a87ae0a8983f506d95909d": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x4d6b3abbc2b37809d45331c14eebcb8c14aa104e9ca98dfe3fe77f2a2cdf534c": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x4f0cc19e6a8427e5bd03cb099e818efcf31b842df28c19c39d3802682fb9b5aa": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x4f108e4ab410741e3040311cd04969495900a2c798472bf088b1fca835024dc6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x4f117e6d704fa7453c12d544247ceec11c7a1ebb08ec52fb5e0ebe189b50b4dc": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x4faac1319fd79a504564b1f0b26bb151b7abae9c2d67ec2fdc4697a4ca6b0302": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x50bf79b927747cc00c66db141507b88ba89a3ecab080de0a184281424e5a78b8": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x518210bda9c388934f44126254eb0506ab84f56619079b5e8135af09ccc65001": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x52bbda48a39f67fc65a2edea9c235fbee19d5e7e8d727addeb67d20afc6e02a1": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x52f44c97a2eb159632bf9f00df167439bdd475723dfb309139268f850d6e3163": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x5304f1a8be39ddcca6a85b7f63ccc782b592a52c38965e8a2919fba80f8d16b0": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x55e5d146a61052a2ee830f9c3163f9487daaff5db6b584217929ba7e84f99ca7": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x56d8a7dc7afb52b5f3d0be2b8602b61170478c3f30c0337407e3100f5f778a4e": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x57068c259af2bde240b22c84aac67a3440d504e59800c019987febad396edafb": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x577a4aed54fa01f5263ef51f641244bcc2ebb73bb2845d11dcbf90a1b956b265": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x5824c85b32098faa0e5e657167880de39808db5099919cafe024c9aaf928e491": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x599943c193baa6a3849b54a0151a60c0752b66c254bb2e7a687744a2a4ab5cf3": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x5a2ccd4fc1323f999fa136f5e65935323ba05b1c8cc67defec90021fb466705c": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x5a418b784ba0c646768785cdff9245164c998d722f4ad68e14081008727e85bb": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x5aaf9101135e61ccbc12e105ad3d7b9584cf90345b3335ca4e7950e00eb7561e": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x5bdce79704d0e10324421d022716a4d876e3b39b51e1dff14eb559a40cbfeef8": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x5c87e1dc2c0eae51acf8fed6abff358f11bc66d1eaa6627ceb81bbbc93ef172c": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x5d18a84508e18663aa36667aadd5ff50564364fc668ef884edab786f5459a7d6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x5dd53f45f1b0e7f4e7859f18ce34083094e8075e847b1b0c80b7292749a549ec": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x5dfb69995fbaa4a0a4461ecdeedfa5e3182b7778cda5bc0c45b0b0d419dc0579": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x5f9ce312450afd60bd8aac6b76992644ac4f81fde03f97a4f06e98a0c9907ada": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x5fb20e900abbf79bf4a65731f9b6c5739e798cb980fd68d3053de37cab9a4f82": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x60b649f1a73a94d127417b248cec1c9a5064ee2c95bc6c59699cdd511b9a7821": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x6100b955589d69d47989e6b0337c88f016693114f2f0ef1aa0f1cc44dc83ea00": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x612c8961b2b322dc3accee0df92c0997b7d84ece0d2c12d6f84dc938d21b63ed": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x61a6b974a52453f2d42ea2e8f97b28832baa54aa2728d734a5d5f6ccb1de2518": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x61d84d4a637313bd258e40b41c26781420410ddeb3f4ef772ae5677f7462a7b3": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x6217829114e0c8e7cb9c94cd7cd778889354d45d82cf7957a0d94079156fe717": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x621e27cb41f9fcd0d88d8de494d8497298a1eade01f8871a0287077eb54fb1fb": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x62bbef714c29fb41cb409a8bbccc99df23cb843e7ecba20ef4745c878b0ba6fe": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x6417e1434e35f37c55dabe3d9e0d6c2a67d4b20858cb45533de2b8dd7c8a77fe": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x64855c24d75fb49dda2679fc244818018016a4c9096410bb83ae8869fd57c70a": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x6588f925c8b7208e50a3b09ec615cd7a2889bbb38f126992897403a4ed051df5": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x6a810235484e66debd5f0e8d8d8876c9663bd3646f5e291721e94ac052dfe6cc": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x6ab06c48245ea4c0839910218fa9b0edce0fb7e963c8e82da2479a200730c35b": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x6af08cecfa3d87c86049e00482546fb043a0053c614004c44c2ca536a30b713c": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x6c3f1a362d6fd89025f5cbd9a30beba98d44423ddecbac03b0a210ecef59bf61": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x6c5d76d7a54b5d4ea39668aec33120e258db7b06988e5e1b1f93c4ec1ef1493d": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x6c6bf300e2c55f358712a2707f937693364e71037f40227272c83fb9f0ab20a0": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x6e648ceca7e8c77a4c98717017df30228771b9305e3eff996ce0d3a3b72bf21c": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x6ed9284a9095c192cf18e878b433d060aef9b30d17d7269d512f5822f4a84eb6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x6f1e5f405514d3ba224e1233ebdbca29631035af0d87e2ec9d8fb3663c99125b": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x6fe3ead36f6d54a6bd2012656876f56793c973752f452bbb651a3ae8b4d56d6c": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x72bd5915df7c9df448464af77b6e820228431f42a220141d5e2b815a64be5c0d": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x735065be58fc91828f17aee62e06afeb4a65d011c016de06a610991e46eef8b8": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x74bad77298f2f7ffcd9d5c0fe3ae3f47313535f8509f7fc802066be2341a446d": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x752b89e770906aee6b2c6d85eb530b248962aeac4ed6894e755ab334b7359ad3": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x75fa90cd39441532e468a301bff8ecd772be850f1cc132095041b8faf55a769a": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x768f37edfe878a50eae62a87f4c3e4497f137806ac2793b392e0378310f426b5": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x76a5a9afb1b340fcf5d396ce580756a0baa004aad524cb2d77749a4032480870": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x7791df096738f68a69b74b49dc4350e86ac17531fa3dc68444afc0eec6643584": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x783e4e6db8dddd5b9e39da043d80ba564d80b1919d353546362f2c611643ce40": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x79c4ae5ead50f2753ac4f2e0ebce59248877507ded1d3ab5e3274ec1dc0849f8": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x7a799c74a20016df3227fe6b1df2222fc70db019ac3a08b59a5475eddcb91e00": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x7acb5005185ef02bfeb436ceacc03db684e79b534d95dd379691160e35785565": {
+            "explained": 2
+          },
+          "8453:uniswap_v4:0x7b7fec9c1fd1c74a534e876f90de353126415318c1443dc9dc478d39f771c136": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x7bfd2b57096c875233b856414cace3c8fe462722a8ccba3aea1a8d491231ecb0": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x7cab174bc6f301880f900ad8abaf9bca1049dc6d0804a719fe61b7de8858a912": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x7dc763324448d0c833af12355adc06ef4b1ce9c4adf5844675ee283848533760": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x7ec4364f34b9574044011426c5e29d04a31af99643b093e4a92629a1d16d58bf": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x81542f7fb536d8fab8a8e1098eaa2115108a8a5082e44a617f6e7664ef83a444": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x8211e843afed60624fc916018680fdc4a8d6e25e1b8b03a160ef8a9cc6d103b5": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x824b1fe1d5f734faa0a9cf310c96eb512342d7e42c5decfd335efdbbe13d9486": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x83345edbd2207899c42d5f5fac59559800ab9be8fdc5241cac1fdd38bc450e53": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x847d4f8ca11073816f8e38de01a53d42ed3f0d6f15189c7f6cff725c2008adff": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x85557a8d1095b343a95baab80b1be3f15214b1a3956467d2e219ddfae1b5af9f": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x855ab8d0b555f08f4721eccc0cb86b050a027037cc0cc96cdcd82c320014f2d1": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x86b930a64ef1953053ce1425985b6cc9e4d9f9abb68141d03f9140fc3aecec32": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x88469df1e5ae172888e4355263901d76f414b47582777c96b516f38d4021ec6d": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x88a76fca8d1d788c6f1686977138e68630b998c42601b1fe782fd57cb785d8b5": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x8a9dd87a352ae9c03254421237af9381ec3cc72d239fbc7ed126e783921e59b0": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x8aecb091518567c96fea375f9237310094337150d6e4bda1e11734916e398a6a": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x8c002251a16238388041f022c373ac34e70a71d0d38685437cce1e62b2f7d5bf": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x8c2fc87c40e1cfdee526d260ca8c4c102931f585f4d2705fc8a673c9ab3daf41": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x8d60c0718fc5bcc0ba4ed675950aa8b41956790a81d0e101d3540443cdbd05a0": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x8e98c4c427b184d8218fb33b890db3df7bb4f8d77038f6354a940f52f814515f": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x91e003267f2d70914e3539deb2209eba7d8abb683af44dfc16c510b820210505": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x91e9da2730a6b218c5f0a00af151af1afbbc238e9f5b6049f2e03d50e8993330": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x923d0a455a49b292621cc2a225d37e82298aba33f5cb96591fc744daabda8ba3": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x9269e0114890352aca8a263d319aa6e4af1971272feb6eda681c4eef846a2588": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x932fa1bf81a1388f57f239feb2b94ca3ff03b86eaca34db855e53092a4772f65": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x95bb4e2e6fa2064bd131d92460c89fd39d5cb814fa19da47b6ad2bc4e27ea4b9": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x9621273728ba7550c625449848edcd03cbc069f6556a148d6f04390c57b322d2": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x97565b91fd130306853f07d9987ee76ca89fa2541216d0097010c264edd32fdc": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x997cbd233638bfc1f3aa0eda2fff6518493b4d6c475c384bca379cf219f21e3f": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x99d3fe918be789d16c0fed0941bbbe2e95da1d4a1c8724e59b91b231aca1d05a": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x9a3eb51e73a010f966765e7258a1d40127fa0213dfb32309cbbe6da61b872cce": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x9b3b1600d7d8b318e752a954d2fc57bf09cda9ece45cc95aada1653fb05530c2": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x9c1db3b9f0bf06c578e7a7757f268bdf364c2d7b9668bca6b6d6c2e30f771e8d": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x9c53d18a18106816fd2f41e5980591fe6497bc289fa7edda3f82b4b0a78c21db": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x9c8d492052e773519c09d3bc00290a3d0eabd6fbf9c735e2ca8a602bfe2be46e": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x9e8b3ac936c6f1cedd578641036405d0a238c42465f1c0883fa3bf58c4481347": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x9f017bf3f7b5b52ff467de4f9eb4bf1c7e8bb71ee6f05f1599b40ac515c68a29": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x9f7b7e298854dcb56fb2cb52e57f490f923553f9ac51511db9f7921b00b36942": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0x9fe60a4bd51d25bbb89f222d93e87124f1b68b03a23cdd4e98610c99bdfd7516": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xa0014d079f3b433412ae58e7aea69fa8abc933ab388ade51e89ea4668e0ad066": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xa089cd68b0d015706d25b76892825099437691a3c57db20f01ee5dd677d45809": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xa1554caa9937a8f158c3338f63c082376df6ba504b74946c08023ed26b54792e": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xa3747fc239c7537766a82718673b9ceb6ec3ab18048395495fea02a8bdd7547d": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xa3940ced6d09ba7b2a53a6e0f9b0ce302b02c303af003d95d44727059af1cd79": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xa45c85ad3b55c3f4678ab480e426cdf7d928cb6ebc22af20f3448ec8a2bf65d0": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xa58ea5260bcd4304a219f439c62470c4e66c287d74bad567fa59b9d340597276": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xa5bb6db173d02bf7e2558bc95655831291ff6599ad230b418c5890b08d72f22a": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xa5f86f59ea1452817f3fe03eac8472a85748331e8e2c1e78dc70b586e36948b1": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xa60b8571506bdd5bb6f1755754be481c95331ecd483255d4a52d1d8e56190a30": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xa6d9a939032023b3ad13cc212c09fc1fa84d5b6eea7c5a47630fc35dd8e5e40a": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xa6e705e67afbdf39f708083ed973f9b2040cc397bb073740461da0fdf73ed464": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xa84e324cd0a0bf7c5c010cabe1285a94601e80c3805cc61ba9d378e0a7bc7471": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xa8f88771ec3067686593a40e8e87017f0f89ca73719d65d360a2fcc252e4b0f9": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xa9e8ebaf23c4ce60b8ee68dd98384da68962a9c749a14547583b11788d102e4a": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xac0a34042f755386dbeed30ca62b8dcc9c854666b1485ec80f9ed62d5d18fdde": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xadaded5585fe0880c10e5510d36670c24c6e62e7fb1274f98aa50aa1e132c1e7": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xae5046cae675c2cd05d07b8ea5c32636c7763344bbe28085fbf0883f073b17cd": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xaf5deea1df898a8a28326f9e1800b5176f205c5e31d0dbf56c5a3ce98f92c771": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xafdca4ad58819450a4c335afb310c83b87f33f803fb25853f0cd2660c58a9777": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xb1b7d8cfd7a6e98c29a03ac3cb28ec9650d9fe15f16b81d7a7a48a549b8ccdf6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xb2ac4b7d79ebbd39a44b25ae447fe1a0aaa23d529be5cc3f30de450312a1b966": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xb2c7be451dcae82f22b64308e9a296d7fe2a051738cfe25eac3ed3719c391766": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xb30ca5acff66419c9d35490c5381a8cf35fcac77d3ec1e856e8687bda52d8f52": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xb3a6244f58af78fad4f8a2dfdf9609b74f1656ef4df41f4c106ba9338e131c6a": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xb3e0f9383b0cade8f093c03b3128141fb34918a5e30decb93b5492450545be78": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xb4c2c044ebc8d2d05ccb4dad84646ad58c037ebebe14c63e5ca8530b80ab2715": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xb59c70758e2ff304b1f1012c2d221b3eb63395f2bd5193f0f74b7690cdbf7092": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xb67d75056c613b4eda10f44ee5512ac4a0992479bc093230404351cb58e09d04": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xb9062bb005d1d01f3820318bd2fe9c75b1c48a53b10353d8814eaac87e48c538": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xb9e03f890a4bac788b11b107abc416d4fba3e9625a00bdccbbecd48eb45793d0": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xba3284b6cf983bfbaa344820fc3e84539a5aa51020ae8bc2eb98d814a00b2f2b": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xbae7cc2494dc3e1cb10c7b0814b005f1c192bb43b077f6a0572c2382ab7841e5": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xbaee5292d7b1be14c1e9709fb3f3a495316dfbb731892a803d9ea024cf5c0353": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xbb0776916231d67787ad8f74f145859abac10b19d98efd72be170c8dd154e271": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xbb14d81c0efdb6e4c9442a2c4ad93f659fc2a03ed1112ed685d36372bdfa3579": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xbb35e0e06971e407262bc1dd52bea9787eb3f4ce495e36162f435a459ef02758": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xbc258591679a8e96ddaab04c87087f656d422cee8b9e3d42f1c732204c2a4685": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xc086c0212db09fb7f24d97aad3b9d2f7e3f5baf5552028aa9cde9c81f713ef8d": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xc3ac4c92b32c0df809032416b005a4678a6a2d578cccdda0b2f0ccaf8af649ea": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xc4214d1ee273529b243e101eddc6df5ddb8c1f4307576ef706ecaa2fa4b906c9": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xc5cc9ad0f85a232c416e133da8d50959f5623f412caec7d08e313be37ed827fe": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xca787b370ff863926aa23c04e42529ffeaf6b1e5de56e5218cc74e9523abe816": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xca8676e169d097bd54eae49e8e385d0e374da28be0a9e54f1574caf64c2b10cf": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xcc2ed33592beaa1a74ee6883f53ec7e3e190ab4312d09f7044c3294e6aa62736": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xcc67b564ba56319fb18dc3fc1a73b53ae7a0ded7f760e39a70c43f0c3a345092": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xcce28e79bbf836ac0c9a0a2753ceba253345e556ccfddb4f3f0bd0878f4c81ea": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xce047a026980c629216c6d7cc8fd78943452ac72651122f739ff553cf58bbaf6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xcebbd113d655cb3173727760575d6c6b8f6e7afc864ed3d252a7d7e8b01e8c94": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xcf1fde9b49b86debcd21d8b3f919b7d551fd9d123529ebfa2fc962089431e103": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xd12028b28e9644e42845e07911c8d4bac94dd103ce0db954195806ffdd4e0136": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xd1f4d799320420d4a2fc13c8f24d384cc5d997c8398d158c2d54888ede97ff0d": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xd2bf3fd66225d505cb36e0acbd45c437068e1083caa713114b9c32860252a8e4": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xd5814f9238d91eae23959083d53b35f03ce2399e0cb6fc494fa61e7046b059a5": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xd5aa5c6eae0da7c63f00741301f241b9cd4d5ff6a279f3c3638acc781e1858f6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xd722388cc50653deb980bcd21e65bb689cfb5f6efd2a4a244013a38cb468bd8f": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xd73203e560aed1dbd49f99a26197ab08d59de435a17ae268e9a5fce04cacee13": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xd80f35d78c18c76c274ad50fab66e8727aeb020ec24035d17d80ac6dfb26c261": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xd872b31ed635c155238905a7743299096709e2d4575b5d50894aae0dcb1dd2e1": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xd9746dc094f554d0fe564d8c2e82a64267a6d652eb177e93f01b5c6fd58a8847": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xd9c795fb3b44ce386b5de0b764ad15c20d223b5178eb9033ecc5cf99a3589ccd": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xda3767cbdde82ae1d91e4442b5ed36950007c26ef51b61c09b7b21898c019a1a": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xdf007e341e1f12d7de9fe51fb066354a3f1105e2413e73b12130f25a8b080d71": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xdf5da791c86ce9f8ffa8ca00d1ef234b65a20bd5c797ba232fce8cca45965222": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xdfcfafc7334b567154e6c479814ac392e2cd06128f8a81eca972541c0285e885": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe04dee06bbbb32560db0d2ab0afebd9e0b2b46f08d683a3d8b3b44e751fb1c42": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe11f91331523ae47fbe73278eee93ef478d35d4fa17288569e98d497e588cc77": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe15d789da633252d30d070a37723f294017423f8c3f66a2ff7381ae119dfd597": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe1a7312f86f7cd8d6a409fef302d3d9fabc9b210ce3ce33fc41807ba8406299c": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe1f09faca9939d5c86e121f9a493781ce26ef2ea373426e4b254ab5e22a9e814": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe1f1486d11929c7c6a6bb958bcf846308a905a18821612948bade3f33726c48f": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe2d4a83d67c1f598592e69a438b739172c880a2b841cb486c5491fcabefe2855": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe37947d289afc59d54d901ee2565d13b401b52396f86e7c847b1d9f0492e5bd7": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe4f06687948c004155b20a62d9306991e02abce351ab91c20e713b6487a2c9f6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe54331b0a33515e8cf00a4674d3615fce5950e5ca38e3927799469d693ad4de3": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe57738dea2a482682f8f4fce3ac03e9fc57fd4336bea9eb2060965036b575e3f": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe57cdb8f8403943f6568c5e508e619790bca75b8acb00801f2d5b67e7ce2ef37": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe6b7251455fa95e83de5d326a57e074c6442b4eb833b694496f17bfe820819cc": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe812612551dff8a5300c2405e41a3ad96b13799a2915f52e6bf12f66d46b64bf": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe86ea77d471966e36c6a0694607b273c37c4c01b6e77683ea7605b042b00e482": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe957b7eee1a86fad9c68877516f0dec6caf50f273aab747a9600729e512c59ec": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe988c8f878c0a54bb33596504337dc0256683391746795e17ad5379fce664698": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe9a78d1b3264529752524fd6848f4668ef3678071e37fd134e1443f8b3930eb0": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xe9ffebea99648447799502b58307ce40a64a1a1e67ca9499fc8661d218c41f29": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xeb2e33d144d1fd1957ce0d135acef8ecc762b00a133b4ddafc203697c08de5e9": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xeb4177dbed10aa30998625754b234e64b6552ed2de680785d3c4cb8f062a4dc1": {
+            "explained": 5
+          },
+          "8453:uniswap_v4:0xebe5ebc989e654e6a26c4addf1aa18f75571954ed42561c4ecb7629c7ec45605": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xecbb9c8e2891d56a38186f98c2531ac1c69a93372246a84737904ad8e094faf6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xed11bc9641c77761f258c80c1021ab63bfc6d9b33709bc0d59f3d49ed7377ad6": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xee89ee13a6f16a2ad5db0877be6407f0577881430f6bdb043f334af48632b52a": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xef9d79b046378a5ba34c7511bbaa3feffd8795a586ac5c9b71734e3211b7f182": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xefb95593f0b853c24c408647391e98d4f09caa6ca46cd3630e609e1f8c9d6d20": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xf3ac2682139639d5b13d5b686851eb88d8a00ecb24496d5f0c10208556f98088": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xf3f3164550a50d08d48ac3bc3f801c129d4e1e54655e6c11f4e90c39f590e305": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xf5586b6220b7e6a46575202ea2753f86e62196e3becad96cf7f576a5eb260216": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xf56c78e9b1c3b2899a90c996bb4a4544c1c87f0a10011693b1e7f74cbd3228d9": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xf60d5af35ac77f5637d079e97156298e0f81f04d40e3efe04a5938e8b76c4ca3": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xf64cf5f47552075db39710864caff1a9fbe7137b04a29cc686eb01c3c2294251": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xf7650126b1b6a06bc71beb07829285ed9a6474b721d5dc4ca2e47e24e25a63d2": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xf7a8cd2178a9ede0327af81e336f8599885f1deaeb0fa7da205ba7b2ab7e4857": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xf80ad789e7fd61888a717802c47e42a0890ce9763cc65e93fb6219f41d09ba6b": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xf81fc17ce58b9be30ee98e76dbe9f45c53d9b4bbed17e5048be14ecee8d45227": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xf96a9f6d587dd8ffe9c879e59e47e30d6128e8a4044c6d236c2f23e19b803ace": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xfaff3515d7f64a5dda8f82eed8f1bcf2b6decf92db30a4e797b8d10a2d7e6bb5": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xfb35734f5132ff94f5e5db9cf9409de203a4686bee8406793a40fda5872b9e82": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xfb6c6cc951470cca2be52c36967d84b1975f8416881387f26ad1b481ba931fda": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xfb87eb3d9525d32c49f62d11fb655b16d06b2cda729aedae5cfd317c9e998cee": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xfc4241ac962c8817e07d065ef153611a88cdb01f036a9008c897a9d50d7a92b5": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xfe57b0773e108682ed32b7cbacbbaca44a88e1c388bca8ad334f3970c4a16dde": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xfe805d629e5b763ef1a99ec983cece1901ce0e4f7e174869be165e7f173573e5": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xff3a8719fecd2e2bc1e14dc64387d0404f9dfc387be0d1f5777e021f99a7ce8f": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xff46604cb8917a2ba488d9c05170184cbdfa0949e0a8616800c17bfa586bbc17": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xff5d482de8d5e6b3947b7479ed3bdaa0656a6f8eee06d82f6d82eb8f7f5fbb50": {
+            "explained": 1
+          },
+          "8453:uniswap_v4:0xffaaa44f9fbae578029640028ad9033d90b5425304fc4bd59751a24c86dae5c7": {
+            "explained": 1
+          }
+        },
+        "rounding_rule": "CPMM: floor division per Uniswap v2 getAmountOut; CL: Uniswap v3 SwapMath/SqrtPriceMath rounding per step; exact integers"
+      },
+      "reconciliation_untested": false,
+      "status": "passed"
+    },
+    {
+      "detail": "unsupported pool models are excluded from the CPMM and CLMM adapters",
+      "gate": "mechanics",
+      "status": "passed",
+      "token_behavior_basis": "assumed_standard_transfer",
+      "unsupported_pools_kept": 6780
+    },
+    {
+      "detail": "declared policy liquidate_all_holdings_via_direct_pool_v1; unresolved states remain visible in reports",
+      "gate": "valuation",
+      "status": "passed"
+    },
+    {
+      "detail": "public descriptor is allowlisted; aliases keyed per run; runtime scanner enforced in service",
+      "gate": "anonymization",
+      "status": "passed"
+    },
+    {
+      "detail": "storage=public_chain_data_via_configured_rpc; endpoint terms not reviewed here processing=research redistribution=not_cleared serving=local_only",
+      "gate": "provenance_rights",
+      "redistribution_enabled": false,
+      "status": "passed"
+    },
+    {
+      "detail": "pack_id pack_06e2b167828578a97107c3b5e3c977f2 content-addressed; params hash 073c4cfbf5be...; validator pack_validator_v1",
+      "gate": "reproducibility",
+      "status": "passed"
+    }
+  ],
+  "notes": [
+    "Passing gates means the pack meets declared mechanical/data requirements. It does not mean the simulator predicts live profitability."
+  ],
+  "origin": "historical_reconstruction",
+  "pack_id": "pack_06e2b167828578a97107c3b5e3c977f2",
+  "predictive_validity": "not_established",
+  "requested_qualification": "research",
+  "resulting_qualification": "research",
+  "validator_version": "pack_validator_v1"
+}

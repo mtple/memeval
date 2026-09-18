@@ -1,0 +1,346 @@
+schema_version: 1
+pack_id: pack_06e2b167828578a97107c3b5e3c977f2
+origin: historical_reconstruction
+chain: base
+chain_id: 8453
+scope_label: base_all_venues_research_v1
+title_private: Base all venues 2026-09-09T00:00:00Z..2026-09-10T00:00:00Z
+period:
+  start_utc: '2026-09-09T00:00:01Z'
+  end_utc: '2026-09-10T00:00:01Z'
+  prehistory_start_utc: '2026-09-08T23:00:01Z'
+  start_utc_ms: 1788912001000
+  end_utc_ms: 1788998401000
+  prehistory_start_utc_ms: 1788908401000
+  duration_ms: 86400000
+  is_full_week: false
+universe:
+  factories:
+  - '0x8909dc15e40173ff4699343b6eb8132c65e18ec6'
+  - '0x33128a8fc17869897dce68ed026d694621f6fdfd'
+  - '0x498581ff718922c3f8e6a244956af099b2652b2b'
+  - '0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6'
+  - '0x33128a8fC17869897dcE68Ed026d694621f6FDfD'
+  - '0x498581fF718922c3f8e6A244956aF099B2652b2b'
+  pool_models:
+  - uniswap_v2_plain
+  - uniswap_v3_cl
+  - uniswap_v4_cl
+  quote_asset: 8453:0x4200000000000000000000000000000000000006
+  selection_rule_version: 'per_venue_v1: uniswap_v2: active_before_window_earliest_created_v1;
+    uniswap_v3: active_before_window_earliest_created_v1; uniswap_v4: active_before_window_earliest_created_v1;
+    all_launches_in_window_v1: all_launches_in_window_v1'
+  indexed_block_ranges:
+  - - 51018127
+    - 51104526
+  - - 51018127
+    - 51104526
+  - - 51018127
+    - 51104526
+  - - 51061327
+    - 51104526
+  excluded_or_unsupported_counts:
+    no_wrapped_native_leg: 2869
+    beyond_max_pairs: 6272
+    missing_state: 0
+    demoted_after_reconciliation: 44
+    no_wrapped_native_leg_or_hooks: 4457
+    fewer_than_min_swaps: 668
+  candidate_count: 16626
+  selected_count: 2360
+  unsupported_count: 7326
+  missing_count: 0
+  description: 'One week across venues: PairCreated cohort from the declared discovery
+    window; wrapped-native pairs only; sampling rule active_before_window_earliest_created_v1
+    frozen before period flows were read. | factory PoolCreated cohort from the declared
+    discovery window; wrapped-native (or native ETH) legs only; sampling rule active_before_window_earliest_created_v1
+    frozen before period flows were read. | PoolManager Initialize cohort from the
+    declared discovery window; wrapped-native (or native ETH) legs only; sampling
+    rule active_before_window_earliest_created_v1 frozen before period flows were
+    read. | Every pool created inside the period on uniswap_v2, uniswap_v3, uniswap_v4
+    with a wrapped-native leg and at least 1 swap(s); discoverable from its creation.
+    No sampling, no look-ahead.'
+data:
+  objects:
+  - filename: assets.jsonl
+    schema_id: assets_v1
+    size_bytes: 755686
+    sha256: f2617d006b5de7a7af9d8bb48566e9f2b5a82b1156ad479305df783aac9ae340
+  - filename: pools.jsonl
+    schema_id: pools_v1
+    size_bytes: 2278503
+    sha256: c2244cd1b862f7db380f2b2e9df2f354a5bdbb42245efe6ce54fb561178cb1ea
+  - filename: tape.jsonl.gz
+    schema_id: tape_v1
+    size_bytes: 21431750
+    sha256: c1bef21f344aa6bfa72f13d58b3ca50f0af0e976e418a612ab8fa963950284c2
+  - filename: inventory.json
+    schema_id: inventory_v1
+    size_bytes: 2130961
+    sha256: e1c51bbcad4fb8818ba7c7579b82951d3d6cffe96de42e9598a8b17944faf54a
+  - filename: coverage.json
+    schema_id: coverage_v1
+    size_bytes: 1024311
+    sha256: f7f7fab18e415a4b9d135c57ff5aad0aea389bbda58455900e3d0dbe4645eb67
+  coverage_report: coverage.json
+  availability_model:
+    kind: constant_delay_from_block_time
+    delay_ms: 4000
+    acquisition_utc_ms: 1789752827362
+    note: acquired later than the events; original provider availability not established
+  token_behavior_basis: assumed_standard_transfer
+execution:
+  model: cpmm_fixed_flow_v1
+  parameters_file: execution_params.yaml
+  parameters_hash: 073c4cfbf5bec4c2d241a8c94e450828796b597875a77188bb882e6745dce724
+rights:
+  storage_basis: public_chain_data_via_configured_rpc; endpoint terms not reviewed
+    here
+  local_processing_basis: research
+  redistribution: not_cleared
+  simulator_serving: local_only
+  notes: Operator-run read-only collection from the operator's own RPC endpoint with
+    a fixed request budget; public chain data; redistribution not cleared.
+validation:
+  report_path: validation.json
+  qualification: research
+  predictive_validity: not_established
+  validator_version: pack_validator_v1
+numeraire: 8453:0x4200000000000000000000000000000000000006
+numeraire_alias: NATIVE
+numeraire_decimals: 18
+generator: {}
+provenance_notes:
+- HISTORICAL RECONSTRUCTION from eth_getLogs. Token sellability/restrictions unknown
+  (assumed standard transfer). Not a full week unless the period says so.
+- HISTORICAL RECONSTRUCTION of every pool launched inside the period (Uniswap v2 pairs,
+  v3 pools, v4 pools) from eth_getLogs. Token sellability/restrictions unknown (assumed
+  standard transfer).
+- HISTORICAL RECONSTRUCTION of uniswap_v3 concentrated-liquidity pools from eth_getLogs.
+  Token sellability/restrictions unknown (assumed standard transfer). Not a full week
+  unless the period says so.
+- HISTORICAL RECONSTRUCTION of uniswap_v4 concentrated-liquidity pools from eth_getLogs.
+  Token sellability/restrictions unknown (assumed standard transfer). Not a full week
+  unless the period says so.
+- cl_swap amounts are pool deltas (positive = paid into the pool); v4 user deltas
+  were negated to match the v3 convention.
+decision_log:
+- '[uniswap_v2] chain id 8453 and factory interface verified against configured deployment
+  reference'
+- '[uniswap_v2] block boundaries fixed: discovery 51018127, prehistory 51059527, period
+  [51061327, 51104527)'
+- '[uniswap_v2] block interval 2000 ms verified on 3 sampled headers; mismatches=0'
+- '[uniswap_v2] activity scan before the window (lookback_blocks=5400): 67 of 904
+  in-scope pairs had at least one swap before prehistory start'
+- '[uniswap_v2] universe frozen: 1227 candidates, 67 in scope after rule active_before_window_earliest_created_v1,
+  4 selected'
+- '[uniswap_v2] 0x90af28e4b5367a58d0555c238bb6e040c29c922a: initial state from getReserves
+  at block 51059526'
+- '[uniswap_v2] 0x46c930c54aa6a002fe197f8025a64a88cc8f1e71: initial state from getReserves
+  at block 51059526'
+- '[uniswap_v2] 0x59c07cf7dd5c09a08dd1d3dbcbf0c95bd5a12d47: initial state from getReserves
+  at block 51059526'
+- '[uniswap_v2] 0xce009d986696ac6a26a9e14e31667e9360c3aaf1: initial state from getReserves
+  at block 51059526'
+- '[uniswap_v3] chain id 8453 and v3 factory interface verified against configured
+  deployment reference'
+- '[uniswap_v3] block boundaries fixed: discovery 51018127, prehistory 51059527, period
+  [51061327, 51104527)'
+- '[uniswap_v3] block interval 2000 ms verified on 3 sampled headers; mismatches=0'
+- '[uniswap_v3] activity scan before the window (lookback_blocks=5400): 15 of 297
+  in-scope pools had at least one swap before prehistory start'
+- '[uniswap_v3] universe frozen: 476 candidates, 15 in scope after rule active_before_window_earliest_created_v1,
+  4 selected (0 launches from inside the period)'
+- '[uniswap_v3] 0x66268fb89f9e2ebb3040b3008d20044bbd278ace: initial price from slot0
+  at block 51059526'
+- '[uniswap_v3] 0xf6410659ca3516cc8f93c84ae884d141fb62833a: initial price from slot0
+  at block 51059526'
+- '[uniswap_v3] 0xe9b61deb58d092a361dfcc1b7c8e271b6b04421b: initial price from slot0
+  at block 51059526'
+- '[uniswap_v3] 0xd6baa2aada43feee54a2078ab1ff51fc3785f133: initial price from slot0
+  at block 51059526'
+- '[uniswap_v3] pools are supported_by_clmm=True and supported_by_cpmm=False: served
+  by the CLMM adapter; the validator replays every cl_swap as a reconciliation checkpoint
+  (sqrt price, liquidity, tick) and applies cl_modify/cl_init rows'
+- '[uniswap_v3] 8453:uniswap_v3:0xe9b61deb58d092a361dfcc1b7c8e271b6b04421b: demoted
+  from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[uniswap_v4] chain id 8453 and PoolManager interface verified against configured
+  deployment reference'
+- '[uniswap_v4] block boundaries fixed: discovery 51018127, prehistory 51059527, period
+  [51061327, 51104527)'
+- '[uniswap_v4] block interval 2000 ms verified on 3 sampled headers; mismatches=0'
+- '[uniswap_v4] activity scan before the window (lookback_blocks=5400): 296 of 5087
+  in-scope pools had at least one swap before prehistory start'
+- '[uniswap_v4] universe frozen: 9365 candidates, 296 in scope after rule active_before_window_earliest_created_v1,
+  8 selected (0 launches from inside the period)'
+- '[uniswap_v4] 0x6119b395a1fd6da987b182b8770c738a65c9a710dd67585bc5852337388b834a:
+  initial price basis last_swap_before_prehistory_at_block_51057622'
+- '[uniswap_v4] 0xcaa6e669ceb05188b1388626bebf3307a5296dd8de291ce66efb78d95da5d221:
+  initial price basis last_swap_before_prehistory_at_block_51059326'
+- '[uniswap_v4] 0xeb4177dbed10aa30998625754b234e64b6552ed2de680785d3c4cb8f062a4dc1:
+  initial price basis last_swap_before_prehistory_at_block_51057535'
+- '[uniswap_v4] 0xe582bd043f6fe571b0f85bebd6f76b0d21d3a75efe4a026bb21c9511161c6097:
+  initial price basis last_swap_before_prehistory_at_block_51056571'
+- '[uniswap_v4] 0x4ac63a54597565166b8eb51ea029b7f266531e5453e7dc164136faacff0876a6:
+  initial price basis last_swap_before_prehistory_at_block_51059288'
+- '[uniswap_v4] 0x9e485f7518bb60546b86619d92fc88512db715bb33f94e0bc14404f369ab39ee:
+  initial price basis last_swap_before_prehistory_at_block_51058968'
+- '[uniswap_v4] 0xf5f127e036c21f64a42da966746b974e2f13f942700cd12a58f6ec7872c18ba7:
+  initial price basis last_swap_before_prehistory_at_block_51056702'
+- '[uniswap_v4] 0x19cc9c7945731ea40b57b1face2f135b16f2fdc456dad809189fc89180bab230:
+  initial price basis last_swap_before_prehistory_at_block_51059502'
+- '[uniswap_v4] pools are supported_by_clmm=True and supported_by_cpmm=False: served
+  by the CLMM adapter; the validator replays every cl_swap as a reconciliation checkpoint
+  (sqrt price, liquidity, tick) and applies cl_modify/cl_init rows'
+- '[launches] block boundaries fixed: prehistory 51059527, period [51061327, 51104527)'
+- '[launches] uniswap_v2: 608 pools created inside the period'
+- '[launches] uniswap_v3: 244 pools created inside the period'
+- '[launches] uniswap_v4: 4706 pools created inside the period'
+- '[launches] events:v4: chunk reduced to 5000 after provider error: application error:
+  -32602: query exceeds max results 20000, retry with the range 51061327-51062315'
+- '[launches] events:v4: chunk reduced to 2500 after provider error: application error:
+  -32602: query exceeds max results 20000, retry with the range 51061327-51062315'
+- '[launches] events:v4: chunk reduced to 1250 after provider error: application error:
+  -32602: query exceeds max results 20000, retry with the range 51061327-51062315'
+- '[launches] events:v4: chunk reduced to 625 after provider error: application error:
+  -32602: query exceeds max results 20000, retry with the range 51061327-51062315'
+- '[launches] events:v4: chunk reduced to 312 after provider error: application error:
+  -32602: query exceeds max results 20000, retry with the range 51083202-51083563'
+- '[launches] events:v4: 100 ranges read so far, 626 requests, 638 MB, 282 MB resident'
+- '[launches] events loaded for 2987 pools: 222015 logs, 511 MB resident'
+- '[launches] launches with an ETH leg: {''uniswap_v2'': 490, ''uniswap_v3'': 156,
+  ''uniswap_v4'': 2366}; traded (>= 1 swap): {''uniswap_v2'': 485, ''uniswap_v3'':
+  137, ''uniswap_v4'': 1722}; tokens needing decimals: 2224'
+- '[launches] normalized 220905 rows for 2344 pools, 764 MB resident'
+- '[launches] 8453:uniswap_v3:0x14f7b72c501fa7d492879d52e76f3bcc9c15e45c: demoted
+  from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v3:0x4196127b46afbaf51ad6d35d87d3595ff74677f7: demoted
+  from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v3:0xc5e024482f5acca3d329f7d86df8556c1c6096be: demoted
+  from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x02073ebb22539a5bee31cd5730b84074d468fff64e44fd1ba2fd7e28bff6f5dc:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x098071677ddb9beeb4eea3fe33051694fe0adee746a87cccc13bde614acaf075:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 3 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x09a0eb3dd8a499b29203cb0f90a28a1498620121e255705f8cc79c29e9a752a9:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x0b6ca5caa806fa7642fd730e2f6f2f269a5dd921178a44e1519057822dde4497:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x0be2bbcf0d858bb09d3747791f8b81c0e2c1203a1d6236048a9fd4b591bac592:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x1288b7265ee5ea5dec1f26897409f961d0cccd3d97bd12aaf5ee6a9e7680caf5:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x160e3e763cdccab9df8a6e21b876efc7f907a0c856116568ba19feeff475987f:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x260bc979738e339417e1f75fb771e5b1e856b07958acd2e399a83a063471e371:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 7 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x2bc0991b893aee2b8f84fb87f19c888960231f725e4f817b433ac302a66bcb6b:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 4 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x308f14754a34c6c8ffdf82a3d0938a902a5b6f4dfad7aef101d6b40616903fa8:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x3d9c91c7e2de24b66dd32d77320a634e8ab88df05196d00049506be7fd6c16b4:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x5ce85b5ae101731eabead8fde07396bb4f12fcf4426115ad864a6018eb174fc3:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x6437b76d3444b925941eccf99577fc7a82acd74cec4790a89a4fdf4f03d1b228:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x672091414bbc54a7e60836491135e9b4c3bd217aa823c4a29e6dddb0b48bc8fb:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x675fcdff8271d5294ecc16ff813f37987bef0feba7a00c2fd093451aacaa426d:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x69550d670ea88f67f8258c4cb50cee454d4ac6ea263de85a41c18754c29a2bd1:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x6b4ca655550d1c92ce63976cfe0acc5c54de5a5e7d617221797e95e8506b71af:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x7b521ade7aa63e645c4330d7aea310ee264526981276177da7fe812c6c6e993b:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags [''REFERENCE_MODIFY_INVALID'']'
+- '[launches] 8453:uniswap_v4:0x7ce4da70e678c409bc45b03f13c7bdb326438a416913f4bf82bcb80ef2037d8f:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x87c91f48d4041513707d951ea3b6d9532376e5cd0d4d0637478b54aee830d7a2:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x8fc0ea09c3d0ab8509f007b2295493df5eb3f791c4bbea85287fc54652cca4ac:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x906d3563383487441a12f51cfa40572c187ba07831cfa0372e1d19fdb90698e5:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 12 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x947a053556e3dff5dce413fbe8d6597b12c1ffbb712ce4b691b186e3c1e87ba6:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x9e9501fe7ce6152a08c01bd43c25b074422378328f17920673e76d25e9a88523:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0xa4dc8f05b69785f1899c66610b966632cbf733e00e5dfcccee7712a59c55bd34:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0xa8873aaf8225481e8fe3eef00e7f6b8920da3a021e6313b50d8d0f77ebd7ea27:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0xb2e56c18279a1aeac97931ca39ee6dbcfc6d134fe90c002ec20d14e9b2bbae8c:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 2 material unexplained deltas; fidelity flags [''REFERENCE_MODIFY_INVALID'']'
+- '[launches] 8453:uniswap_v4:0xb478e70112247f727d91465505518be489ae110d9290945b8957c3c41cdd0535:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0xba524d79eed72d2e021ed55be24d9d628e4eb8104d170d9e6fdfb8f308e18e34:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 3 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0xc2f38580b64d99b31f4cbf5f77719cd06043c9cc75b355d4e160fcafc58da4f7:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0xc37e87bf47094db2439d49626479fcf45a3a2cd50772d7ce3cc160ef0e7f6789:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0xc49f83dcbf3e3c46da77a5472aba2a40c0d87c05ee813e6c85ab7969d98bdd2a:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0xc615a94a0e5851b5e801eca0dd19bc85c9277c11f5d40bb765c6d0152cc1706d:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0xcd337238127d72f7067a6dcc533a8af514bd735ea586dadbc0f7f21ffac4f731:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0xcd4c0537a63cc6b1ec61e5ad95fd442870600d7e37a6057a513f1faf58dd9fd4:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 2 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0xd2dc9cb37805497f0558c17946696baa3ab47ca5149300048c5ec49544425254:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0xdda57f0f3c5f3608aa95ab422301318901865d2a16f80548ddc03e0cf41ebdea:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0xe4fe5430e6e335f752020dc7d0e6bc71c36633396a2306d3d0ba5a0153c56066:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0xed96c989a4268fe3196a33c593bad975aeb0af6f1bd36da56a64b00464a9d656:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 3 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0xf252b72f7f47154c95bae278cb7871a71509ef53e0cad34a0845e3010008ec1c:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 2 material unexplained deltas; fidelity flags none'
+- '[launches] gas: median 843267922820 wei per swap from 200 of 200 sampled receipts
+  (168713 recorded swap txs); L1 data fee share 0.0'
