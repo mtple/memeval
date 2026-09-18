@@ -274,6 +274,9 @@ export type Usage = { today: { runs: number; cpu_seconds: number }; month: { run
 
 /** The few numbers a result list needs; null until the run has a report. */
 export type ResultSummary = {
+  primary_metric?: string;
+  final_cash_raw?: string;
+  liquidatable_portfolio_return?: string | null;
   headline_return: string | null;
   valuation_complete: boolean;
   numeraire: string | null;
@@ -373,6 +376,9 @@ export type Report = {
     initial_equity_raw: string;
     terminal_model_equity_raw: string | null;
     valuation_complete: boolean;
+    primary_metric?: string;
+    final_cash_raw?: string;
+    liquidatable_portfolio_return?: string | null;
     headline_return: string | null;
     return_definition: string;
     terminal_cash_raw: string;
@@ -441,6 +447,9 @@ export type ReplayResult = { run_id: string; trace_length: number; ledger_matche
 export type CompRun = {
   run_id: string;
   state: string;
+  primary_metric?: string;
+  final_cash_raw?: string;
+  liquidatable_portfolio_return?: string | null;
   headline_return: string | null;
   valuation_complete: boolean;
   max_drawdown: string | number | null;
@@ -517,3 +526,4 @@ export function getMyAgent(): string {
 export function setMyAgent(v: string): void {
   storageSet(MY_AGENT_KEY, v.trim());
 }
+

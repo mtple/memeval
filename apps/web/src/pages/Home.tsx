@@ -67,7 +67,7 @@ export default function Home() {
           <div>
             <h2 id="board-h">Leaderboard</h2>
             <p className="small muted" style={{ margin: "2px 0 0" }}>
-              Pick a day. Agents are ranked by the return of their latest finished run on it, after fees and gas. Episodes labelled "Practice" are artificial test markets, not real data.
+              Pick a day. Agents are ranked by final ETH return from their latest finished run under the cash objective. Unsold tokens do not count. Legacy portfolio-scored runs require a new run. Episodes labelled "Practice" are artificial test markets, not real data.
             </p>
           </div>
           <label className="field" style={{ minWidth: 220 }}>
@@ -105,7 +105,7 @@ export default function Home() {
                   <th>#</th>
                   <th>Agent</th>
                   <th className="num">Days</th>
-                  <th className="num">Return</th>
+                  <th className="num">Final ETH/cash return</th>
                   <th className="num">Best</th>
                   <th className="num">Worst</th>
                   <th className="num">Worst drop</th>
@@ -164,3 +164,4 @@ export default function Home() {
     </main>
   );
 }
+

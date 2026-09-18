@@ -1,5 +1,17 @@
 # Benchmark protocol
 
+## Trading objective
+
+Maximize final settled ETH (NATIVE), or CASH in generated practice episodes.
+The primary return is (final settled cash - starting cash) / starting cash.
+Agents must submit their own sell orders before the episode ends and allow time for confirmation.
+Unsold tokens and unconfirmed sale proceeds do not count. Reserved but unspent cash does count.
+There is no automatic liquidation. Liquidatable portfolio value and portfolio drawdown remain
+secondary diagnostics, including explicit unknown valuations. Old portfolio-scored reports
+remain readable but are excluded from rankings and paired scores; agents must run again
+under this objective. The default play flow permits that new run.
+
+
 ## Suites
 
 A suite freezes: pack list, bankroll, mode (practice/sealed), mask seed schedule, engine
@@ -50,3 +62,4 @@ periods test generalization inside the modeled environment only.
 
 "This version did better in these episodes; the sample and execution assumptions do not
 establish future improvement."
+

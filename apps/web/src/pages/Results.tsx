@@ -63,9 +63,9 @@ export default function Results() {
                 unit: unit ?? "",
                 decimals: dec ?? 0,
                 initialRaw: R.outcome.initial_equity_raw,
-                terminalRaw: R.outcome.terminal_model_equity_raw,
+                terminalRaw: R.outcome.primary_metric === "final_cash_return_v1" ? R.outcome.final_cash_raw ?? null : R.outcome.terminal_model_equity_raw,
                 headlineReturn: R.outcome.headline_return,
-                valuationComplete: R.outcome.valuation_complete,
+                valuationComplete: R.outcome.primary_metric === "final_cash_return_v1" || R.outcome.valuation_complete,
                 orders: R.activity.orders_total,
                 fills: R.activity.confirmed_fills,
                 gasRaw: R.costs.gas_total_raw,
@@ -73,9 +73,10 @@ export default function Results() {
               })}
             </p>
             <div className="metrics" style={{ marginTop: 12 }}>
+              <M label="Final settled ETH/cash" value={fmtRaw(R.outcome.final_cash_raw ?? null, dec)} sub={unit} />
               <M label="Started with" value={fmtRaw(R.outcome.initial_equity_raw, dec)} sub={unit} />
-              <M label="Ended with" value={R.outcome.terminal_model_equity_raw === null ? "could not be valued" : fmtRaw(R.outcome.terminal_model_equity_raw, dec)} sub={R.outcome.terminal_model_equity_raw === null ? undefined : unit} warn={R.outcome.terminal_model_equity_raw === null} />
-              <M label="Return after costs" value={R.outcome.headline_return === null ? "not stated" : fmtReturn(R.outcome.headline_return)} warn={R.outcome.headline_return === null} />
+              <M label={R.outcome.primary_metric === "final_cash_return_v1" ? "Liquidatable portfolio value (secondary)" : "Legacy final portfolio value"} value={R.outcome.terminal_model_equity_raw === null ? "could not be valued" : fmtRaw(R.outcome.terminal_model_equity_raw, dec)} sub={R.outcome.terminal_model_equity_raw === null ? undefined : unit} warn={R.outcome.terminal_model_equity_raw === null} />
+              <M label={R.outcome.primary_metric === "final_cash_return_v1" ? "Final ETH/cash return" : "Legacy portfolio return (unranked)"} value={R.outcome.headline_return === null ? "not stated" : fmtReturn(R.outcome.headline_return)} warn={R.outcome.headline_return === null} />
               <M label="Worst drop from a peak" value={R.risk.max_drawdown === null ? "not supportable" : fmtPct(R.risk.max_drawdown)} warn={R.risk.max_drawdown === null} />
               <M label="Orders filled" value={`${R.activity.confirmed_fills} of ${R.activity.orders_total}`} sub={R.activity.reverted || R.activity.expired ? `${R.activity.reverted} reverted, ${R.activity.expired} expired` : undefined} />
               <M label="Gas paid" value={fmtRaw(R.costs.gas_total_raw, dec)} sub={unit} />
@@ -102,7 +103,7 @@ export default function Results() {
               ))}
               <li>
                 <strong>Valuation.</strong>{" "}
-                {R.outcome.valuation_complete ? "Every holding could be priced by selling it through the model's own pools, so the final value is complete." : "Some holdings could not be priced, so the final value and the return are not stated."}
+                {R.outcome.valuation_complete ? "Every holding could be priced by selling it through the model's own pools, so the final value is complete." : "Some holdings could not be priced, so liquidatable portfolio value is unknown. Final ETH/cash return does not depend on unsold token values."}
               </li>
             </ul>
             {R.coverage_and_assumptions.limitations?.length > 0 && (
@@ -349,3 +350,4 @@ function InvTable({ rows }: { rows: { asset_id: string; quantity_raw: string; re
     </div>
   );
 }
+

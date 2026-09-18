@@ -11,7 +11,7 @@ from decimal import Decimal
 from statistics import mean, median
 from typing import Any
 
-COMPARISON_VERSION = "paired_comparison_v1"
+COMPARISON_VERSION = "paired_comparison_v2"
 
 
 def _d(s: str | None) -> Decimal | None:
@@ -28,6 +28,8 @@ def pair_runs(runs_a: list[dict[str, Any]], runs_b: list[dict[str, Any]]) -> dic
         by_pack_b.setdefault(r["pack_id"], []).append(r)
     packs = sorted(set(by_pack_a) | set(by_pack_b))
     warnings: list[str] = []
+    if any((r.get("report") or {}).get("outcome", {}).get("primary_metric") != "final_cash_return_v1" for r in runs_a + runs_b if r.get("report")):
+        warnings.append("LEGACY_PORTFOLIO_SCORES_EXCLUDED_RERUN_REQUIRED")
     per_episode: list[dict[str, Any]] = []
     diffs: list[Decimal] = []
     fee_diffs: list[Decimal] = []
@@ -61,7 +63,8 @@ def pair_runs(runs_a: list[dict[str, Any]], runs_b: list[dict[str, Any]]) -> dic
                     {
                         "run_id": r["run_id"],
                         "state": r["state"],
-                        "headline_return": oc.get("headline_return"),
+                        "primary_metric": oc.get("primary_metric", "legacy_portfolio_return"),
+                        "headline_return": oc.get("headline_return") if oc.get("primary_metric") == "final_cash_return_v1" else None,
                         "valuation_complete": oc.get("valuation_complete"),
                         "max_drawdown": rep.get("risk", {}).get("max_drawdown"),
                         "gas_total_raw": rep.get("costs", {}).get("gas_total_raw"),
@@ -136,3 +139,4 @@ def pair_runs(runs_a: list[dict[str, Any]], runs_b: list[dict[str, Any]]) -> dic
         },
         "statement": "One version did better in these episodes or it did not; the sample and execution assumptions do not establish future improvement. No significance test or promotion verdict is computed.",
     }
+

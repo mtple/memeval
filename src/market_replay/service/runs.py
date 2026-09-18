@@ -865,6 +865,9 @@ class RunManager:
         costs = rep.get("costs", {}) or {}
         unresolved = rep.get("unresolved", {}) or {}
         return {
+            "primary_metric": outcome.get("primary_metric", "legacy_portfolio_return"),
+            "final_cash_raw": outcome.get("final_cash_raw"),
+            "liquidatable_portfolio_return": outcome.get("liquidatable_portfolio_return"),
             "headline_return": outcome.get("headline_return"),
             "valuation_complete": bool(outcome.get("valuation_complete", False)),
             "numeraire": outcome.get("numeraire"),
@@ -1083,7 +1086,7 @@ class RunManager:
         out = []
         for r in self.real_weeks():
             mine = self.store.runs(agent_id=agent_id, pack_id=r["pack_id"])
-            done = [x for x in mine if x["state"] == str(RunState.COMPLETED)]
+            done = [x for x in mine if x["state"] == str(RunState.COMPLETED) and (self._result_summary(x.get("report_json")) or {}).get("primary_metric") == "final_cash_return_v1"]
             open_ = [x for x in mine if x["state"] not in TERMINAL]
             status = "finished" if done else "running" if open_ else "new"
             out.append({"pack_id": r["pack_id"], "pack_name": r["name"], "label": _episode_label(r), "status": status, "run_id": (done or open_ or [{}])[-1].get("run_id")})
@@ -1124,7 +1127,7 @@ class RunManager:
                     return self.play(agent_token=agent_token, suite_id="generated-practice-v1", client_key=client_key)
                 raise ApiError(409, "no episode is available on this server yet; pass suite_id or pack_id", "NO_WEEKS")
             for r in weeks:
-                done = [x for x in self.store.runs(agent_id=agent_id, pack_id=r["pack_id"]) if x["state"] == str(RunState.COMPLETED)]
+                done = [x for x in self.store.runs(agent_id=agent_id, pack_id=r["pack_id"]) if x["state"] == str(RunState.COMPLETED) and (self._result_summary(x.get("report_json")) or {}).get("primary_metric") == "final_cash_return_v1"]
                 if done:
                     skipped.append({"pack_id": r["pack_id"], "pack_name": r["name"], "reason": "already finished by this agent", "run_id": done[-1]["run_id"]})
                     continue
@@ -1164,7 +1167,7 @@ class RunManager:
         return cats
 
     def leaderboard(self, *, suite_id: str | None = None, pack_id: str | None = None) -> dict[str, Any]:
-        """Agents ranked by median return after modeled costs over their latest completed, fully valued
+        """Agents ranked by median return after modeled costs over their latest completed final-cash-scored
         run per episode. Ranking never claims an edge: the footnote travels with the table."""
         if suite_id:
             s = self.suites.get(suite_id)
@@ -1192,7 +1195,7 @@ class RunManager:
             if row["state"] != str(RunState.COMPLETED) or not row["report_json"]:
                 continue
             summ = self._result_summary(row["report_json"])
-            if not summ or not summ["valuation_complete"] or summ["headline_return"] is None:
+            if not summ or summ["primary_metric"] != "final_cash_return_v1" or summ["headline_return"] is None:
                 continue
             key = (row["agent_id"], row["pack_id"])
             if key not in best or (row["finished_at"] or "") > (best[key]["finished_at"] or ""):
@@ -1234,7 +1237,7 @@ class RunManager:
             "category": category,
             "categories": self.leaderboard_categories(),
             "rows": rows,
-            "note": "Ranked by median return after modeled costs over each agent's latest completed, fully valued run per episode. Agents that covered every episode rank above partial coverage. Generated episodes are artificial; a high rank is not an edge and predicts nothing.",
+            "note": "Ranked by median final ETH/cash return after modeled costs over each agent's latest completed final-cash-scored run per episode. Agents that covered every episode rank above partial coverage. Unsold tokens do not count. Legacy portfolio-scored runs require a new run and are excluded. Generated episodes are artificial; a high rank is not an edge and predicts nothing.",
         }
 
     # ------------------------------------------------------------------ comparisons / studies
@@ -1363,3 +1366,4 @@ def _suite_label(s: SuiteDef) -> str:
     n = len(s.packs)
     weeks = all(name.startswith("gen_week_") for name in s.packs)
     return f"Practice: all {n} artificial weeks" if weeks else f"Practice: all {n} episodes ({s.suite_id})"
+

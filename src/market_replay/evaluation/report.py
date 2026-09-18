@@ -1,8 +1,8 @@
-"""Build the v1 run report from a finished (or failed) Session.
+"""Build the v2 run report from a finished (or failed) Session.
 
 Everything is derived from the simulator's ledger, orders, equity grid and trace.
-Incomplete valuations are reported as ``null`` headline values, never silently
-excluded. Nothing here produces a 0-100 score, percentile or recommendation.
+Incomplete valuations are reported as null secondary portfolio values; the primary
+return counts settled cash regardless of whether unsold tokens can be valued. Nothing here produces a 0-100 score, percentile or recommendation.
 """
 
 from __future__ import annotations
@@ -11,12 +11,13 @@ from collections import Counter
 from fractions import Fraction
 from typing import Any
 
+from ..broker.ledger import AGENT_AVAILABLE, AGENT_RESERVED
 from ..domain.quantities import fraction_to_decimal_str
 from ..domain.status import OrderState
 from ..engine.session import Session
 
 ENGINE_VERSION = "market_replay_engine_v1"
-REPORT_VERSION = "run_report_v1"
+REPORT_VERSION = "run_report_v2"
 
 
 def _dec(fr: Fraction | None, places: int = 8) -> str | None:
@@ -59,6 +60,10 @@ def build_report(session: Session, *, run_meta: dict[str, Any], role: str = "adm
     initial = sim.bankroll_raw
     term = sim.value_portfolio()
     terminal_equity = term.equity
+    # Count settled cash only. Reserved cash still belongs to the agent; pending
+    # sale proceeds do not count until confirmed. Unsold tokens earn no primary credit.
+    final_cash = sim.ledger.balance(AGENT_AVAILABLE, numeraire) + sim.ledger.balance(AGENT_RESERVED, numeraire)
+    cash_return = Fraction(final_cash - initial, initial) if initial > 0 else None
     net_return = None
     if terminal_equity is not None and initial > 0:
         net_return = Fraction(terminal_equity - initial, initial)
@@ -127,8 +132,11 @@ def build_report(session: Session, *, run_meta: dict[str, Any], role: str = "adm
             "initial_equity_raw": str(initial),
             "terminal_model_equity_raw": None if terminal_equity is None else str(terminal_equity),
             "valuation_complete": term.complete,
-            "headline_return": _dec(net_return, 8),
-            "return_definition": "(terminal_model_equity - initial_equity) / initial_equity; costs already in balances are not subtracted again",
+            "primary_metric": "final_cash_return_v1",
+            "final_cash_raw": str(final_cash),
+            "headline_return": _dec(cash_return, 8),
+            "liquidatable_portfolio_return": _dec(net_return, 8),
+            "return_definition": "(final settled cash - initial equity) / initial equity; unsold tokens and unconfirmed proceeds excluded; modeled costs already in balances",
             "terminal_cash_raw": str(term.cash_available + term.cash_reserved + term.cash_pending),
             "terminal_priced_inventory_raw": str(term.priced_value),
             "terminal_liquidation_gas_raw": str(term.liquidation_gas),
@@ -217,3 +225,4 @@ def build_report(session: Session, *, run_meta: dict[str, Any], role: str = "adm
     if role != "admin":
         report["versions"]["pack_id"] = "hidden"
     return report
+

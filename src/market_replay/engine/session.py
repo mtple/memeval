@@ -434,6 +434,7 @@ class Session:
         p = self.params
         return {
             "session_id": self.session_id,
+            "objective": "Maximize final settled ETH (NATIVE), or CASH in practice episodes. Submit your own sells before the episode ends and allow time for confirmation. Unsold tokens and unconfirmed sale proceeds do not count toward final cash return; liquidatable portfolio value is secondary. session.finish does not sell holdings for you.",
             "mode": self.mode,
             "clock_ms": self.now,
             "episode": {
@@ -895,7 +896,7 @@ class Session:
             "terminal_portfolio": self.portfolio(),
             "unresolved_orders": unresolved,
             "valuation_complete": v.complete,
-            "note": "Terminal reporting applies the fixed valuation policy; no forced last-price sale.",
+            "note": "Primary result is final settled ETH/cash return. Unsold holdings receive no primary credit; their liquidatable value is reported separately. No automatic sale.",
         }
         self.terminal = summary
         return summary
@@ -917,3 +918,4 @@ def replay_trace(pack: Pack, trace: list[dict[str, Any]], *, bankroll_raw: int, 
     for r in trace:
         s.handle(r["request_id"], r["tool"], r.get("arguments") or {})
     return s
+

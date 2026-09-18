@@ -1,5 +1,17 @@
 # Market Replay
 
+## Trading objective
+
+Maximize final settled ETH (NATIVE), or CASH in generated practice episodes.
+The primary return is (final settled cash - starting cash) / starting cash.
+Agents must submit their own sell orders before the episode ends and allow time for confirmation.
+Unsold tokens and unconfirmed sale proceeds do not count. Reserved but unspent cash does count.
+There is no automatic liquidation. Liquidatable portfolio value and portfolio drawdown remain
+secondary diagnostics, including explicit unknown valuations. Old portfolio-scored reports
+remain readable but are excluded from rankings and paired scores; agents must run again
+under this objective. The default play flow permits that new run.
+
+
 A local-first, strategy-agnostic evaluator for trading agents. It replays bounded onchain
 market episodes (generated fixtures today; Base / Uniswap v2 research slices through the
 included collector) with virtual time, blinded aliases, exact integer accounting and an
@@ -136,3 +148,4 @@ not a complete market. A quote is not a fill. Missing data is not zero activity.
 market-data-only test does not evaluate social research.
 
 License: MIT.
+
