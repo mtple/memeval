@@ -5,7 +5,6 @@ import { RoleProvider, useRole } from "./role";
 import { Badge } from "./ui";
 import Home from "./pages/Home";
 import ResultsFeed from "./pages/ResultsFeed";
-import NewRun from "./pages/NewRun";
 import Episodes from "./pages/Episodes";
 import Agents from "./pages/Agents";
 import Runs from "./pages/Runs";
@@ -183,9 +182,6 @@ function Shell({ conn, recheck }: { conn: Conn; recheck: () => void }) {
             {label}
           </NavLink>
         ))}
-        <NavLink to="/new" className={({ isActive }) => `btn btn-small btn-primary btn-nav ${isActive ? "active" : ""}`}>
-          + New run
-        </NavLink>
         {conn.state === "ok" && <SignIn onChange={recheck} />}
       </nav>
       {conn.state === "down" ? (
@@ -199,7 +195,6 @@ function Shell({ conn, recheck }: { conn: Conn; recheck: () => void }) {
       ) : (
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/new" element={<NewRun />} />
           <Route path="/episodes" element={<Episodes />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/runs" element={<Runs />} />

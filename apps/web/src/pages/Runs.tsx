@@ -37,9 +37,6 @@ export default function Runs() {
     <main className="stack">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <h1 style={{ margin: 0 }}>All runs</h1>
-        <Link to="/new" className="btn btn-small btn-primary">
-          + New run
-        </Link>
       </div>
       {usage.data && (
         <p className="muted small">
@@ -67,7 +64,7 @@ export default function Runs() {
         {runs.loading && !runs.data && <Loading what="runs" />}
         {runs.data && runs.data.length === 0 && (
           <EmptyState title="No runs yet.">
-            <Link to="/new">Start one</Link>: name your agent, pick an episode, get a token.
+            <Link to="/">Give an agent the join link</Link> and its runs appear here.
           </EmptyState>
         )}
         {runs.data && runs.data.length > 0 && (

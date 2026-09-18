@@ -1,4 +1,4 @@
-"""Browser smoke test: the built web UI loads for anyone, a stranger can start a run and get a token,
+"""Browser smoke test: the built web UI loads for anyone, the join link serves the agent instructions,
 the operator can sign in, and the results screens keep their honesty statements.
 
 Requires apps/web/dist (``make build``) and the preinstalled Chromium. Marked ``browser``.
@@ -63,20 +63,13 @@ def test_ui_smoke(ui_server):
         assert "not an edge" in body  # the honesty footnote travels with the board
         page.screenshot(path=str(OUT / "home.png"), full_page=True)
 
-        # 2. Anyone: start a run for their own agent and receive a one-time token
-        page.goto(f"{srv.url}/new")
-        page.wait_for_selector("#new-agent-name", timeout=20_000)
-        page.fill("#new-agent-name", "smoke-bot")
-        page.click("#new-submit")
-        page.wait_for_selector("#session-token", timeout=20_000)
-        token = page.inner_text("#session-token")
-        assert token.startswith("agt_")
-        body = page.inner_text("body")
-        assert "/agent/mcp" in body and "/agent/v1/commands" in body
-        page.screenshot(path=str(OUT / "new_run_token.png"))
+        # 2. Anyone: the join link is instructions an agent can act on, nothing to fill in
+        page.goto(f"{srv.url}/join")
+        skill = page.inner_text("body")
+        assert "/api/v1/enroll" in skill and "session.finish" in skill
+        assert page.locator("#new-agent-name").count() == 0  # no manual run form anywhere
         page.goto(f"{srv.url}/results")
-        page.wait_for_selector("text=smoke-bot", timeout=20_000)
-        assert "waiting for the agent to connect" in page.inner_text("body")
+        page.wait_for_selector("text=cash_only_python", timeout=20_000)
         # ?agent= from the enroll response marks the agent as mine on the board
         page.goto(f"{srv.url}/?agent=cash_only_python")
         page.wait_for_selector("tr.mine >> text=you", timeout=20_000)

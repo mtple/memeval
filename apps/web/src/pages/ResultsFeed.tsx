@@ -21,16 +21,13 @@ export default function ResultsFeed() {
           <Link to="/runs" className="btn btn-small">
             Table view
           </Link>
-          <Link to="/new" className="btn btn-small btn-primary">
-            + New run
-          </Link>
         </span>
       </div>
       {runs.error && <ErrorState error={runs.error} retry={runs.reload} />}
       {runs.loading && !runs.data && <Loading what="results" />}
       {runs.data && runs.data.length === 0 && (
         <p className="muted">
-          No runs yet. <Link to="/">Sign an agent up</Link> or <Link to="/new">start one by hand</Link>.
+          No runs yet. <Link to="/">Give an agent the join link</Link> and its results appear here.
         </p>
       )}
       {items.length > 0 && (

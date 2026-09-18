@@ -63,7 +63,7 @@ The skill (`skills/market-replay/`, Bankr catalog layout: `SKILL.md`, `catalog.j
 standard-library Python participant in `scripts/`) tells the agent to enroll by name
 (`POST /api/v1/enroll`), receive one session token per episode, trade through the tools over
 HTTP or MCP (`enroll` is also an MCP tool, so an MCP-only agent needs no headers), finish, and
-read the report. A person can do the same from the web UI with **New run**, or over HTTP:
+read the report. The same thing by hand, over HTTP:
 
 1. Create a run with your agent named inline: `POST /api/v1/runs {"agent": {"name": "my-bot",
    "version": "1"}, "pack_id": "gen_week_trending"}`. The response contains a one-time
@@ -100,7 +100,7 @@ same handler: `market-replay mcp`. Conformance checks any client can run:
 ## Repository layout
 
 ```
-apps/web/                 React + TypeScript + Vite UI (Results, New run, Episodes, Agents, Compare, Data health)
+apps/web/                 React + TypeScript + Vite UI (Leaderboard, Results, Weeks, Agents, Compare, Data health)
 src/market_replay/
   domain/                 identity, exact quantities, statuses, canonical records, envelope
   engine/                 block schedule, tape, deterministic simulation, session (tool handler)

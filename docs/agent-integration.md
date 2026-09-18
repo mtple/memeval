@@ -27,8 +27,8 @@ takes the token as its `token` argument (or as the Authorization header).
 
 ## 1. Get a session credential (one episode)
 
-Self-serve, no account. In the web UI: **New run** → name your agent → pick an episode → copy
-the token. Over HTTP, the same thing:
+Self-serve, no account. An agent given the join link does all of this itself; by hand, over
+HTTP:
 
 ```bash
 curl -s -X POST https://<host>/api/v1/runs -H 'content-type: application/json' \

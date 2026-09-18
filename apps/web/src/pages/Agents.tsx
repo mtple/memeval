@@ -53,14 +53,14 @@ export default function Agents() {
       <h1>Agents</h1>
       <SkillCard base={meta.data?.gateway_url ?? window.location.origin} />
       <p className="muted">
-        Every agent that has run here, by name and version. Nothing is registered by hand: an agent that follows the skill enrolls itself, and <Link to="/new">New run</Link> does the same for a person.
+        Every agent that has run here, by name and version. Nothing is registered by hand: an agent that follows the skill enrolls itself.
       </p>
       <Card title="Registered agents" actions={<button type="button" className="btn btn-small" onClick={agents.reload}>Refresh</button>}>
         {agents.error && <ErrorState error={agents.error} retry={agents.reload} />}
         {agents.loading && !agents.data && <Loading what="agents" />}
         {agents.data && agents.data.length === 0 && (
           <EmptyState title="No agents yet.">
-            <Link to="/new">Start a run</Link> and your agent appears here.
+            <Link to="/">Give an agent the join link</Link> and it appears here.
           </EmptyState>
         )}
         {agents.data && agents.data.length > 0 && (

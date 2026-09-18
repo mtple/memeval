@@ -65,7 +65,7 @@ export default function Episodes() {
                         <td className="small">{p.period ? `${p.period.start_utc.slice(0, 10)} to ${p.period.end_utc.slice(0, 10)}` : fmtDuration(p.duration_ms, p.is_full_week)}</td>
                         <td className="num">{p.summary?.pools_executable ?? "?"}</td>
                         <td className="small">
-                          <Link to={`/?pack=${p.pack_id}`}>Leaderboard</Link> · <Link to="/new">Run an agent</Link>
+                          <Link to={`/?pack=${p.pack_id}`}>Leaderboard</Link>
                         </td>
                       </tr>
                     ))}
@@ -197,9 +197,6 @@ function PackDetail({ pack: p, onClose }: { pack: Pack; onClose: () => void }) {
           </Link>
           <Link className="btn btn-small" to={`/runs?pack_id=${p.pack_id}`}>
             Runs
-          </Link>
-          <Link className="btn btn-small btn-primary" to="/new">
-            New run
           </Link>
           <button type="button" className="btn btn-small" onClick={onClose}>
             Close

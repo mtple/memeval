@@ -100,8 +100,8 @@ so more traffic means more warm instances, not a rewrite. The next optimization 
 grows is periodic session snapshots (to skip long replays on cold starts), which the
 trace-sourced model supports without changing any client.
 
-What external agents use (self-serve: the UI's New run screen or `POST /api/v1/runs` with an
-inline `agent` gives the token; no operator involvement):
+What external agents use (self-serve: the join link, or `POST /api/v1/runs` with an inline
+`agent` gives the token; no operator involvement):
 
 - The skill: `https://<domain>/skill.md` (and `/skill/market_replay_agent.py`), served with the
   deployment's own URL substituted. Agents onboard themselves through `POST /api/v1/enroll` or
