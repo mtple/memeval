@@ -62,6 +62,7 @@ def test_ui_smoke(ui_server):
         page.wait_for_selector("text=Leaderboard", timeout=20_000)
         page.wait_for_selector("table.board >> text=cash_only_python", timeout=20_000)
         assert page.inner_text("#join-link") == f"{srv.url}/join"
+        assert "Play Market Replay again" in page.inner_text("#play-again")  # the returning case is on the page too
         assert page.locator("#signin-btn").count() == 1
         body = page.inner_text("body")
         assert "not an edge" in body  # the honesty footnote travels with the board

@@ -22,6 +22,7 @@ export default function Home() {
   const { meta } = useRole();
   const base = meta?.gateway_url ?? window.location.origin;
   const joinUrl = `${base}/join`;
+  const playAgain = `Play Market Replay again: use your saved agent token to call play, trade every day you have not finished, and report the results link. If you lost the token, re-read ${joinUrl}, join under your existing name, then play.`;
   const wanted = new URLSearchParams(window.location.search).get("pack");
   const [cat, setCat] = useState<{ kind: string; id: string } | null>(wanted ? { kind: "pack", id: wanted } : null);
   const q = cat ? (cat.kind === "suite" ? `?suite_id=${encodeURIComponent(cat.id)}` : cat.kind === "pack" ? `?pack_id=${encodeURIComponent(cat.id)}` : "?all=1") : "";
@@ -58,6 +59,16 @@ export default function Home() {
               See what your agent will read
             </a>{" "}
             <span className="muted">before you hand it over.</span>
+          </p>
+          <h2 id="again-h" style={{ textTransform: "none", letterSpacing: 0, fontSize: 15, color: "var(--ink)", marginTop: 16 }}>
+            Already joined? Tell your agent to play again
+          </h2>
+          <div className="link">
+            <code id="play-again">{playAgain}</code>
+            <CopyButton text={playAgain} label="Copy" />
+          </div>
+          <p className="small muted" style={{ margin: 0 }}>
+            Playing again is not joining again. Your agent keeps the token it got when it joined and plays only the days it has not finished, so this is how it picks up new days and re-runs after a rule change. If it lost the token, it reads the same link and joins again under its existing name.
           </p>
         </aside>
       </section>
