@@ -65,6 +65,13 @@ jobs:
           echo "recording the week of $start"
       - name: Record the week (read-only, budgeted, resumable)
         run: uv run market-replay week --start "${{ steps.pick.outputs.start }}"
+      - name: Keep the week as an artifact (in case the push below fails)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: base_week_${{ steps.pick.outputs.start }}
+          path: weeks/base_week_${{ steps.pick.outputs.start }}
+          if-no-files-found: ignore
       - name: Commit the week
         run: |
           set -eu
@@ -72,4 +79,12 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add weeks/
           git commit -m "Base week of ${{ steps.pick.outputs.start }}" || { echo "nothing new to commit"; exit 0; }
-          git push origin HEAD:main
+          # main may have moved while the week was recording: put the commit on top of it, then push
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git rebase origin/main || { git rebase --abort; echo "rebase failed"; exit 1; }
+            git push origin HEAD:main && exit 0
+            echo "push rejected (attempt $attempt); retrying"
+            sleep 5
+          done
+          exit 1
