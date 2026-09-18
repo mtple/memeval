@@ -40,6 +40,10 @@ secondary pages).
 
 ## Gas on Base (OP Stack, Fjord/Isthmus era)
 
+Done (first step): every recorded day samples about 200 of its own swap receipts and charges the
+median of `gasUsed * effectiveGasPrice + l1Fee` per fill, one figure for the day, stated in the
+pack's `gas_basis` and `coverage.gas_sample`. The per-block series below is the refinement.
+
 - `fee = gasUsed * (baseFeePerGas + priorityFee) + l1Fee (+ operator fee, 0 on Base as far as
   verified)`, with the Fjord L1 data fee
   `l1Fee = max(100e6, -42585600 + 836500 * fastlzSize) * (l1BaseFeeScalar * l1BaseFee * 16 +
