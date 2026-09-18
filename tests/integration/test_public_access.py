@@ -228,3 +228,29 @@ def test_default_bankroll_is_one_whole_unit_of_the_cash_asset(tmp_path: Path, de
     r2 = c.post("/api/v1/runs", json={"agent": {"name": "b", "version": "1"}, "pack_id": "gen_dev_short", "bankroll_raw": "5"})
     assert r2.status_code == 201 and r2.json()["bankroll_raw"] == "5"
     mgr.close()
+
+
+def test_enrolling_again_adds_only_unfinished_episodes(tmp_path: Path, dev_pack_dir: Path, monkeypatch):
+    """A returning agent plays the new day and not the episodes it already completed."""
+    import market_replay.service.runs as runs_mod
+    from tests.unit.test_engine_clmm import make_cl_pack
+
+    weeks = tmp_path / "weeks"
+    make_cl_pack(weeks / "base_day_2026-09-08")
+    monkeypatch.setattr(runs_mod, "WEEKS_DIR", weeks)
+    mgr = RunManager(data_dir=tmp_path / "a", store_url=str(tmp_path / "store.sqlite"), hosted=True)
+    mgr.register_shipped_weeks()
+    first = mgr.enroll(agent={"name": "turtle", "version": "1"})
+    assert [r["pack_name"] for r in first["runs"]] == ["base_day_2026-09-08"] and first["skipped"] == []
+    token = first["runs"][0]["session_credential"]["token"]
+    mgr.handle_command(token, "r1", "session.describe", {})
+    duration = mgr.handle_command(token, "r2", "session.describe", {}).data["episode"]["duration_ms"]
+    mgr.handle_command(token, "r3", "clock.advance", {"to_ms": duration})
+    assert mgr.handle_command(token, "r4", "session.finish", {}).status == "ok"
+    again = mgr.enroll(agent={"name": "turtle", "version": "1"})
+    assert again["runs"] == [] and [s["pack_name"] for s in again["skipped"]] == ["base_day_2026-09-08"]
+    assert "skipped" in again["note"]
+    # a new version of the name starts fresh
+    v2 = mgr.enroll(agent={"name": "turtle", "version": "2"})
+    assert [r["pack_name"] for r in v2["runs"]] == ["base_day_2026-09-08"]
+    mgr.close()

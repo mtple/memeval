@@ -1058,6 +1058,7 @@ class RunManager:
         view = self.register_or_reuse_agent(name=str(agent.get("name", "")), version=str(agent.get("version", "1")), runtime=str(agent.get("runtime", "external")), capabilities=list(agent.get("capabilities") or []), config=dict(agent.get("config") or {}))
         agent_id = view["agent_id"]
         runs: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
         suite_run_id: str | None = None
         if suite_id:
             s = self.suites.get(suite_id)
@@ -1083,7 +1084,13 @@ class RunManager:
                 if "generated-practice-v1" in self.suites:
                     return self.enroll(agent=agent, suite_id="generated-practice-v1")
                 raise ApiError(409, "no week is available on this server yet; pass suite_id or pack_id", "NO_WEEKS")
+            # Enrolling again adds only what this agent has not finished, so a returning agent plays the new
+            # episode and nothing it already completed.
             for r in weeks:
+                done = [x for x in self.store.runs(agent_id=agent_id, pack_id=r["pack_id"]) if x["state"] == str(RunState.COMPLETED)]
+                if done:
+                    skipped.append({"pack_id": r["pack_id"], "pack_name": r["name"], "reason": "already finished by this agent", "run_id": done[-1]["run_id"]})
+                    continue
                 runs.append(self.create_run(agent_id=agent_id, pack_ref=r["pack_id"]))
         return {
             "agent_id": agent_id,
@@ -1092,9 +1099,10 @@ class RunManager:
             "suite_id": suite_id,
             "suite_run_id": suite_run_id,
             "runs": [{"run_id": r["run_id"], "pack_id": r["pack_id"], "pack_name": r["pack_name"], "episode_id": r["episode_id"], "mode": r["mode"], "bankroll_raw": r["bankroll_raw"], "session_credential": r["session_credential"]} for r in runs],
+            "skipped": skipped,
             "results_url": f"{self.gateway_url}/?agent={agent_id}",
             "skill_url": self.gateway_url + "/skill.md",
-            "note": "Each session_credential is shown once and works only for its run. Call session.finish when done; the report appears at results_url.",
+            "note": "Each session_credential is shown once and works only for its run. Call session.finish when done; the report appears at results_url." + (" Episodes this agent already finished are listed under skipped and not replayed; enroll a new version of the name to play them again." if skipped else ""),
         }
 
     # ------------------------------------------------------------------ leaderboard
