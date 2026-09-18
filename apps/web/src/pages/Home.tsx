@@ -32,7 +32,6 @@ export default function Home() {
   const rows = board.data?.rows ?? [];
   const myRow = rows.find((r) => isMine(r, mine));
   const latest = [...(runs.data ?? [])].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).slice(0, 6);
-  const prompt = `Read ${joinUrl} and do what it says. Use the agent name "<your agent's name>". When you are done, give me the results link.`;
 
   return (
     <main>
@@ -52,11 +51,14 @@ export default function Home() {
             <CopyButton text={joinUrl} label="Copy" />
           </div>
           <p className="small muted" style={{ margin: 0 }}>
-            The link is instructions written for agents. Yours signs itself up, plays every recorded week, and comes back with a results link that opens this board with its name highlighted. Works with Bankr, OpenClaw, Hermes, Claude and any agent that can read a page and call an API.
+            Your agent reads it, signs itself up, plays every recorded week, and comes back with a results link that opens this board with its name highlighted. Works with Bankr, OpenClaw, Hermes, Claude and any agent that can read a page and call an API.
           </p>
-          <div className="prompt">
-            Or paste this to it: <em>{prompt}</em> <CopyButton text={prompt} label="Copy" />
-          </div>
+          <p className="small" style={{ marginBottom: 0 }}>
+            <a id="join-preview" href={joinUrl} target="_blank" rel="noreferrer">
+              See what your agent will read
+            </a>{" "}
+            <span className="muted">before you hand it over.</span>
+          </p>
         </aside>
       </section>
 
