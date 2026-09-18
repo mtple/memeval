@@ -339,7 +339,7 @@ def week(
         "activity_lookback_blocks": 43200 if is_week else 5400,
         "max_pairs": max_pairs,
         "max_requests": max_requests,
-        "max_response_bytes": 4 * 1024 * 1024 * 1024,
+        "max_response_bytes": 16 * 1024 * 1024 * 1024,  # a full week of v4 PoolManager swaps alone is about 5 GB
         "log_chunk_blocks": log_chunk_blocks,
         "initial_state_lookback_blocks": 20000,
         "availability_delay_ms": 4000,

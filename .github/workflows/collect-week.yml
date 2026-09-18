@@ -74,6 +74,7 @@ jobs:
         with:
           name: survey_${{ steps.pick.outputs.start }}
           path: survey.json
+          retention-days: 3
       - name: "Trial only (commit message starts with trial): one day, kept as an artifact, never committed"
         if: startsWith(github.event.head_commit.message, 'trial')
         run: |
@@ -94,6 +95,7 @@ jobs:
             trial/*/validation.json
             trial/*_work/last_result.json
           if-no-files-found: ignore
+          retention-days: 3
       - name: Record the week (read-only, budgeted, resumable)
         if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1'
         run: uv run market-replay week --start "${{ steps.pick.outputs.start }}"
@@ -104,6 +106,7 @@ jobs:
           name: base_week_${{ steps.pick.outputs.start }}
           path: weeks/base_week_${{ steps.pick.outputs.start }}
           if-no-files-found: ignore
+          retention-days: 3
       - name: Commit the week
         if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1'
         run: |
