@@ -997,7 +997,7 @@
       "status": "passed"
     },
     {
-      "detail": "pack_id pack_7b970a2fbd40e1a1627e8142ac1413f5 content-addressed; params hash 05d4a5ca14dd...; validator pack_validator_v1",
+      "detail": "pack_id pack_6f642bc41a59ebc99788b5c7709ca6d2 content-addressed; params hash 664db735d9b9...; validator pack_validator_v1",
       "gate": "reproducibility",
       "status": "passed"
     }
@@ -1006,7 +1006,7 @@
     "Passing gates means the pack meets declared mechanical/data requirements. It does not mean the simulator predicts live profitability."
   ],
   "origin": "historical_reconstruction",
-  "pack_id": "pack_7b970a2fbd40e1a1627e8142ac1413f5",
+  "pack_id": "pack_6f642bc41a59ebc99788b5c7709ca6d2",
   "predictive_validity": "not_established",
   "requested_qualification": "research",
   "resulting_qualification": "research",

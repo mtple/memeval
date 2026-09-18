@@ -1,5 +1,5 @@
 schema_version: 1
-pack_id: pack_7b970a2fbd40e1a1627e8142ac1413f5
+pack_id: pack_6f642bc41a59ebc99788b5c7709ca6d2
 origin: historical_reconstruction
 chain: base
 chain_id: 8453
@@ -72,8 +72,8 @@ data:
     sha256: 68a4723a5d3904f80d3e50ae0ddbd4be76e1ac1e7fe870b3e3bbc56b6bfaff3b
   - filename: tape.jsonl.gz
     schema_id: tape_v1
-    size_bytes: 17412644
-    sha256: 9eb34fdfedab33caa11599c15fa0e0fb016e96d99d3abe504a4eecccb649593b
+    size_bytes: 17410377
+    sha256: 49d9b7bb8000496c9507a8e87787f29e1061fd49cca69ed1ff81a8042a722b74
   - filename: inventory.json
     schema_id: inventory_v1
     size_bytes: 1944829
@@ -81,18 +81,18 @@ data:
   - filename: coverage.json
     schema_id: coverage_v1
     size_bytes: 1013867
-    sha256: bec96895fdf0d2f09fce1837b59b314361b4d8d09acae9248a9ad2b59be91d34
+    sha256: 4b737d6c8b83b2c667c0418453abd8b60de9e87abd6054a94581aa05e65799f1
   coverage_report: coverage.json
   availability_model:
     kind: constant_delay_from_block_time
     delay_ms: 4000
-    acquisition_utc_ms: 1789739082056
+    acquisition_utc_ms: 1789756632747
     note: acquired later than the events; original provider availability not established
   token_behavior_basis: assumed_standard_transfer
 execution:
   model: cpmm_fixed_flow_v1
   parameters_file: execution_params.yaml
-  parameters_hash: 05d4a5ca14dd2bfda5e7d29f7b985077a31b760d8dbf7fb59f4b891872e99e73
+  parameters_hash: 664db735d9b9aa898e121a781c1275a73361f80ae3c2a6ce3b02ed53c440e2f7
 rights:
   storage_basis: public_chain_data_via_configured_rpc; endpoint terms not reviewed
     here
@@ -202,11 +202,11 @@ decision_log:
   -32602: query exceeds max results 20000, retry with the range 51018127-51019361'
 - '[launches] events:v4: chunk reduced to 625 after provider error: application error:
   -32602: query exceeds max results 20000, retry with the range 51018127-51019361'
-- '[launches] events loaded for 3266 pools: 182281 logs, 391 MB resident'
+- '[launches] events loaded for 3266 pools: 182281 logs, 396 MB resident'
 - '[launches] launches with an ETH leg: {''uniswap_v2'': 414, ''uniswap_v3'': 141,
   ''uniswap_v4'': 2721}; traded (>= 1 swap): {''uniswap_v2'': 406, ''uniswap_v3'':
   115, ''uniswap_v4'': 1822}; tokens needing decimals: 2261'
-- '[launches] normalized 178829 rows for 2343 pools, 597 MB resident'
+- '[launches] normalized 178829 rows for 2343 pools, 598 MB resident'
 - '[launches] 8453:uniswap_v3:0x01728e22dfcd8770fb2940843cb201a9229408a2: demoted
   from execution: swap checkpoints did not reconcile under the concentrated-liquidity
   model: 1 material unexplained deltas; fidelity flags none'
@@ -240,3 +240,5 @@ decision_log:
 - '[launches] 8453:uniswap_v4:0xf4351a6d13f0dc961704dd95a774f2a22ee09a3b2c2c204a0915ba1f20f7ef4c:
   demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
   model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] gas: median 903491246323 wei per swap from 200 of 200 sampled receipts
+  (132817 recorded swap txs); L1 data fee share 0.0'
