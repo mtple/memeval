@@ -293,6 +293,7 @@ def week(
     max_requests: int = typer.Option(40000, help="hard RPC request budget"),
     log_chunk_blocks: int = typer.Option(10000, help="eth_getLogs block range per request (halved on provider errors; capped to the provider's limit)"),
     rpc_url_env: str = typer.Option("BASE_RPC_URL", help="name of the environment variable holding the read-only RPC endpoint"),
+    max_minutes: float = typer.Option(0, help="stop cleanly after this many minutes with the checkpoints saved (exit code 3); run the same command again to resume. 0 = no limit"),
 ) -> None:
     """Record one real week of Base trading into weeks/<name>, ready to commit: every pool launched
     inside the week on Uniswap v2, v3 and v4 (the noise an agent has to pick through) plus a fixed
@@ -355,10 +356,16 @@ def week(
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
     typer.echo(f"recording {name}: {cfg['period_start_utc']} to {cfg['period_end_utc']} into {out / name} (working files in {work})", err=True)
     # Response bodies are hashed into the receipt index but not kept: a full week of v4 swaps is 5 GB of them.
-    result = run_collection(cfg_path, out, store_bodies=False)
+    import time
+
+    deadline = time.monotonic() + max_minutes * 60 if max_minutes > 0 else None
+    result = run_collection(cfg_path, out, store_bodies=False, deadline=deadline)
     for line in (result.get("decision_log") or [])[-60:]:
         typer.echo(f"  | {line}", err=True)
     _echo({k: v for k, v in result.items() if k != "decision_log"})
+    if result.get("status") in ("slice_expired", "in_progress_resumable"):
+        typer.echo(f"time slice of {max_minutes:g} minutes expired with the checkpoints saved in {work}; run the same command again to resume", err=True)
+        raise typer.Exit(3)
     if result.get("status") != "pack_built":
         typer.echo(f"no pack: {result.get('status')}: {result.get('reason') or result.get('error')}; the working files are kept, run the same command again to resume", err=True)
         raise typer.Exit(1)

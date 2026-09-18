@@ -86,6 +86,18 @@ def compact_log(lg: dict[str, Any]) -> dict[str, Any]:
     return {k: lg[k] for k in LOG_FIELDS if k in lg}
 
 
+def trim_heap() -> None:
+    """Give freed arena memory back to the OS; a scan allocates and drops tens of MB of parsed JSON per range."""
+    import ctypes
+    import gc
+
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
+
+
 def rss_mb() -> int:
     import resource
 
@@ -152,6 +164,8 @@ def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, 
             cur = to_b + 1
             ck.set(key + ":cursor", cur)
             progress["chunks"] += 1
+            if progress["chunks"] % 50 == 0:
+                trim_heap()
             if progress["chunks"] % 100 == 0:
                 note(f"{key}: {progress['chunks']} ranges read so far, {budget.requests} requests, {budget.response_bytes // (1024 * 1024)} MB, {rss_mb()} MB resident")
         return logs_file
@@ -189,7 +203,8 @@ def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, 
             return anchor_ts + (b - anchor_block) * BLOCK_INTERVAL_MS
 
         # 2. launches inside the period, per venue (frozen by creation alone: no flow is consulted)
-        launches: dict[str, dict[str, dict[str, Any]]] = ck.get("launches") or {}
+        launches_path = work / "launches.json"
+        launches: dict[str, dict[str, dict[str, Any]]] = json.loads(launches_path.read_text()) if launches_path.exists() else {}
         for v in venues:
             if v in launches:
                 continue
@@ -207,7 +222,7 @@ def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, 
                     data = lg["data"]
                     found[lg["topics"][1].lower()] = {"token0": topic_address(lg["topics"][2]), "token1": topic_address(lg["topics"][3]), "fee": word(data, 0), "tick_spacing": sword(data, 1), "hooks": "0x" + data[2:][2 * 64 + 24 : 3 * 64].lower(), "created_block": hex_to_int(lg["blockNumber"]), "tx": lg.get("transactionHash"), "init_log": lg}
             launches[v] = found
-            ck.set("launches", launches)
+            launches_path.write_text(json.dumps(launches))
             note(f"{v}: {len(found)} pools created inside the period")
         quote_legs = {wn} | ({native} if native else set())
         in_scope: dict[str, dict[str, dict[str, Any]]] = {v: {a: m for a, m in launches[v].items() if quote_legs & {m["token0"], m["token1"]}} for v in venues}
