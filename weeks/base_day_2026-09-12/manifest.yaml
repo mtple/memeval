@@ -1,0 +1,221 @@
+schema_version: 1
+pack_id: pack_fbbb98dd0b0774b88b5ac9425896294b
+origin: historical_reconstruction
+chain: base
+chain_id: 8453
+scope_label: base_all_venues_research_v1
+title_private: Base all venues 2026-09-12T00:00:00Z..2026-09-13T00:00:00Z
+period:
+  start_utc: '2026-09-12T00:00:01Z'
+  end_utc: '2026-09-13T00:00:01Z'
+  prehistory_start_utc: '2026-09-11T23:00:01Z'
+  start_utc_ms: 1789171201000
+  end_utc_ms: 1789257601000
+  prehistory_start_utc_ms: 1789167601000
+  duration_ms: 86400000
+  is_full_week: false
+universe:
+  factories:
+  - '0x8909dc15e40173ff4699343b6eb8132c65e18ec6'
+  - '0x33128a8fc17869897dce68ed026d694621f6fdfd'
+  - '0x498581ff718922c3f8e6a244956af099b2652b2b'
+  - '0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6'
+  - '0x33128a8fC17869897dcE68Ed026d694621f6FDfD'
+  - '0x498581fF718922c3f8e6A244956aF099B2652b2b'
+  pool_models:
+  - uniswap_v2_plain
+  - uniswap_v3_cl
+  - uniswap_v4_cl
+  quote_asset: 8453:0x4200000000000000000000000000000000000006
+  selection_rule_version: 'per_venue_v1: uniswap_v2: active_before_window_earliest_created_v1;
+    uniswap_v3: active_before_window_earliest_created_v1; uniswap_v4: active_before_window_earliest_created_v1;
+    all_launches_in_window_v1: all_launches_in_window_v1'
+  indexed_block_ranges:
+  - - 51147727
+    - 51234126
+  - - 51147727
+    - 51234126
+  - - 51147727
+    - 51234126
+  - - 51190927
+    - 51234126
+  excluded_or_unsupported_counts:
+    no_wrapped_native_leg: 1385
+    beyond_max_pairs: 4444
+    missing_state: 0
+    demoted_after_reconciliation: 4
+    no_wrapped_native_leg_or_hooks: 2574
+    fewer_than_min_swaps: 459
+  candidate_count: 10546
+  selected_count: 1684
+  unsupported_count: 3959
+  missing_count: 0
+  description: 'One week across venues: PairCreated cohort from the declared discovery
+    window; wrapped-native pairs only; sampling rule active_before_window_earliest_created_v1
+    frozen before period flows were read. | factory PoolCreated cohort from the declared
+    discovery window; wrapped-native (or native ETH) legs only; sampling rule active_before_window_earliest_created_v1
+    frozen before period flows were read. | PoolManager Initialize cohort from the
+    declared discovery window; wrapped-native (or native ETH) legs only; sampling
+    rule active_before_window_earliest_created_v1 frozen before period flows were
+    read. | Every pool created inside the period on uniswap_v2, uniswap_v3, uniswap_v4
+    with a wrapped-native leg and at least 1 swap(s); discoverable from its creation.
+    No sampling, no look-ahead.'
+data:
+  objects:
+  - filename: assets.jsonl
+    schema_id: assets_v1
+    size_bytes: 565740
+    sha256: 247d906689c32cf473c95e35d727e4f52276576fec63db969481029ebd33a8df
+  - filename: pools.jsonl
+    schema_id: pools_v1
+    size_bytes: 1619274
+    sha256: 295077d46022ca34156a3e512af4af53c589b4c95e209841f0274e4b55f5681a
+  - filename: tape.jsonl.gz
+    schema_id: tape_v1
+    size_bytes: 17485300
+    sha256: 2a54276664b787b3f22d6bb8d54a86f98247d8b979c63695d05e8b3f16c1b7a4
+  - filename: inventory.json
+    schema_id: inventory_v1
+    size_bytes: 1379720
+    sha256: 794571c96bfc66ccd02d8d5ea77ddbc026bcf361642686323e5c58b450697c70
+  - filename: coverage.json
+    schema_id: coverage_v1
+    size_bytes: 733981
+    sha256: 4d048b58499e7498feb4e8458a5c39dc1a9e7e52052cc10bdba1ab478763ea51
+  coverage_report: coverage.json
+  availability_model:
+    kind: constant_delay_from_block_time
+    delay_ms: 4000
+    acquisition_utc_ms: 1789755632250
+    note: acquired later than the events; original provider availability not established
+  token_behavior_basis: assumed_standard_transfer
+execution:
+  model: cpmm_fixed_flow_v1
+  parameters_file: execution_params.yaml
+  parameters_hash: 3b259cedd044ee02098ac64d0413e68aa945d26a2b1f5ccadc2a3fb48ccac606
+rights:
+  storage_basis: public_chain_data_via_configured_rpc; endpoint terms not reviewed
+    here
+  local_processing_basis: research
+  redistribution: not_cleared
+  simulator_serving: local_only
+  notes: Operator-run read-only collection from the operator's own RPC endpoint with
+    a fixed request budget; public chain data; redistribution not cleared.
+validation:
+  report_path: validation.json
+  qualification: research
+  predictive_validity: not_established
+  validator_version: pack_validator_v1
+numeraire: 8453:0x4200000000000000000000000000000000000006
+numeraire_alias: NATIVE
+numeraire_decimals: 18
+generator: {}
+provenance_notes:
+- HISTORICAL RECONSTRUCTION from eth_getLogs. Token sellability/restrictions unknown
+  (assumed standard transfer). Not a full week unless the period says so.
+- HISTORICAL RECONSTRUCTION of every pool launched inside the period (Uniswap v2 pairs,
+  v3 pools, v4 pools) from eth_getLogs. Token sellability/restrictions unknown (assumed
+  standard transfer).
+- HISTORICAL RECONSTRUCTION of uniswap_v3 concentrated-liquidity pools from eth_getLogs.
+  Token sellability/restrictions unknown (assumed standard transfer). Not a full week
+  unless the period says so.
+- HISTORICAL RECONSTRUCTION of uniswap_v4 concentrated-liquidity pools from eth_getLogs.
+  Token sellability/restrictions unknown (assumed standard transfer). Not a full week
+  unless the period says so.
+- cl_swap amounts are pool deltas (positive = paid into the pool); v4 user deltas
+  were negated to match the v3 convention.
+decision_log:
+- '[uniswap_v2] chain id 8453 and factory interface verified against configured deployment
+  reference'
+- '[uniswap_v2] block boundaries fixed: discovery 51147727, prehistory 51189127, period
+  [51190927, 51234127)'
+- '[uniswap_v2] block interval 2000 ms verified on 3 sampled headers; mismatches=0'
+- '[uniswap_v2] activity scan before the window (lookback_blocks=5400): 60 of 803
+  in-scope pairs had at least one swap before prehistory start'
+- '[uniswap_v2] universe frozen: 968 candidates, 60 in scope after rule active_before_window_earliest_created_v1,
+  4 selected'
+- '[uniswap_v2] 0x672be18c2fdb557725a349506bd04b6fd760c8fa: initial state from getReserves
+  at block 51189126'
+- '[uniswap_v2] 0x6731836af66b9322450239193aca06c8fedbf08a: initial state from getReserves
+  at block 51189126'
+- '[uniswap_v2] 0x15cf0e6578db41713a22b411108f75098e3ee1f0: initial state from getReserves
+  at block 51189126'
+- '[uniswap_v2] 0xf93417acb5989b9aa10a7108672294b93c766b05: initial state from getReserves
+  at block 51189126'
+- '[uniswap_v3] chain id 8453 and v3 factory interface verified against configured
+  deployment reference'
+- '[uniswap_v3] block boundaries fixed: discovery 51147727, prehistory 51189127, period
+  [51190927, 51234127)'
+- '[uniswap_v3] block interval 2000 ms verified on 3 sampled headers; mismatches=0'
+- '[uniswap_v3] activity scan before the window (lookback_blocks=5400): 9 of 162 in-scope
+  pools had at least one swap before prehistory start'
+- '[uniswap_v3] universe frozen: 250 candidates, 9 in scope after rule active_before_window_earliest_created_v1,
+  4 selected (0 launches from inside the period)'
+- '[uniswap_v3] 0x82dd34c6631c286cdd1db16f2c232f60e402dd5a: initial price from slot0
+  at block 51189126'
+- '[uniswap_v3] 0x33bf2df504d4ffc81aa78e4802902a4566091251: initial price from slot0
+  at block 51189126'
+- '[uniswap_v3] 0x13f2b2046fd88cb1b3c9ec722eb9f80b6b9862e8: initial price from slot0
+  at block 51189126'
+- '[uniswap_v3] 0x47807c3c8095c004d8c1d7646dc64d6519d4a27e: initial price from slot0
+  at block 51189126'
+- '[uniswap_v3] pools are supported_by_clmm=True and supported_by_cpmm=False: served
+  by the CLMM adapter; the validator replays every cl_swap as a reconciliation checkpoint
+  (sqrt price, liquidity, tick) and applies cl_modify/cl_init rows'
+- '[uniswap_v4] chain id 8453 and PoolManager interface verified against configured
+  deployment reference'
+- '[uniswap_v4] block boundaries fixed: discovery 51147727, prehistory 51189127, period
+  [51190927, 51234127)'
+- '[uniswap_v4] block interval 2000 ms verified on 3 sampled headers; mismatches=0'
+- '[uniswap_v4] activity scan before the window (lookback_blocks=5400): 225 of 3495
+  in-scope pools had at least one swap before prehistory start'
+- '[uniswap_v4] universe frozen: 5981 candidates, 225 in scope after rule active_before_window_earliest_created_v1,
+  8 selected (0 launches from inside the period)'
+- '[uniswap_v4] 0xc1d5d204dfc26a862b72a2e12c42fd229fe0a2e113d5d97de2bb99caac8b0a28:
+  initial price basis last_swap_before_prehistory_at_block_51184373'
+- '[uniswap_v4] 0x7c6143eda73f9a06ac491d478e215ce55ab44c530a6c69947385dc34341ae958:
+  initial price basis last_swap_before_prehistory_at_block_51188879'
+- '[uniswap_v4] 0x78332f6b732773f4ab5d5fe6f4241b38e34b4b11e11b1117943872403b61a684:
+  initial price basis last_swap_before_prehistory_at_block_51185203'
+- '[uniswap_v4] 0xed49257bc373eca241d31f5a04dc30460e1b920c2df095820cd1ec74dc2da428:
+  initial price basis last_swap_before_prehistory_at_block_51189032'
+- '[uniswap_v4] 0x39b151e2b6a6906201380fe7f82043ede5552a960b3e28008b912b04ac29cd88:
+  initial price basis last_swap_before_prehistory_at_block_51185066'
+- '[uniswap_v4] 0xd2d5a8036a28742bd6c4ee9acbbf42893c34548accae3a18b41f54c5ae495837:
+  initial price basis last_swap_before_prehistory_at_block_51184792'
+- '[uniswap_v4] 0x8afa46080e5adf3de12feca175571d2d2ea02298a7fc3658494fd713f1bf8ef4:
+  initial price basis last_swap_before_prehistory_at_block_51184554'
+- '[uniswap_v4] 0x1f7b7d84b08c40e9299bbfddcac74144cea1aba4d0686c52d81ea5c241937512:
+  initial price basis last_swap_before_prehistory_at_block_51186736'
+- '[uniswap_v4] pools are supported_by_clmm=True and supported_by_cpmm=False: served
+  by the CLMM adapter; the validator replays every cl_swap as a reconciliation checkpoint
+  (sqrt price, liquidity, tick) and applies cl_modify/cl_init rows'
+- '[uniswap_v4] 8453:uniswap_v4:0x7c6143eda73f9a06ac491d478e215ce55ab44c530a6c69947385dc34341ae958:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 2 material unexplained deltas; fidelity flags none'
+- '[launches] block boundaries fixed: prehistory 51189127, period [51190927, 51234127)'
+- '[launches] uniswap_v2: 490 pools created inside the period'
+- '[launches] uniswap_v3: 164 pools created inside the period'
+- '[launches] uniswap_v4: 2693 pools created inside the period'
+- '[launches] events:v4: chunk reduced to 5000 after provider error: application error:
+  -32602: query exceeds max results 20000, retry with the range 51190927-51192961'
+- '[launches] events:v4: chunk reduced to 2500 after provider error: application error:
+  -32602: query exceeds max results 20000, retry with the range 51190927-51192961'
+- '[launches] events:v4: chunk reduced to 1250 after provider error: application error:
+  -32602: query exceeds max results 20000, retry with the range 51190927-51192961'
+- '[launches] events loaded for 2126 pools: 197209 logs, 411 MB resident'
+- '[launches] launches with an ETH leg: {''uniswap_v2'': 416, ''uniswap_v3'': 109,
+  ''uniswap_v4'': 1602}; traded (>= 1 swap): {''uniswap_v2'': 416, ''uniswap_v3'':
+  101, ''uniswap_v4'': 1151}; tokens needing decimals: 1658'
+- '[launches] normalized 195708 rows for 1668 pools, 625 MB resident'
+- '[launches] 8453:uniswap_v3:0x45d663a7debed1a2acd56878d126ccc92c8ebcb7: demoted
+  from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 1 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x2d23dd4560b4cdb477d2a5cc04d4003c45fe80ecc9fbe5355f64603efe93876b:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 6 material unexplained deltas; fidelity flags none'
+- '[launches] 8453:uniswap_v4:0x53afeb5a819337bbc5198e4504869da0b71855d63bee7098a352e093e7420651:
+  demoted from execution: swap checkpoints did not reconcile under the concentrated-liquidity
+  model: 2 material unexplained deltas; fidelity flags none'
+- '[launches] gas: median 784982759347 wei per swap from 200 of 200 sampled receipts
+  (129234 recorded swap txs); L1 data fee share 0.0'
