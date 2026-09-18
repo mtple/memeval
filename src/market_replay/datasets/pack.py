@@ -19,6 +19,7 @@ Packs are immutable: the manifest lists every data object with its sha256 and th
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 from collections.abc import Iterator
@@ -31,7 +32,7 @@ import yaml
 from ..domain.models import Asset, EpisodeManifest, Pool, RestrictionObservation
 from .execution_params import ExecutionParams
 
-DATA_FILES = ("assets.jsonl", "pools.jsonl", "tape.jsonl", "blocks.jsonl", "restrictions.jsonl", "inventory.json")
+DATA_FILES = ("assets.jsonl", "pools.jsonl", "tape.jsonl", "tape.jsonl.gz", "blocks.jsonl", "restrictions.jsonl", "inventory.json")
 
 
 class PackError(ValueError):
@@ -46,8 +47,16 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _open_text(path: Path, mode: str):
+    """JSON lines files may be gzip-compressed (``*.jsonl.gz``): a recorded week's tape is large and
+    never changes, and the deployment bundle that carries every week has a size limit."""
+    if path.suffix == ".gz":
+        return gzip.open(path, mode + "t", encoding="utf-8")
+    return path.open(mode, encoding="utf-8")
+
+
 def iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
-    with path.open("r", encoding="utf-8") as f:
+    with _open_text(path, "r") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -56,12 +65,20 @@ def iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
 
 def write_jsonl(path: Path, rows: Iterator[dict[str, Any]] | list[dict[str, Any]]) -> int:
     n = 0
-    with path.open("w", encoding="utf-8") as f:
+    with _open_text(path, "w") as f:
         for row in rows:
             f.write(json.dumps(row, separators=(",", ":"), sort_keys=True))
             f.write("\n")
             n += 1
     return n
+
+
+def tape_path(pack_dir: Path) -> Path | None:
+    """The tape file a pack carries: compressed when it was written that way."""
+    for name in ("tape.jsonl.gz", "tape.jsonl"):
+        if (pack_dir / name).exists():
+            return pack_dir / name
+    return None
 
 
 def compute_pack_id(object_hashes: dict[str, str], params_hash: str) -> str:
@@ -117,8 +134,9 @@ class Pack:
         assets = {a["key"]: Asset.model_validate(a) for a in iter_jsonl(p / "assets.jsonl")}
         pools = {r["key"]: Pool.model_validate(r) for r in iter_jsonl(p / "pools.jsonl")}
         tape: list[dict[str, Any]] = []
-        if load_tape and (p / "tape.jsonl").exists():
-            tape = list(iter_jsonl(p / "tape.jsonl"))
+        tp = tape_path(p)
+        if load_tape and tp is not None:
+            tape = list(iter_jsonl(tp))
         blocks: list[tuple[int, int]] = []
         if (p / "blocks.jsonl").exists():
             blocks = sorted((int(r["block"]), int(r["time_utc_ms"])) for r in iter_jsonl(p / "blocks.jsonl"))

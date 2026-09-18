@@ -121,3 +121,26 @@ def test_tampered_tape_fails_reconciliation(tmp_path: Path):
     ex = next(g for g in rep["gates"] if g["gate"] == "execution_state")
     assert ex["status"] == "failed" and ex["reconciliation"]["mismatch_count"] > 0
     assert rep["resulting_qualification"] == "rejected"
+
+
+def test_a_compressed_tape_loads_and_hashes_like_a_plain_one(tmp_path: Path, dev_pack_dir: Path):
+    """Large tapes are written gzip-compressed; the pack id covers the compressed bytes and the loader reads either form."""
+    from market_replay.datasets.builder import build_pack
+    from market_replay.datasets.pack import Pack, tape_path
+
+    src = Pack.load(dev_pack_dir)
+    m = src.manifest
+    out = tmp_path / "gz"
+    packed = build_pack(
+        out,
+        origin=m.origin, chain=m.chain, chain_id=m.chain_id, scope_label=m.scope_label, title_private=m.title_private, period=m.period, universe=m.universe,
+        assets=[a.model_dump(mode="json") for a in src.assets.values()], pools=[p.model_dump(mode="json") for p in src.pools.values()], tape=src.tape, params=src.params,
+        coverage=src.coverage, numeraire=m.numeraire, numeraire_alias=m.numeraire_alias, numeraire_decimals=m.numeraire_decimals, token_behavior=m.data.token_behavior_basis,
+        availability_model=dict(m.data.availability_model), rights=m.rights, qualification=m.validation.qualification, blocks=[{"block": b, "time_utc_ms": t} for b, t in src.blocks] or None,
+        generator=dict(m.generator), compress_tape=True,
+    )
+    assert tape_path(out).name == "tape.jsonl.gz" and not (out / "tape.jsonl").exists()
+    assert [o.filename for o in packed.manifest.data.objects if o.filename.startswith("tape")] == ["tape.jsonl.gz"]
+    again = Pack.load(out)  # verifies every hash and the pack id
+    assert len(again.tape) == len(src.tape) and again.tape[0] == src.tape[0] and again.pack_id == packed.pack_id
+    assert packed.validation["resulting_qualification"] == src.validation["resulting_qualification"]

@@ -44,6 +44,9 @@ def make_period(start_utc_ms: int, end_utc_ms: int, prehistory_start_utc_ms: int
     )
 
 
+COMPRESS_TAPE_FROM_ROWS = 50_000  # a tape this long is written gzip-compressed (a full week of every launch is millions of rows)
+
+
 def build_pack(
     out_dir: Path,
     *,
@@ -73,12 +76,17 @@ def build_pack(
     provenance_notes: list[str] | None = None,
     decision_log: list[str] | None = None,
     validate: bool = True,
+    compress_tape: bool | None = None,
 ) -> Pack:
     out_dir.mkdir(parents=True, exist_ok=True)
     write_jsonl(out_dir / "assets.jsonl", assets)
     write_jsonl(out_dir / "pools.jsonl", pools)
-    write_jsonl(out_dir / "tape.jsonl", tape)
-    names = ["assets.jsonl", "pools.jsonl", "tape.jsonl"]
+    tape_name = "tape.jsonl.gz" if (compress_tape if compress_tape is not None else len(tape) >= COMPRESS_TAPE_FROM_ROWS) else "tape.jsonl"
+    for stale in ("tape.jsonl", "tape.jsonl.gz"):
+        if stale != tape_name and (out_dir / stale).exists():
+            (out_dir / stale).unlink()
+    write_jsonl(out_dir / tape_name, tape)
+    names = ["assets.jsonl", "pools.jsonl", tape_name]
     if blocks:
         write_jsonl(out_dir / "blocks.jsonl", blocks)
         names.append("blocks.jsonl")
