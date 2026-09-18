@@ -7,7 +7,7 @@ name: collect-week
 # whose message contains the date, e.g. `git commit --allow-empty -m "record 2026-09-07"` then
 # `git push -f origin HEAD:record-week` (Vercel never deploys that branch, see vercel.json).
 #
-# Secret: BASE_RPC_URL (your read-only Base RPC endpoint). Nothing else; the finished week is committed
+# Secret: BASE_RPC_URL or RPC_URL (your read-only Base RPC endpoint). Nothing else; the finished week is committed
 # to the default branch and the site registers it on its next deploy.
 
 on:
@@ -28,11 +28,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 330
     env:
-      BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
+      BASE_RPC_URL: ${{ secrets.BASE_RPC_URL || secrets.RPC_URL }}
     steps:
       - name: Check secrets
         run: |
-          if [ -z "$BASE_RPC_URL" ]; then echo "BASE_RPC_URL secret is not set; nothing to record." ; exit 1; fi
+          if [ -z "$BASE_RPC_URL" ]; then echo "neither BASE_RPC_URL nor RPC_URL secret is set; nothing to record." ; exit 1; fi
       - uses: actions/checkout@v4
         with:
           ref: main
