@@ -74,18 +74,38 @@ jobs:
         with:
           name: survey_${{ steps.pick.outputs.start }}
           path: survey.json
+      - name: "Trial only (commit message starts with trial): one day, kept as an artifact, never committed"
+        if: startsWith(github.event.head_commit.message, 'trial')
+        run: |
+          set -u
+          end=$(python3 -c "import datetime as dt; print((dt.date.fromisoformat('${{ steps.pick.outputs.start }}') + dt.timedelta(days=1)).isoformat())")
+          uv run market-replay week --start "${{ steps.pick.outputs.start }}" --end "$end" --out trial || true
+          echo "TRIAL_ONLY=1" >> "$GITHUB_ENV"
+          du -sh trial/* 2>/dev/null || true
+          ls -la trial/*/ 2>/dev/null || true
+      - name: Keep the trial
+        if: startsWith(github.event.head_commit.message, 'trial')
+        uses: actions/upload-artifact@v4
+        with:
+          name: trial_${{ steps.pick.outputs.start }}
+          path: |
+            trial/*/manifest.yaml
+            trial/*/inventory.json
+            trial/*/validation.json
+            trial/*_work/last_result.json
+          if-no-files-found: ignore
       - name: Record the week (read-only, budgeted, resumable)
-        if: env.SURVEY_ONLY != '1'
+        if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1'
         run: uv run market-replay week --start "${{ steps.pick.outputs.start }}"
       - name: Keep the week as an artifact (in case the push below fails)
-        if: env.SURVEY_ONLY != '1' 
+        if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1' 
         uses: actions/upload-artifact@v4
         with:
           name: base_week_${{ steps.pick.outputs.start }}
           path: weeks/base_week_${{ steps.pick.outputs.start }}
           if-no-files-found: ignore
       - name: Commit the week
-        if: env.SURVEY_ONLY != '1'
+        if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1'
         run: |
           set -eu
           git config user.name "github-actions[bot]"

@@ -112,8 +112,9 @@ def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, 
         if deadline is not None and time.monotonic() >= deadline:
             raise TimeSliceExpired("time slice expired")
 
-    def scan(ref: str, field_name: str, key: str, *, address, topics, start: int, end_exclusive: int, chunk_size: int) -> LogFile:
-        """Forward chunked scan into one log file, halved on provider error, checkpointed per chunk."""
+    def scan(ref: str, field_name: str, key: str, *, address, topics, start: int, end_exclusive: int, chunk_size: int, keep=None) -> LogFile:
+        """Forward chunked scan into one log file, halved on provider error, checkpointed per chunk.
+        ``keep`` filters logs before they are stored (a PoolManager range holds every pool's events)."""
         cur = int(ck.get(key + ":cursor", start))
         logs_file = LogFile(work / "logs" / f"{key.replace(':', '_')}.jsonl")
         c = int(ck.get(key + ":chunk", chunk_size))
@@ -131,11 +132,14 @@ def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, 
                     note(f"{key}: chunk reduced to {c} after provider error: {str(e)[:100]}")
                     continue
                 raise
-            logs_file.append(logs)
-            ledger.set(ref, field_name, cur, to_b, CoverageState.COMPLETED_AND_CHECKED, f"{len(logs)} logs; range returned without provider truncation error")
+            kept = [lg for lg in logs if keep(lg)] if keep is not None else logs
+            logs_file.append(kept)
+            ledger.set(ref, field_name, cur, to_b, CoverageState.COMPLETED_AND_CHECKED, f"{len(logs)} logs ({len(kept)} kept); range returned without provider truncation error")
             cur = to_b + 1
             ck.set(key + ":cursor", cur)
             progress["chunks"] += 1
+            if progress["chunks"] % 100 == 0:
+                note(f"{key}: {progress['chunks']} ranges read so far, {budget.requests} requests, {budget.response_bytes // (1024 * 1024)} MB")
         return logs_file
 
     try:
@@ -201,12 +205,10 @@ def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, 
             if not ids:
                 continue
             if v == "uniswap_v4":
-                lf = scan("pool_manager", "events", "events:v4", address=deps[v]["pool_manager"], topics=[[TOPIC_V4_MODIFY_LIQUIDITY, TOPIC_V4_SWAP]], start=blocks["period_start"], end_exclusive=blocks["period_end"], chunk_size=chunk)
                 wanted = set(ids)
+                lf = scan("pool_manager", "events", "events:v4", address=deps[v]["pool_manager"], topics=[[TOPIC_V4_MODIFY_LIQUIDITY, TOPIC_V4_SWAP]], start=blocks["period_start"], end_exclusive=blocks["period_end"], chunk_size=chunk, keep=lambda lg, wanted=wanted: lg["topics"][1].lower() in wanted)
                 for lg in lf.read():
-                    pid = lg["topics"][1].lower()
-                    if pid in wanted:
-                        logs_by_pool.setdefault(f"{v}:{pid}", []).append(lg)
+                    logs_by_pool.setdefault(f"{v}:{lg['topics'][1].lower()}", []).append(lg)
             else:
                 topics = [[TOPIC_V3_INITIALIZE, TOPIC_V3_MINT, TOPIC_V3_BURN, TOPIC_V3_SWAP]] if v == "uniswap_v3" else [[TOPIC_SWAP, TOPIC_MINT, TOPIC_BURN, TOPIC_SYNC]]
                 for bi in range(0, len(ids), batch_size):
@@ -232,6 +234,7 @@ def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, 
                         continue
                     if tok not in assets and tok not in needed:
                         needed.append(tok)
+        note(f"launches with an ETH leg: {{v: len(in_scope[v]) for v in venues}}; traded (>= {min_swaps} swap): {{v: len(traded[v]) for v in venues}}; tokens needing decimals: {len(needed)}")
         for i, tok in enumerate(needed):
             slice_check()
             try:

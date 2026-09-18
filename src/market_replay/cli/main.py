@@ -355,6 +355,8 @@ def week(
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
     typer.echo(f"recording {name}: {cfg['period_start_utc']} to {cfg['period_end_utc']} into {out / name} (working files in {work})", err=True)
     result = run_collection(cfg_path, out)
+    for line in (result.get("decision_log") or [])[-60:]:
+        typer.echo(f"  | {line}", err=True)
     _echo({k: v for k, v in result.items() if k != "decision_log"})
     if result.get("status") != "pack_built":
         typer.echo(f"no pack: {result.get('status')}: {result.get('reason') or result.get('error')}; the working files are kept, run the same command again to resume", err=True)
