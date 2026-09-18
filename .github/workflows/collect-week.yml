@@ -64,6 +64,15 @@ jobs:
               print(start.isoformat())")
           echo "start=$start" >> "$GITHUB_OUTPUT"
           echo "recording the week of $start"
+      - name: "Cancel only (commit message: cancel <run id>): stop a running recording"
+        if: startsWith(github.event.head_commit.message, 'cancel')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          run_id=$(echo "$COMMIT_MESSAGE" | grep -oE '[0-9]{6,}' | head -1)
+          gh run cancel "$run_id" && echo "cancelled run $run_id"
+          echo "SURVEY_ONLY=1" >> "$GITHUB_ENV"
       - name: Survey only (commit message starts with "survey")
         if: startsWith(github.event.head_commit.message, 'survey')
         run: |
