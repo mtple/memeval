@@ -76,6 +76,26 @@ jobs:
           name: survey_${{ steps.pick.outputs.start }}
           path: survey.json
           retention-days: 3
+      - name: "Stats only (commit message starts with stats): size the tape from the cached logs, no RPC"
+        if: startsWith(github.event.head_commit.message, 'stats')
+        uses: actions/cache/restore@v4
+        with:
+          path: weeks/base_week_${{ steps.pick.outputs.start }}_work
+          key: week-work-${{ steps.pick.outputs.start }}-none
+          restore-keys: week-work-${{ steps.pick.outputs.start }}-
+      - name: Stats
+        if: startsWith(github.event.head_commit.message, 'stats')
+        run: |
+          du -sh weeks/base_week_${{ steps.pick.outputs.start }}_work || true
+          uv run python scripts/launch_log_stats.py weeks/base_week_${{ steps.pick.outputs.start }}_work | tee stats.json
+          echo "SURVEY_ONLY=1" >> "$GITHUB_ENV"
+      - name: Keep the stats
+        if: startsWith(github.event.head_commit.message, 'stats')
+        uses: actions/upload-artifact@v4
+        with:
+          name: stats_${{ steps.pick.outputs.start }}
+          path: stats.json
+          retention-days: 3
       - name: "Trial only (commit message starts with trial): one day, kept as an artifact, never committed"
         if: startsWith(github.event.head_commit.message, 'trial')
         run: |
