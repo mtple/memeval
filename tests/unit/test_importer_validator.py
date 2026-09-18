@@ -144,3 +144,20 @@ def test_a_compressed_tape_loads_and_hashes_like_a_plain_one(tmp_path: Path, dev
     again = Pack.load(out)  # verifies every hash and the pack id
     assert len(again.tape) == len(src.tape) and again.tape[0] == src.tape[0] and again.pack_id == packed.pack_id
     assert packed.validation["resulting_qualification"] == src.validation["resulting_qualification"]
+
+
+def test_a_long_tape_stays_on_disk_and_streams_into_the_engine(dev_pack_dir: Path, monkeypatch):
+    import market_replay.datasets.pack as pack_mod
+    from market_replay.datasets.pack import Pack
+    from market_replay.datasets.validator import validate_pack
+    from market_replay.engine.simulation import Simulation
+
+    eager = Pack.load(dev_pack_dir)
+    monkeypatch.setattr(pack_mod, "LAZY_TAPE_ROWS", 1)
+    lazy = Pack.load(dev_pack_dir)
+    assert lazy.tape_lazy and lazy.tape == [] and lazy.tape_count == len(eager.tape) > 0
+    assert next(lazy.iter_tape()) == eager.tape[0]
+    sim = Simulation(lazy, bankroll_raw=10**18, engine_seed="e")
+    sim.process_until(sim.end_ms)
+    assert sim.events_processed > 0 and len(sim.tape) == len(eager.tape)
+    assert validate_pack(lazy)["resulting_qualification"] == eager.validation["resulting_qualification"]

@@ -94,7 +94,7 @@ def run_combined_collection(
         results[venue] = res
         logs.extend(f"[{venue}] {line}" for line in res.get("decision_log", []))
     pack = merge_packs(out_dir, [Pack.load(work / v) for v in venues], cfg, logs)
-    tape_events = len(pack.tape)
+    tape_events = pack.tape_count
     return {
         "status": "pack_built",
         "pack_id": pack.pack_id,
@@ -142,7 +142,7 @@ def merge_packs(out_dir: Path, packs: list[Pack], cfg: dict[str, Any], decision_
             assets.setdefault(k, a.model_dump(mode="json"))
         for k, pool in p.pools.items():
             pools[k] = pool.model_dump(mode="json")
-        tape.extend(dict(r) for r in p.tape)
+        tape.extend(dict(r) for r in p.iter_tape())
         cov = p.coverage or {}
         intervals.extend(cov.get("intervals", []))
         ledger_rows.extend(cov.get("ledger", []))

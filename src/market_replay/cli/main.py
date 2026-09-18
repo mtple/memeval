@@ -99,7 +99,7 @@ def packs_revalidate(path: Path) -> None:
 
     pack = Pack.load(path)
     pools = [p.model_dump(mode="json") for p in pack.pools.values()]
-    demoted = demote_unreconciled_pools(pools, pack.tape)
+    demoted = demote_unreconciled_pools(pools, list(pack.iter_tape()))
     if demoted:
         inventory = dict(pack.inventory or {})
         inventory["demoted"] = [*inventory.get("demoted", []), *demoted]

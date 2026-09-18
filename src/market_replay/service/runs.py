@@ -231,7 +231,7 @@ class RunManager:
             "pools_total": len(pack.pools),
             "pools_executable": supported,
             "assets_total": len(pack.assets),
-            "tape_events": len(pack.tape),
+            "tape_events": pack.tape_count,
             "coverage_states": states,
             "gates": [{"gate": g["gate"], "status": g["status"]} for g in report.get("gates", [])],
             "executable_failure": report.get("executable_failure"),
@@ -349,12 +349,12 @@ class RunManager:
         gaps = [i for i in intervals if i.get("state") != "completed_and_checked"]
         seen = set()
         dups = 0
-        for r in pack.tape:
+        for r in pack.iter_tape():
             k = (r["block"], r["log_index"], r.get("tx"))
             if k in seen and r["kind"] == "swap":
                 dups += 1
             seen.add(k)
-        unpublished = sum(1 for r in pack.tape if r["kind"] == "swap" and r.get("available_utc_ms") is None)
+        unpublished = sum(1 for r in pack.iter_tape() if r["kind"] == "swap" and r.get("available_utc_ms") is None)
         conflicts = [r.model_dump() for r in pack.restrictions if r.conflicts]
         pools_missing_state = [p.key for p in pack.pools.values() if (p.supported_by_cpmm and p.initial_reserve0 is None) or (p.supported_by_clmm and p.initial_sqrt_price_x96 is None and not _initialized_on_tape(pack, p.key))]
         attempts = self.store.query("SELECT * FROM attempts WHERE pack_id=?", (m.pack_id,))
@@ -362,7 +362,7 @@ class RunManager:
         return {
             "pack": self._pack_view(row),
             "universe": m.universe.model_dump(mode="json"),
-            "ingestion": {"tape_events": len(pack.tape), "blocks_table_rows": len(pack.blocks), "indexed_block_ranges": m.universe.indexed_block_ranges},
+            "ingestion": {"tape_events": pack.tape_count, "blocks_table_rows": len(pack.blocks), "indexed_block_ranges": m.universe.indexed_block_ranges},
             "coverage": {"intervals": len(intervals), "non_complete_intervals": gaps[:200], "non_complete_count": len(gaps)},
             "duplicates_suspected": dups,
             "unpublished_observations": unpublished,
@@ -1264,7 +1264,7 @@ def _pool_executable(p: Any) -> bool:
 
 
 def _initialized_on_tape(pack: Pack, key: str) -> bool:
-    return any(r["kind"] == "cl_init" and r["pool"] == key for r in pack.tape)
+    return any(r["kind"] == "cl_init" and r["pool"] == key for r in pack.iter_tape())
 
 
 FIXTURE_SCENARIO_NAMES = {

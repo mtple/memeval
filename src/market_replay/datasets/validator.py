@@ -62,7 +62,7 @@ def reconcile_no_agent(pack: Pack, max_events: int | None = None) -> dict[str, A
     replaying the recorded swap with the v3 swap loop); ``cl_modify`` rows are applied to the tick map
     and ``cl_init`` rows create pools initialized inside the window.
     """
-    return reconcile_rows(pack.pools, pack.tape, max_events)
+    return reconcile_rows(pack.pools, pack.tape if not pack.tape_lazy else list(pack.iter_tape()), max_events)
 
 
 def demote_unreconciled_pools(pools_out: list[dict[str, Any]], tape: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -262,10 +262,11 @@ def validate_pack(pack: Pack) -> dict[str, Any]:
     gates.append(_gate("universe", GateStatus.PASSED if uni_ok and not disc_missing else GateStatus.FAILED, f"selection rule {u.selection_rule_version}; candidates={u.candidate_count} selected={u.selected_count} unsupported={u.unsupported_count} missing={u.missing_count}", pools_without_discovery_time=disc_missing))
     executable_failure |= not uni_ok or bool(disc_missing)
 
+    tape_rows = pack.tape if not pack.tape_lazy else list(pack.iter_tape())
     # 3. Temporal ordering
     t_problems = []
     last = None
-    for r in pack.tape:
+    for r in tape_rows:
         key = (r["block"], r["log_index"], r["seq"])
         if last is not None and key <= last:
             t_problems.append(f"tape not strictly ordered at seq {r['seq']}")
@@ -280,7 +281,7 @@ def validate_pack(pack: Pack) -> dict[str, Any]:
             t_problems.append(f"received before event at seq {r['seq']}")
             break
     schema_errors = 0
-    for r in pack.tape[:5000]:
+    for r in tape_rows[:5000]:
         try:
             TapeEvent.model_validate(r)
         except Exception:
@@ -307,7 +308,7 @@ def validate_pack(pack: Pack) -> dict[str, Any]:
     cpmm_pools = [p for p in pack.pools.values() if _cpmm_supported(p)]
     cl_pools = [p for p in pack.pools.values() if _cl_supported(p)]
     exec_pools = cpmm_pools + cl_pools
-    cl_init_on_tape = {r["pool"] for r in pack.tape if r["kind"] == "cl_init"}
+    cl_init_on_tape = {r["pool"] for r in tape_rows if r["kind"] == "cl_init"}
     missing_state = [p.key for p in cpmm_pools if p.initial_reserve0 is None or p.initial_reserve1 is None]
     missing_state += [p.key for p in cl_pools if p.initial_sqrt_price_x96 is None and p.key not in cl_init_on_tape]
     recon = reconcile_no_agent(pack)

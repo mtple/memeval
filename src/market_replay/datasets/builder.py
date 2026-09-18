@@ -170,7 +170,7 @@ def rebuild_pack(pack: Pack, *, pools: list[dict[str, Any]], inventory: dict[str
         universe=universe,
         assets=[a.model_dump(mode="json") for a in pack.assets.values()],
         pools=pools,
-        tape=pack.tape,
+        tape=list(pack.iter_tape()),
         params=pack.params,
         coverage=pack.coverage,
         numeraire=m.numeraire,

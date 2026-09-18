@@ -73,6 +73,14 @@ def write_jsonl(path: Path, rows: Iterator[dict[str, Any]] | list[dict[str, Any]
     return n
 
 
+LAZY_TAPE_ROWS = 150_000
+
+
+def count_jsonl(path: Path) -> int:
+    with _open_text(path, "r") as f:
+        return sum(1 for line in f if line.strip())
+
+
 def tape_path(pack_dir: Path) -> Path | None:
     """The tape file a pack carries: compressed when it was written that way."""
     for name in ("tape.jsonl.gz", "tape.jsonl"):
@@ -96,8 +104,11 @@ class Pack:
     params: ExecutionParams
     assets: dict[str, Asset]
     pools: dict[str, Pool]
-    tape: list[dict[str, Any]]  # raw rows (validated by the pack validator; fast path for the engine)
+    tape: list[dict[str, Any]]  # raw rows (validated by the pack validator; fast path for the engine); empty when lazy
     blocks: list[tuple[int, int]] = field(default_factory=list)  # (block, time_utc_ms) sorted
+    tape_file: Path | None = None
+    tape_lazy: bool = False  # a long tape stays on disk: ``iter_tape`` streams it, ``tape`` is empty
+    tape_rows: int = 0
     restrictions: list[RestrictionObservation] = field(default_factory=list)
     coverage: dict[str, Any] = field(default_factory=dict)
     validation: dict[str, Any] = field(default_factory=dict)
@@ -106,6 +117,18 @@ class Pack:
     @property
     def pack_id(self) -> str:
         return self.manifest.pack_id
+
+    def iter_tape(self) -> Iterator[dict[str, Any]]:
+        """Every tape row in order: from memory when loaded, streamed from disk when the tape is lazy."""
+        if self.tape or not self.tape_lazy:
+            yield from self.tape
+            return
+        if self.tape_file is not None:
+            yield from iter_jsonl(self.tape_file)
+
+    @property
+    def tape_count(self) -> int:
+        return len(self.tape) if self.tape or not self.tape_lazy else self.tape_rows
 
     @property
     def numeraire(self) -> str:
@@ -135,8 +158,14 @@ class Pack:
         pools = {r["key"]: Pool.model_validate(r) for r in iter_jsonl(p / "pools.jsonl")}
         tape: list[dict[str, Any]] = []
         tp = tape_path(p)
+        tape_rows = 0
+        tape_lazy = False
         if load_tape and tp is not None:
-            tape = list(iter_jsonl(tp))
+            tape_rows = count_jsonl(tp)
+            if tape_rows >= LAZY_TAPE_ROWS:
+                tape_lazy = True  # every consumer streams it; row dicts of a week of every launch would not fit in memory
+            else:
+                tape = list(iter_jsonl(tp))
         blocks: list[tuple[int, int]] = []
         if (p / "blocks.jsonl").exists():
             blocks = sorted((int(r["block"]), int(r["time_utc_ms"])) for r in iter_jsonl(p / "blocks.jsonl"))
@@ -154,6 +183,9 @@ class Pack:
             pools=pools,
             tape=tape,
             blocks=blocks,
+            tape_file=tp,
+            tape_lazy=tape_lazy,
+            tape_rows=tape_rows if tp is not None else 0,
             restrictions=restrictions,
             coverage=coverage,
             validation=validation,

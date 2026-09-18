@@ -224,7 +224,7 @@ class Simulation:
             self.pool_discovery_ms[key] = disc - self.start_utc_ms
 
         # Tape
-        self.tape: list[RelEvent] = to_relative(pack.tape, self.start_utc_ms)
+        self.tape: list[RelEvent] = to_relative(pack.iter_tape(), self.start_utc_ms)
         self.cursor = 0
         # Pools whose state is created by a cl_init row on the tape: key -> time of that row.
         self.cl_init_ms: dict[str, int] = {}
