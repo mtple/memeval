@@ -63,16 +63,29 @@ jobs:
               print(start.isoformat())")
           echo "start=$start" >> "$GITHUB_OUTPUT"
           echo "recording the week of $start"
+      - name: Survey only (commit message starts with "survey")
+        if: startsWith(github.event.head_commit.message, 'survey')
+        run: |
+          uv run market-replay survey --start "${{ steps.pick.outputs.start }}" | tee survey.json
+          echo "SURVEY_ONLY=1" >> "$GITHUB_ENV"
+      - name: Keep the survey
+        if: startsWith(github.event.head_commit.message, 'survey')
+        uses: actions/upload-artifact@v4
+        with:
+          name: survey_${{ steps.pick.outputs.start }}
+          path: survey.json
       - name: Record the week (read-only, budgeted, resumable)
+        if: env.SURVEY_ONLY != '1'
         run: uv run market-replay week --start "${{ steps.pick.outputs.start }}"
       - name: Keep the week as an artifact (in case the push below fails)
-        if: always()
+        if: env.SURVEY_ONLY != '1' 
         uses: actions/upload-artifact@v4
         with:
           name: base_week_${{ steps.pick.outputs.start }}
           path: weeks/base_week_${{ steps.pick.outputs.start }}
           if-no-files-found: ignore
       - name: Commit the week
+        if: env.SURVEY_ONLY != '1'
         run: |
           set -eu
           git config user.name "github-actions[bot]"

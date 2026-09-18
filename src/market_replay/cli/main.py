@@ -362,6 +362,30 @@ def week(
 
 
 @app.command()
+def survey(
+    start: str = typer.Option(..., "--start", help="week start, UTC date (YYYY-MM-DD)"),
+    end: str | None = typer.Option(None, "--end", help="period end (default: start + 7 days)"),
+    out: Path = typer.Option(REPO_ROOT / "data" / "survey", "--out"),
+    rpc_url_env: str = typer.Option("BASE_RPC_URL"),
+    max_requests: int = typer.Option(60000),
+) -> None:
+    """Count every pool launch and every swap on Base in a week, per venue. Records nothing;
+    sizes an all-launches recording."""
+    from datetime import UTC, datetime, timedelta
+
+    from ..collectors.survey import survey_week
+
+    url = os.environ.get(rpc_url_env)
+    if not url:
+        typer.echo(f"{rpc_url_env} is not set", err=True)
+        raise typer.Exit(2)
+    t0 = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=UTC)
+    t1 = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=UTC) if end else t0 + timedelta(days=7)
+    res = survey_week(rpc_url=url, chain="base", period_start_utc=t0.strftime("%Y-%m-%dT%H:%M:%SZ"), period_end_utc=t1.strftime("%Y-%m-%dT%H:%M:%SZ"), work=out / f"base_{start}", max_requests=max_requests, echo=lambda s: typer.echo(s, err=True))
+    _echo(res)
+
+
+@app.command()
 def mcp() -> None:
     """Run the MCP facade on stdio (needs MARKET_REPLAY_URL and MARKET_REPLAY_TOKEN)."""
     from ..service.mcp_server import main as mcp_main
