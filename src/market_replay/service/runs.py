@@ -471,7 +471,7 @@ class RunManager:
         agent_id: str,
         pack_ref: str,
         mode: str = "practice",
-        bankroll_raw: str | int = "1000000",
+        bankroll_raw: str | int | None = None,
         mask_seed: str | None = None,
         engine_seed: str | None = None,
         isolation: str = "trusted_external_client",
@@ -491,6 +491,9 @@ class RunManager:
             raise ApiError(400, "mode must be practice or sealed", "INVALID")
         if isolation not in ("trusted_external_client", "restricted_local_runner"):
             raise ApiError(400, "invalid isolation", "INVALID")
+        if bankroll_raw is None:
+            # One whole unit of the cash asset: 1.0 CASH on a practice pack, 1 ETH on a real Base day.
+            bankroll_raw = 10 ** int(pack.manifest.numeraire_decimals)
         try:
             bankroll = int(str(bankroll_raw))
         except ValueError as e:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
-from fractions import Fraction
 
 from ..domain.models import TapeEvent
 
@@ -41,7 +40,6 @@ class RelEvent:
     tick_after: int | None = None
     fee_pips: int | None = None
     # filled during reference replay: recorded_out / max_out on reference state
-    output_ratio: Fraction | None = None
 
 
 def _opt_int(v) -> int | None:

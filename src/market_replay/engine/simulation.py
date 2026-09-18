@@ -89,6 +89,26 @@ def cl_state_from_pool(meta) -> ClPoolState | None:
 HOOKED_LAUNCH_WINDOW_MS = 120_000  # no fills on a hooked v4 pool in its first two minutes (launch MEV modules)
 
 
+
+_REL_TAPE_CACHE: dict[tuple[str, int], list[RelEvent]] = {}
+_REL_TAPE_CACHE_MAX = 4
+
+
+def _relative_tape(pack: Pack, start_utc_ms: int) -> list[RelEvent]:
+    """The relative tape of a pack, shared by every session of that pack in this process.
+
+    The engine never mutates a RelEvent, so one list serves all sessions: a day of every Base launch
+    is 180,000 rows, about 80 MB as objects, and a serverless instance hosts several sessions at once.
+    """
+    key = (pack.pack_id, start_utc_ms)
+    tape = _REL_TAPE_CACHE.get(key)
+    if tape is None:
+        tape = to_relative(pack.iter_tape(), start_utc_ms)
+        if len(_REL_TAPE_CACHE) >= _REL_TAPE_CACHE_MAX:
+            _REL_TAPE_CACHE.pop(next(iter(_REL_TAPE_CACHE)))
+        _REL_TAPE_CACHE[key] = tape
+    return tape
+
 class SimulationError(RuntimeError):
     pass
 
@@ -224,7 +244,7 @@ class Simulation:
             self.pool_discovery_ms[key] = disc - self.start_utc_ms
 
         # Tape
-        self.tape: list[RelEvent] = to_relative(pack.iter_tape(), self.start_utc_ms)
+        self.tape: list[RelEvent] = _relative_tape(pack, self.start_utc_ms)
         self.cursor = 0
         # Pools whose state is created by a cl_init row on the tape: key -> time of that row.
         self.cl_init_ms: dict[str, int] = {}
@@ -358,7 +378,6 @@ class Simulation:
                 self._flag(ev, "RECORDED_OUTPUT_EXCEEDS_MODEL", f"recorded {rec_out} > model max {ref_max}")
                 rec_out = ref_max
             ratio = Fraction(rec_out, ref_max) if ref_max and rec_out != ref_max else None
-            ev.output_ratio = ratio
             self._apply_recorded_to_ref(ref, ev.asset_in, ev.amount_in, rec_out)
             # Private state: fixed intent, recomputed output.
             if ev.pool in self.fidelity_failed:
@@ -678,6 +697,8 @@ class Simulation:
         """
         cap = self.params.capacity
         rin, rout = pool.depth_for(asset_in)
+        if rin <= 0 or rout <= 0:
+            return False, f"no liquidity in range at the current time: nothing can be traded here now ({cap.version})"
         if amount_in * 10_000 > rin * cap.max_input_bps_of_reserve:
             return False, f"input exceeds {cap.max_input_bps_of_reserve} bps of current input reserve ({cap.version})"
         ref = self.ref_pools.get(pool.key)

@@ -179,6 +179,21 @@ class Session:
             raise SessionError(ErrorCode.NOT_YET_DISCOVERED, "identifier is not currently discoverable in this session")
         return key
 
+    def _public_details(self, details: Any) -> Any:
+        """Error details built inside the engine name assets and pools by their canonical keys (a real
+        pack's are chain addresses). Replace every such key with the session alias so a rejection
+        reaches the agent as a rejection and not as a payload the leakage scanner has to withhold."""
+        if isinstance(details, dict):
+            return {k: self._public_details(v) for k, v in details.items()}
+        if isinstance(details, list):
+            return [self._public_details(v) for v in details]
+        if isinstance(details, str):
+            if details in self.pack.assets:
+                return self.alias.asset(details)
+            if details in self.pack.pools:
+                return self.alias.pool(details)
+        return details
+
     def _pool_public(self, key: str) -> dict[str, Any]:
         meta = self.pack.pools[key]
         st = self.sim.pools.get(key)
@@ -322,12 +337,12 @@ class Session:
         except SessionError as e:
             if e.code in (ErrorCode.INVALID_REQUEST, ErrorCode.INVALID_ORDER):
                 self.budget.invalid_calls += 1
-            env = Envelope.fail(request_id=request_id, session_id=self.session_id, clock_ms=self.now, code=e.code, message=e.message, details=e.details, quality=self._quality(Completeness.UNKNOWN))
+            env = Envelope.fail(request_id=request_id, session_id=self.session_id, clock_ms=self.now, code=e.code, message=e.message, details=self._public_details(e.details), quality=self._quality(Completeness.UNKNOWN))
         except SubmitRejected as e:
             code = ErrorCode(e.code) if e.code in ErrorCode.__members__ else ErrorCode.INVALID_ORDER
             if code in (ErrorCode.INVALID_ORDER,):
                 self.budget.invalid_calls += 1
-            env = Envelope.fail(request_id=request_id, session_id=self.session_id, clock_ms=self.now, code=code, message=e.message, details=e.details, quality=self._quality(Completeness.UNKNOWN))
+            env = Envelope.fail(request_id=request_id, session_id=self.session_id, clock_ms=self.now, code=code, message=e.message, details=self._public_details(e.details), quality=self._quality(Completeness.UNKNOWN))
         payload = env.model_dump(mode="json")
         findings = self.scanner.scan(payload)
         if findings:
@@ -509,6 +524,10 @@ class Session:
                 continue
             pub["last_trade_ms"] = last.event_ms if last else None
             pub["visible_trade_count"] = n
+            st = self.sim.pools.get(key)
+            # Depth on the cash side of the current in-range state: "0" means nothing can be bought here
+            # now (liquidity pulled, or a launch whose range the price has left), whatever the trade count says.
+            pub["numeraire_depth_raw"] = str(st.depth_for(self.pack.numeraire)[0]) if st is not None and pub["execution_supported"] else None
             rows.append(pub)
         if sort == "newest":
             rows.sort(key=lambda r: (-(r["listed_ms"] or 0), r["pool_id"]))

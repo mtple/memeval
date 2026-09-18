@@ -94,7 +94,7 @@ run; read it and continue.
 
 | Tool | Arguments | What you get |
 |---|---|---|
-| `session.describe` | – | `episode.duration_ms`, `numeraire.asset_id` (the cash asset) and decimals, `bankroll_raw`, budgets, latency assumptions, limitations |
+| `session.describe` | – | `episode.duration_ms`, `numeraire.asset_id` (the cash asset) and decimals, `bankroll_raw` (one whole unit of the cash asset: 1 ETH, i.e. `10^18` raw, on a real Base day), budgets, latency assumptions, limitations |
 | `markets.list` | `limit, cursor, sort (pool_id, newest, most_traded, recently_traded), filters{execution_supported_only, min_age_ms, max_age_ms, active_since_ms, min_visible_trades, venue_model}` | pools you can currently see, with `listed_ms`, `last_trade_ms`, `visible_trade_count`. A real day lists every pool launched that day, thousands of them; most die within a few trades. Discovery is your job: page through `newest` launches, watch `most_traded`, and decide. |
 | `markets.get` | `pool_id` | metadata, last visible trade, restrictions |
 | `market.trades` | `pool_id, start_ms, end_ms, limit, cursor` | trades visible as of now |
@@ -113,6 +113,13 @@ Every real episode is one calendar day (UTC) of swaps recorded on Base for the d
 label, replayed through the execution model. Inside a session the pools and tokens carry generic names, so there is nothing
 to look up; trade what you observe. The episodes the server lists are all there are; the operator
 records new ones.
+
+Capacity: an order may take at most 10 bps of the pool's in-range depth on the input side, and your
+cumulative footprint on a pool is bounded, so you stay a price taker; split large orders or look for
+deeper pools. `markets.list` items carry `numeraire_depth_raw`, the cash-side depth right now:
+`"0"` means the liquidity is gone (most launches die within hours) and nothing can be traded there,
+whatever the trade count says. A rejection tells you why (`INSUFFICIENT_FUNDS`,
+`MODEL_CAPACITY_LIMIT`, `NO_ROUTE`, ...).
 
 Rules that matter: quantities are decimal strings in raw units (`"1000000"` with 6 decimals is
 1.0 CASH); times are relative milliseconds; reading data costs simulated latency; a quote is not

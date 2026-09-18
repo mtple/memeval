@@ -67,7 +67,7 @@ class RunBody(BaseModel):
     agent: InlineAgentBody | None = None
     pack_id: str
     mode: str = "practice"
-    bankroll_raw: str = "1000000"
+    bankroll_raw: str | None = None  # default: one whole unit of the pack's cash asset
     mask_seed: str | None = None
     engine_seed: str | None = None
     agent_seed: str | None = None

@@ -158,3 +158,31 @@ def test_markets_list_sorts_and_filters_for_discovery(fresh_pack: Pack):
     assert quiet_cut["total_currently_discoverable"] >= 1 and all(r["visible_trade_count"] >= busiest[0]["visible_trade_count"] for r in quiet_cut["items"])
     bad = s.handle("r", "markets.list", {"sort": "richest"})
     assert bad.status == "error" and bad.error.code == "INVALID_REQUEST"
+
+
+def test_rejection_details_use_aliases_and_reach_the_agent(fresh_pack: Pack):
+    """An insufficient-funds rejection names the asset by its alias, so the leakage scanner has nothing
+    to withhold and the agent learns the real reason."""
+    s = Session.create(session_id="ses_t", pack=fresh_pack, bankroll_raw=1_000, mask_seed="m", engine_seed="e")
+    s.handle("r", "session.describe", {})
+    item = s.handle("r", "markets.list", {"filters": {"execution_supported_only": True}}).data["items"][0]
+    cash = s.handle("r", "session.describe", {}).data["numeraire"]["asset_id"]
+    other = [a["asset_id"] for a in item["assets"] if a["asset_id"] != cash][0]
+    env = s.handle("r", "broker.submit", {"pool_id": item["pool_id"], "asset_in": cash, "asset_out": other, "amount_in_raw": "2000", "min_amount_out_raw": "0", "deadline_ms": 600_000, "idempotency_key": "k"})
+    assert env.status == "error" and env.error.code == "INSUFFICIENT_FUNDS", env.error
+    assert env.error.details["asset"] == cash
+    assert not any(k in str(env.error.details) for k in fresh_pack.assets)
+
+
+def test_markets_list_reports_cash_side_depth(fresh_pack: Pack):
+    s = make(fresh_pack)
+    items = s.handle("r", "markets.list", {"filters": {"execution_supported_only": True}}).data["items"]
+    assert items and all(isinstance(i["numeraire_depth_raw"], str) and int(i["numeraire_depth_raw"]) > 0 for i in items)
+
+
+def test_sessions_of_one_pack_share_the_relative_tape(fresh_pack: Pack):
+    a, b = make(fresh_pack, "x"), make(fresh_pack, "y")
+    assert a.sim.tape is b.sim.tape
+    before = (b.sim.cursor, b.now, b.sim.state_hash())
+    a.handle("r", "clock.advance", {"to_ms": 3_600_000})
+    assert a.sim.cursor > before[0] and (b.sim.cursor, b.now, b.sim.state_hash()) == before

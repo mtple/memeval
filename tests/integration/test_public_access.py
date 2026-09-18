@@ -214,3 +214,17 @@ def test_listing_runs_never_rebuilds_a_session(tmp_path: Path, dev_pack_dir: Pat
     rows = b.runs()
     assert len(rows) == 1 and rows[0]["state"] == "running" and rows[0]["clock_ms"] == 600_000 and "live" not in rows[0]
     b.close()
+
+
+def test_default_bankroll_is_one_whole_unit_of_the_cash_asset(tmp_path: Path, dev_pack_dir: Path):
+    """A practice pack's CASH has 6 decimals, so the default is 1,000,000 raw; a real Base day whose cash
+    is ETH gets 10^18. The old fixed 1,000,000 was a trillionth of an ETH."""
+    mgr = RunManager(data_dir=tmp_path / "data")
+    mgr.import_pack(dev_pack_dir, "gen_dev_short")
+    c = TestClient(create_app(mgr, "adm_public_test"))
+    r = c.post("/api/v1/runs", json={"agent": {"name": "b", "version": "1"}, "pack_id": "gen_dev_short"})
+    assert r.status_code == 201, r.text
+    assert r.json()["bankroll_raw"] == str(10**6)
+    r2 = c.post("/api/v1/runs", json={"agent": {"name": "b", "version": "1"}, "pack_id": "gen_dev_short", "bankroll_raw": "5"})
+    assert r2.status_code == 201 and r2.json()["bankroll_raw"] == "5"
+    mgr.close()
