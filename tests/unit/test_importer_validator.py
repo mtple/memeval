@@ -161,3 +161,31 @@ def test_a_long_tape_stays_on_disk_and_streams_into_the_engine(dev_pack_dir: Pat
     sim.process_until(sim.end_ms)
     assert sim.events_processed > 0 and len(sim.tape) == len(eager.tape)
     assert validate_pack(lazy)["resulting_qualification"] == eager.validation["resulting_qualification"]
+
+
+def test_universe_gate_accepts_a_truncated_unsupported_list_with_a_count(tmp_path):
+    """A day of launches excludes thousands of pools without an ETH leg; the inventory keeps the first
+    entries and the full count, and the gate compares the count, not the list length."""
+    import json
+
+    import yaml
+
+    from market_replay.datasets.generator import dev_short_config, generate_pack
+    from market_replay.datasets.pack import Pack
+    from market_replay.datasets.validator import validate_pack
+
+    d = tmp_path / "p"
+    generate_pack(dev_short_config(), d)
+    inv_path = d / "inventory.json"
+    inv = json.loads(inv_path.read_text()) if inv_path.exists() else {}
+    inv.update({"unsupported": [{"pool": "0x1", "venue": "uniswap_v4", "reason": "no wrapped-native leg"}], "unsupported_count": 3})
+    inv_path.write_text(json.dumps(inv))
+    m = yaml.safe_load((d / "manifest.yaml").read_text())
+    m["universe"]["unsupported_count"] = 3
+    (d / "manifest.yaml").write_text(yaml.safe_dump(m, sort_keys=False))
+    report = validate_pack(Pack.load(d, verify_hashes=False))
+    assert next(g for g in report["gates"] if g["gate"] == "universe")["status"] == "passed"
+    del inv["unsupported_count"]
+    inv_path.write_text(json.dumps(inv))
+    report = validate_pack(Pack.load(d, verify_hashes=False))
+    assert next(g for g in report["gates"] if g["gate"] == "universe")["status"] == "failed"

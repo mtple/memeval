@@ -181,6 +181,7 @@ def merge_packs(out_dir: Path, packs: list[Pack], cfg: dict[str, Any], decision_
             inventory[key].extend(inv.get(key, []))
         inventory["candidate_count"] += int(inv.get("candidate_count", 0) or 0)
         inventory["selected_count"] += int(inv.get("selected_count", 0) or 0)
+        inventory["unsupported_count"] = int(inventory.get("unsupported_count", 0) or 0) + int(inv.get("unsupported_count", len(inv.get("unsupported", []))) or 0)
         proto = m.universe.selection_rule_version if m.universe.selection_rule_version.startswith("all_launches") else (next(iter(p.pools.values())).protocol if p.pools else m.universe.selection_rule_version)
         inventory["venues"][proto] = {"pools": len(p.pools), "tape_events": p.tape_count, "qualification": p.validation.get("resulting_qualification")}
         u = m.universe

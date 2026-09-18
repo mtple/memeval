@@ -257,7 +257,10 @@ def validate_pack(pack: Pack) -> dict[str, Any]:
 
     # 2. Universe
     u = m.universe
-    uni_ok = bool(u.selection_rule_version) and (u.candidate_count >= u.selected_count) and (u.unsupported_count == len(pack.inventory.get("unsupported", [])) if pack.inventory else True)
+    # The inventory may list only the first entries of a long exclusion list (a day of launches has
+    # thousands of pools without an ETH leg); the count then travels alongside the truncated list.
+    inv_unsupported = (pack.inventory.get("unsupported_count") if pack.inventory and pack.inventory.get("unsupported_count") is not None else len(pack.inventory.get("unsupported", []))) if pack.inventory else None
+    uni_ok = bool(u.selection_rule_version) and (u.candidate_count >= u.selected_count) and (u.unsupported_count == inv_unsupported if inv_unsupported is not None else True)
     disc_missing = [k for k, p in pack.pools.items() if p.discovery_available_utc_ms is None and p.created_time_utc_ms is None]
     gates.append(_gate("universe", GateStatus.PASSED if uni_ok and not disc_missing else GateStatus.FAILED, f"selection rule {u.selection_rule_version}; candidates={u.candidate_count} selected={u.selected_count} unsupported={u.unsupported_count} missing={u.missing_count}", pools_without_discovery_time=disc_missing))
     executable_failure |= not uni_ok or bool(disc_missing)

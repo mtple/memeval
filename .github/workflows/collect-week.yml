@@ -106,8 +106,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: weeks/${{ steps.pick.outputs.name }}_work
-          key: work-${{ steps.pick.outputs.name }}-none
-          restore-keys: work-${{ steps.pick.outputs.name }}-
+          key: work2-${{ steps.pick.outputs.name }}-none
+          restore-keys: work2-${{ steps.pick.outputs.name }}-
       - name: Stats
         if: startsWith(github.event.head_commit.message, 'stats')
         run: |
@@ -155,8 +155,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: weeks/${{ steps.pick.outputs.name }}_work
-          key: work-${{ steps.pick.outputs.name }}-${{ github.run_id }}
-          restore-keys: work-${{ steps.pick.outputs.name }}-
+          key: work2-${{ steps.pick.outputs.name }}-${{ github.run_id }}
+          restore-keys: work2-${{ steps.pick.outputs.name }}-
       - name: Runner resources before
         if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1'
         run: df -h /home/runner && free -m
@@ -177,7 +177,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: weeks/${{ steps.pick.outputs.name }}_work
-          key: work-${{ steps.pick.outputs.name }}-${{ github.run_id }}
+          key: work2-${{ steps.pick.outputs.name }}-${{ github.run_id }}
       - name: Dispatch the next slice
         if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1' && steps.record.outputs.rc == '3'
         env:
