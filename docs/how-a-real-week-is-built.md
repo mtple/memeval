@@ -4,6 +4,22 @@ This page explains, in order, what happens between the operator recording a past
 week appearing on the leaderboard. It also says how the tests stand in for the blockchain. The
 runbook covers the commands; this page covers the mechanism.
 
+## Days, not weeks
+
+The unit the hosted site ships is one UTC day, named `base_day_YYYY-MM-DD` and labelled "Base day
+of YYYY-MM-DD". Everything below that says "week" applies to a day in the same way; `make day
+START=...` is `make week` with a 24-hour period and the launches universe.
+
+The reason is size, measured on the week of 2026-09-07. That week saw about 3,500 Uniswap v2,
+1,100 v3 and 25,400 v4 pools created on Base. Recording every one of them with at least one swap
+came to 1.63 million events after 60 percent of the week, so about 2.7 million for the week: a
+gzipped tape near 300 MB, over a gigabyte of engine memory and a cold start measured in minutes.
+Vercel functions are limited to a 250 MB bundle. Raising the minimum swap count does not help,
+because the events sit in the busy pools: keeping only pools with 100 or more swaps still keeps
+75 percent of the events. A day is 135,000 to 400,000 events and 15 to 40 MB gzipped, which fits
+with room for several. A week with every launch is still recordable (`make week`) for a
+self-hosted server with a persistent process; the GitHub workflow records it in 40-minute slices.
+
 ## The short version
 
 1. The operator runs one command on their own machine with a week's start date. Users never

@@ -50,16 +50,16 @@ VENUE_NAMES = {"uniswap_v2": "v2 pairs", "uniswap_v3": "v3 pools", "uniswap_v4":
 
 
 def week_label(name: str, chain: str, protocol: str | None = None, start_utc: str | None = None, end_utc: str | None = None) -> str:
-    """Real data is labelled by its calendar: 'Base week of 2026-09-07' (a shorter period: 'Base
-    2026-09-04 (1h)'), plus the venue for a single-venue pack ('..., v4 pools')."""
+    """Real data is labelled by its calendar: 'Base day of 2026-09-08', 'Base week of 2026-09-07' (any
+    other period: 'Base 2026-09-04 (1h)'), plus the venue for a single-venue pack ('..., v4 pools')."""
     parts = name.split("_")
     venue = VENUE_NAMES.get(protocol or "", "")
     suffix = f", {venue}" if venue and protocol != "uniswap_v2" else ""
     head = chain.capitalize()
     if start_utc:
         day = str(start_utc)[:10]
-        if len(parts) >= 3 and parts[1] == "week":
-            return f"{head} week of {day}{suffix}"
+        if len(parts) >= 3 and parts[1] in ("week", "day"):
+            return f"{head} {parts[1]} of {day}{suffix}"
         hours = parts[3] if len(parts) >= 4 and parts[1] == "period" else None
         return f"{head} {day} ({hours}){suffix}" if hours else f"{head} {day}{suffix}"
     return f"{head}: {name}{suffix}"
@@ -1305,7 +1305,7 @@ def _episode_description(row: dict[str, Any]) -> str:
         scenario = summary.get("scenario") or ""
         return f"Practice material, not real data: an artificial market with known rules, made for testing agents. {scenario}".strip()
     hours = float(row.get("duration_ms") or 0) / 3_600_000
-    span = "7 days" if row.get("is_full_week") else f"{hours:g} hours"
+    span = "7 days" if row.get("is_full_week") else f"{hours / 24:g} day{'s' if hours != 24 else ''}" if hours >= 24 and hours % 24 == 0 else f"{hours:g} hours"
     pools = summary.get("pools_executable")
     start, end = str(row.get("start_utc") or "")[:10], str(row.get("end_utc") or "")[:10]
     when = f" from {start} to {end}" if start and end else ""

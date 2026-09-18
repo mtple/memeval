@@ -16,7 +16,7 @@ import DataHealth from "./pages/DataHealth";
 const NAV: [string, string, boolean][] = [
   ["/", "Leaderboard", false],
   ["/results", "Results", false],
-  ["/episodes", "Weeks", false],
+  ["/episodes", "Days", false],
   ["/agents", "Agents", true],
   ["/compare", "Compare", true],
 ];

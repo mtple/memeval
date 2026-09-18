@@ -3,8 +3,10 @@ name: collect-week
 # Optional: record one real week from GitHub's runners instead of your own machine, and commit it.
 # The same command works locally: `make week START=YYYY-MM-DD` (see docs/how-a-real-week-is-built.md).
 #
-# Start it from the Actions tab (week_start input), or push any commit to the `record-week` branch
-# whose message contains the date, e.g. `git commit --allow-empty -m "record 2026-09-07"` then
+# Start it from the Actions tab (week_start and days inputs), or push any commit to the `record-week`
+# branch whose message names the mode and the date: `day 2026-09-08` records one day (the unit the site
+# ships), `record 2026-09-07` a whole week (millions of events; too big for the hosted site), `trial`,
+# `survey`, `stats`, `cancel <run id>`. E.g. `git commit --allow-empty -m "day 2026-09-08"` then
 # `git push -f origin HEAD:record-week` (Vercel never deploys that branch, see vercel.json).
 #
 # Secret: BASE_RPC_URL or RPC_URL (your read-only Base RPC endpoint). Nothing else; the finished week is committed
@@ -17,6 +19,10 @@ on:
         description: "Week start (UTC date, YYYY-MM-DD). Empty = the most recent Monday whose week ended at least a day ago."
         required: false
         default: ""
+      days:
+        description: "Length in days: 1 records a day (the unit the site ships), 7 a week."
+        required: false
+        default: "1"
   push:
     branches: [record-week]
 
@@ -45,8 +51,15 @@ jobs:
         id: pick
         env:
           WEEK_START: ${{ inputs.week_start }}
+          DAYS: ${{ inputs.days }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
+          msg="$COMMIT_MESSAGE"
+          days="${DAYS:-1}"
+          case "$msg" in
+            day\ *|trial\ *) days=1 ;;
+            record\ *|survey\ *|stats\ *) days=7 ;;
+          esac
           start=$(python3 -c "
           import datetime as dt, os, re
           ws = os.environ.get('WEEK_START') or ''
@@ -62,8 +75,10 @@ jobs:
               while (dt.datetime.now(dt.timezone.utc).date() - (start + dt.timedelta(days=7))).days < 1:
                   start -= dt.timedelta(days=7)
               print(start.isoformat())")
-          echo "start=$start" >> "$GITHUB_OUTPUT"
-          echo "recording the week of $start"
+          end=$(python3 -c "import datetime as dt; print((dt.date.fromisoformat('$start') + dt.timedelta(days=$days)).isoformat())")
+          if [ "$days" = "7" ]; then name="base_week_$start"; unit=week; else name="base_day_$start"; unit=day; fi
+          { echo "start=$start"; echo "end=$end"; echo "days=$days"; echo "name=$name"; echo "unit=$unit"; } >> "$GITHUB_OUTPUT"
+          echo "recording the $unit of $start ($name, until $end)"
       - name: "Cancel only (commit message: cancel <run id>): stop a running recording"
         if: startsWith(github.event.head_commit.message, 'cancel')
         env:
@@ -89,14 +104,14 @@ jobs:
         if: startsWith(github.event.head_commit.message, 'stats')
         uses: actions/cache/restore@v4
         with:
-          path: weeks/base_week_${{ steps.pick.outputs.start }}_work
-          key: week-work-${{ steps.pick.outputs.start }}-none
-          restore-keys: week-work-${{ steps.pick.outputs.start }}-
+          path: weeks/${{ steps.pick.outputs.name }}_work
+          key: work-${{ steps.pick.outputs.name }}-none
+          restore-keys: work-${{ steps.pick.outputs.name }}-
       - name: Stats
         if: startsWith(github.event.head_commit.message, 'stats')
         run: |
-          du -sh weeks/base_week_${{ steps.pick.outputs.start }}_work || true
-          uv run python scripts/launch_log_stats.py weeks/base_week_${{ steps.pick.outputs.start }}_work | tee stats.json
+          du -sh weeks/${{ steps.pick.outputs.name }}_work || true
+          uv run python scripts/launch_log_stats.py weeks/${{ steps.pick.outputs.name }}_work | tee stats.json
           echo "SURVEY_ONLY=1" >> "$GITHUB_ENV"
       - name: Keep the stats
         if: startsWith(github.event.head_commit.message, 'stats')
@@ -130,18 +145,18 @@ jobs:
         if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1'
         uses: actions/cache/restore@v4
         with:
-          path: weeks/base_week_${{ steps.pick.outputs.start }}_work
-          key: week-work-${{ steps.pick.outputs.start }}-${{ github.run_id }}
-          restore-keys: week-work-${{ steps.pick.outputs.start }}-
+          path: weeks/${{ steps.pick.outputs.name }}_work
+          key: work-${{ steps.pick.outputs.name }}-${{ github.run_id }}
+          restore-keys: work-${{ steps.pick.outputs.name }}-
       - name: Runner resources before
         if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1'
         run: df -h /home/runner && free -m
-      - name: Record the week in a 40-minute slice (read-only, budgeted, resumable)
+      - name: Record the period in a 40-minute slice (read-only, budgeted, resumable)
         id: record
         if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1'
         run: |
           set +e
-          uv run market-replay week --start "${{ steps.pick.outputs.start }}" --max-minutes 40
+          uv run market-replay week --start "${{ steps.pick.outputs.start }}" --end "${{ steps.pick.outputs.end }}" --max-minutes 40
           rc=$?
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
           echo "exit code $rc (0 = week built, 3 = slice expired and the next slice is dispatched below)"
@@ -152,14 +167,14 @@ jobs:
         if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1' && steps.record.outputs.rc != '0'
         uses: actions/cache/save@v4
         with:
-          path: weeks/base_week_${{ steps.pick.outputs.start }}_work
-          key: week-work-${{ steps.pick.outputs.start }}-${{ github.run_id }}
+          path: weeks/${{ steps.pick.outputs.name }}_work
+          key: work-${{ steps.pick.outputs.name }}-${{ github.run_id }}
       - name: Dispatch the next slice
         if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1' && steps.record.outputs.rc == '3'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run collect-week.yml --ref main -f week_start="${{ steps.pick.outputs.start }}"
+          gh workflow run collect-week.yml --ref main -f week_start="${{ steps.pick.outputs.start }}" -f days="${{ steps.pick.outputs.days }}"
           echo "next slice dispatched; this run ends here"
       - name: Fail if the recording stopped for any other reason
         if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1' && steps.record.outputs.rc != '0' && steps.record.outputs.rc != '3'
@@ -168,8 +183,8 @@ jobs:
         if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1' && steps.record.outputs.rc == '0'
         uses: actions/upload-artifact@v4
         with:
-          name: base_week_${{ steps.pick.outputs.start }}
-          path: weeks/base_week_${{ steps.pick.outputs.start }}
+          name: ${{ steps.pick.outputs.name }}
+          path: weeks/${{ steps.pick.outputs.name }}
           if-no-files-found: ignore
           retention-days: 3
       - name: Commit the week
@@ -179,7 +194,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add weeks/
-          git commit -m "Base week of ${{ steps.pick.outputs.start }}" || { echo "nothing new to commit"; exit 0; }
+          git commit -m "Base ${{ steps.pick.outputs.unit }} of ${{ steps.pick.outputs.start }}" || { echo "nothing new to commit"; exit 0; }
           # main may have moved while the week was recording: put the commit on top of it, then push
           for attempt in 1 2 3 4 5; do
             git fetch origin main

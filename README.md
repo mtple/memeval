@@ -100,7 +100,7 @@ same handler: `market-replay mcp`. Conformance checks any client can run:
 ## Repository layout
 
 ```
-apps/web/                 React + TypeScript + Vite UI (Leaderboard, Results, Weeks, Agents, Compare, Data health)
+apps/web/                 React + TypeScript + Vite UI (Leaderboard, Results, Days, Agents, Compare, Data health)
 src/market_replay/
   domain/                 identity, exact quantities, statuses, canonical records, envelope
   engine/                 block schedule, tape, deterministic simulation, session (tool handler)
@@ -124,7 +124,7 @@ sdk/python, sdk/typescript, agents/examples, schemas/, fixtures/, tests/, docs/,
 - [docs/execution-assumptions.md](docs/execution-assumptions.md) — `cpmm_fixed_flow_v1`, capacity guardrails, gas, valuation
 - [docs/benchmark-protocol.md](docs/benchmark-protocol.md) — suites, comparisons, what is and is not claimed
 - [docs/data-rights.md](docs/data-rights.md) — storage/processing/redistribution/serving status
-- [docs/how-a-real-week-is-built.md](docs/how-a-real-week-is-built.md) — recording a week on your machine, committing it, and how the tests stand in for the chain
+- [docs/how-a-real-week-is-built.md](docs/how-a-real-week-is-built.md) — recording a real day (or week) on your machine, committing it, and how the tests stand in for the chain
 - [docs/runbook.md](docs/runbook.md) — operations, collection, troubleshooting
 - [docs/implementation-report.md](docs/implementation-report.md) — what works, verification commands executed, blockers
 

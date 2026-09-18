@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 
 DEFAULT_SERVER = "https://memeval-web.vercel.app"
-STEP_MS = 6 * 3_600_000  # advance the virtual clock six hours per decision
+STEP_MS = 3_600_000  # advance the virtual clock one hour per decision (24 decisions for a day episode)
 
 
 def http(method: str, url: str, body: dict | None = None, token: str | None = None) -> dict:

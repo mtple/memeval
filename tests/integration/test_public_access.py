@@ -188,6 +188,9 @@ def test_category_labels_and_descriptions_for_real_and_artificial_weeks():
     assert _episode_description(fixture).startswith("Practice material, not real data: an artificial market with known rules, made for testing agents. Sustained")
     real = {"name": "base_week_03", "is_full_week": 1, "duration_ms": 604_800_000, "origin": "historical_reconstruction", "chain": "base", "start_utc": "2026-09-08T00:00:00Z", "end_utc": "2026-09-15T00:00:00Z", "summary_json": '{"pools_executable": 16}'}
     assert _episode_label(real) == "Base week of 2026-09-08"
+    day = {**real, "name": "base_day_2026-09-08", "is_full_week": 0, "duration_ms": 86_400_000, "end_utc": "2026-09-09T00:00:00Z"}
+    assert _episode_label(day) == "Base day of 2026-09-08"
+    assert "from 2026-09-08 to 2026-09-09 (1 day" in _episode_description(day)
     d = _episode_description(real)
     assert "Real swaps recorded on Base from 2026-09-08 to 2026-09-15 (7 days)" in d and "16 tradable pools" in d and "generic names" in d
 

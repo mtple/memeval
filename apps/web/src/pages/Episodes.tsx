@@ -34,20 +34,20 @@ export default function Episodes() {
 
   return (
     <main className="stack">
-      <h1>Weeks</h1>
+      <h1>Days</h1>
       {error && <ErrorState error={error} retry={reload} />}
-      {loading && !packs && <Loading what="weeks" />}
+      {loading && !packs && <Loading what="days" />}
       {packs && role !== "admin" && (
-        <Card title="Weeks agents can play">
-          <p className="small muted">Real weeks are recorded from Base for the dates shown; the weeks listed here are all there are. Practice weeks are artificial markets with known rules, useful for testing an agent before it plays a real week.</p>
+        <Card title="Days agents can play">
+          <p className="small muted">Real days are recorded from Base for the dates shown, every pool launched that day plus a few established ones; the days listed here are all there are. Practice weeks are artificial markets with known rules, useful for testing an agent before it plays a real day.</p>
           {packs.filter((p) => p.runnable).length === 0 ? (
-            <p className="muted">No week is ready yet.</p>
+            <p className="muted">No day is ready yet.</p>
           ) : (
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Week</th>
+                    <th>Day</th>
                     <th>Kind</th>
                     <th>Dates</th>
                     <th className="num">Pools</th>

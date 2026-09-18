@@ -319,7 +319,9 @@ def week(
         raise typer.Exit(2)
     is_week = (t1 - t0) >= timedelta(days=7)
     hours = int((t1 - t0).total_seconds() // 3600)
-    name = f"base_week_{t0:%Y-%m-%d}" if is_week else f"base_period_{t0:%Y-%m-%d}_{hours}h"
+    is_day = (t1 - t0) == timedelta(days=1)
+    name = f"base_week_{t0:%Y-%m-%d}" if is_week else f"base_day_{t0:%Y-%m-%d}" if is_day else f"base_period_{t0:%Y-%m-%d}_{hours}h"
+    unit = "week" if is_week else "day" if is_day else "period"
     iso = lambda d: d.strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731
     cfg = {
         "rpc_url_env": rpc_url_env,
@@ -375,7 +377,27 @@ def week(
     import shutil
 
     shutil.rmtree(work, ignore_errors=True)
-    typer.echo(f"done: {out / name} qualifies as research. Commit it: git add {out / name} && git commit -m 'Base week of {t0:%Y-%m-%d}' && git push", err=True)
+    typer.echo(f"done: {out / name} qualifies as research. Commit it: git add {out / name} && git commit -m 'Base {unit} of {t0:%Y-%m-%d}' && git push", err=True)
+
+
+@app.command()
+def day(
+    start: str = typer.Option(..., "--start", help="the UTC date to record (YYYY-MM-DD), midnight to midnight"),
+    out: Path = typer.Option(REPO_ROOT / "weeks", "--out", help="directory the finished day is written into (committed to the repository)"),
+    max_pairs: int = typer.Option(16, help="established pools (trading before the day)"),
+    min_swaps: int = typer.Option(1, help="launches with fewer swaps inside the day are left out of the tape (counted in the inventory)"),
+    max_requests: int = typer.Option(40000, help="hard RPC request budget"),
+    rpc_url_env: str = typer.Option("BASE_RPC_URL", help="name of the environment variable holding the read-only RPC endpoint"),
+    max_minutes: float = typer.Option(0, help="stop cleanly after this many minutes with the checkpoints saved (exit code 3); run again to resume. 0 = no limit"),
+) -> None:
+    """Record one real day of Base trading into weeks/base_day_<date>: every pool launched that day on
+    Uniswap v2, v3 and v4 plus a fixed set of established pools. A day is the unit the hosted
+    evaluator ships: a full week of launches is millions of events and does not fit a serverless
+    function, see docs/how-a-real-week-is-built.md."""
+    from datetime import datetime, timedelta
+
+    t0 = datetime.strptime(start, "%Y-%m-%d")
+    week(start=start, end=(t0 + timedelta(days=1)).strftime("%Y-%m-%d"), out=out, max_pairs=max_pairs, universe="launches", min_swaps=min_swaps, max_requests=max_requests, log_chunk_blocks=10000, rpc_url_env=rpc_url_env, max_minutes=max_minutes)
 
 
 @app.command()
