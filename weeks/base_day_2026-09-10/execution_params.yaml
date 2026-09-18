@@ -1,0 +1,39 @@
+availability_delay_ms: 4000
+block_interval_ms: 2000
+budgets:
+  inference_spend_limit_usd: '0'
+  max_decisions: 20000
+  max_page_size: 500
+  max_requests: 200000
+  max_response_items: 5000
+  wall_clock_deadline_s: null
+candle_intervals_ms:
+- 60000
+- 300000
+- 3600000
+capacity:
+  max_cumulative_displacement_bps: 50
+  max_input_bps_of_reserve: 10
+  note: Unvalidated modeling guardrails, not trading rules or fidelity guarantees.
+  version: capacity_v1
+confirm_blocks: 1
+data_latency_ms: 250
+gas_basis: median_cost_of_197_sampled_recorded_swap_receipts_v1
+gas_cost_raw: '1000198335654'
+is_measured: false
+label: Documented assumptions for Base research packs; block times come from recorded
+  block headers.
+model: cpmm_fixed_flow_v1
+notes:
+- Latency and availability values are assumptions, not measurements.
+- Gas per included transaction is the median cost (L2 execution plus L1 data fee)
+  of a sample of the swaps recorded in this period; the sample summary is in coverage.gas_sample.
+profile_name: base_research_v1
+quote_latency_ms: 250
+quote_ttl_ms: 10000
+rate_limit:
+  simulated_requests_per_minute: 600
+reporting_grid_ms: 3600000
+settlement_tail_blocks: 2
+submit_latency_ms: 1000
+valuation_policy: liquidate_all_holdings_via_direct_pool_v1
