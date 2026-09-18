@@ -96,9 +96,28 @@ jobs:
             trial/*_work/last_result.json
           if-no-files-found: ignore
           retention-days: 3
+      - name: Restore working files from an earlier attempt (the recording resumes from its checkpoints)
+        if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1'
+        uses: actions/cache/restore@v4
+        with:
+          path: weeks/base_week_${{ steps.pick.outputs.start }}_work
+          key: week-work-${{ steps.pick.outputs.start }}-${{ github.run_id }}
+          restore-keys: week-work-${{ steps.pick.outputs.start }}-
+      - name: Runner resources before
+        if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1'
+        run: df -h /home/runner && free -m
       - name: Record the week (read-only, budgeted, resumable)
         if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1'
         run: uv run market-replay week --start "${{ steps.pick.outputs.start }}"
+      - name: Runner resources after
+        if: always() && env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1'
+        run: df -h /home/runner && free -m && du -sh weeks/* 2>/dev/null || true
+      - name: Keep the working files for a resume (they are deleted once the week is built)
+        if: always() && env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1'
+        uses: actions/cache/save@v4
+        with:
+          path: weeks/base_week_${{ steps.pick.outputs.start }}_work
+          key: week-work-${{ steps.pick.outputs.start }}-${{ github.run_id }}
       - name: Keep the week as an artifact (in case the push below fails)
         if: env.SURVEY_ONLY != '1' && env.TRIAL_ONLY != '1' 
         uses: actions/upload-artifact@v4

@@ -78,6 +78,20 @@ RULE = "all_launches_in_window_v1"
 VENUES = ("uniswap_v2", "uniswap_v3", "uniswap_v4")
 
 
+LOG_FIELDS = ("address", "blockNumber", "data", "logIndex", "topics", "transactionHash")
+
+
+def compact_log(lg: dict[str, Any]) -> dict[str, Any]:
+    """Only the fields the normalizers read; a week of v4 swaps is about a million logs held in memory at once."""
+    return {k: lg[k] for k in LOG_FIELDS if k in lg}
+
+
+def rss_mb() -> int:
+    import resource
+
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024
+
+
 def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, rpc_url_override: str | None = None, sleep=None, deadline: float | None = None, store_bodies: bool = False, budget_used: int = 0) -> dict[str, Any]:
     cfg = yaml.safe_load(config_path.read_text())
     out_dir = Path(cfg["out_dir"]) if Path(cfg["out_dir"]).is_absolute() else data_dir / cfg["out_dir"]
@@ -132,14 +146,14 @@ def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, 
                     note(f"{key}: chunk reduced to {c} after provider error: {str(e)[:100]}")
                     continue
                 raise
-            kept = [lg for lg in logs if keep(lg)] if keep is not None else logs
+            kept = [compact_log(lg) for lg in logs if keep is None or keep(lg)]
             logs_file.append(kept)
             ledger.set(ref, field_name, cur, to_b, CoverageState.COMPLETED_AND_CHECKED, f"{len(logs)} logs ({len(kept)} kept); range returned without provider truncation error")
             cur = to_b + 1
             ck.set(key + ":cursor", cur)
             progress["chunks"] += 1
             if progress["chunks"] % 100 == 0:
-                note(f"{key}: {progress['chunks']} ranges read so far, {budget.requests} requests, {budget.response_bytes // (1024 * 1024)} MB")
+                note(f"{key}: {progress['chunks']} ranges read so far, {budget.requests} requests, {budget.response_bytes // (1024 * 1024)} MB, {rss_mb()} MB resident")
         return logs_file
 
     try:
@@ -217,6 +231,7 @@ def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, 
                     lf = scan(f"{v}:batch{bi // batch_size}", "events", f"events:{v}:b{bi // batch_size}", address=batch, topics=topics, start=first, end_exclusive=blocks["period_end"], chunk_size=chunk)
                     for lg in lf.read():
                         logs_by_pool.setdefault(f"{v}:{lg['address'].lower()}", []).append(lg)
+        note(f"events loaded for {len(logs_by_pool)} pools: {sum(len(v) for v in logs_by_pool.values())} logs, {rss_mb()} MB resident")
         # 4. token decimals for the pools that traded
         assets: dict[str, dict[str, Any]] = ck.get("assets", {})
         swap_topics = {TOPIC_SWAP, TOPIC_V3_SWAP, TOPIC_V4_SWAP}
@@ -295,6 +310,7 @@ def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, 
                         continue
                     tape.extend(rows)
                     pools_out.append({"key": pool_key, "chain_id": chain_id, "protocol": v, "address": a, "model": str(CL_MODELS[v]), "asset0": f"{chain_id}:{legs[0]}", "asset1": f"{chain_id}:{legs[1]}", "fee_numerator": FEE_DENOMINATOR_PIPS - pool_fee, "fee_denominator": FEE_DENOMINATOR_PIPS, "fee_pips": pool_fee, "fee_basis": fee_basis, "tick_spacing": int(meta["tick_spacing"]), "hooks": meta.get("hooks"), "created_block": meta["created_block"], "created_time_utc_ms": created_ms, "discovery_available_utc_ms": created_ms + delay_ms, "initial_reserve0": None, "initial_reserve1": None, "initial_sqrt_price_x96": None, "initial_tick": None, "initial_liquidity": None, "initial_ticks": [], "initial_state_block": None, "initial_state_basis": "pool_initialized_inside_window", "factory": (d.get("factory") or d.get("pool_manager")).lower(), "supported_by_cpmm": False, "supported_by_clmm": True, "unsupported_reason": None})
+        note(f"normalized {len(tape)} rows for {len(pools_out)} pools, {rss_mb()} MB resident")
         tape.sort(key=lambda r: (r["block"], r["log_index"], r.get("seq", 0)))
         for i, r in enumerate(tape, start=1):
             r["seq"] = i
