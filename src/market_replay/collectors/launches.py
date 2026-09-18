@@ -234,7 +234,9 @@ def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, 
                         continue
                     if tok not in assets and tok not in needed:
                         needed.append(tok)
-        note(f"launches with an ETH leg: {{v: len(in_scope[v]) for v in venues}}; traded (>= {min_swaps} swap): {{v: len(traded[v]) for v in venues}}; tokens needing decimals: {len(needed)}")
+        eth_counts = {v: len(in_scope[v]) for v in venues}
+        traded_counts = {v: len(traded[v]) for v in venues}
+        note(f"launches with an ETH leg: {eth_counts}; traded (>= {min_swaps} swap): {traded_counts}; tokens needing decimals: {len(needed)}")
         for i, tok in enumerate(needed):
             slice_check()
             try:
@@ -331,7 +333,7 @@ def run_launch_collection(config_path: Path, data_dir: Path, *, transport=None, 
             availability_model={"kind": "constant_delay_from_block_time", "delay_ms": delay_ms, "acquisition_utc_ms": now_ms(), "note": "acquired later than the events; original provider availability not established"},
             rights=Rights(storage_basis="public_chain_data_via_configured_rpc; endpoint terms not reviewed here", local_processing_basis="research", redistribution="not_cleared", simulator_serving="local_only", notes=str(cfg.get("authorization_note", ""))),
             qualification=UseStatus.RESEARCH,
-            inventory={"unsupported": excluded, "excluded_by_sampling": [], "quiet_launches": quiet[:20000], "quiet_launch_count": len(quiet), "missing": missing, "demoted": demoted, "native_currency_pools": native_pools, "candidate_count": sum(len(launches[v]) for v in venues), "selected_count": len(pools_out), "launches_per_venue": {v: len(launches[v]) for v in venues}, "eth_launches_per_venue": {v: len(in_scope[v]) for v in venues}, "traded_launches_per_venue": {v: len(traded[v]) for v in venues}},
+            inventory={"unsupported": excluded[:2000], "unsupported_count": len(excluded), "excluded_by_sampling": [], "quiet_launches": quiet[:2000], "quiet_launch_count": len(quiet), "quiet_launches_truncated": len(quiet) > 2000, "missing": missing, "demoted": demoted, "native_currency_pools": native_pools, "candidate_count": sum(len(launches[v]) for v in venues), "selected_count": len(pools_out), "launches_per_venue": {v: len(launches[v]) for v in venues}, "eth_launches_per_venue": {v: len(in_scope[v]) for v in venues}, "traded_launches_per_venue": {v: len(traded[v]) for v in venues}},
             provenance_notes=["HISTORICAL RECONSTRUCTION of every pool launched inside the period (Uniswap v2 pairs, v3 pools, v4 pools) from eth_getLogs. Token sellability/restrictions unknown (assumed standard transfer).", "cl_swap amounts are pool deltas (positive = paid into the pool); v4 user deltas were negated to match the v3 convention."],
             decision_log=log,
         )
