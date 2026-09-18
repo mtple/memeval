@@ -108,3 +108,22 @@ def test_restricted_runner_reports_unenforced_controls_honestly(dev_pack: Pack, 
     finally:
         proc.kill()
         proc.wait(timeout=10)
+
+
+def test_participant_redaction_keeps_the_document_valid_for_numeric_findings():
+    """A real pack's report carries the recording time as a bare epoch number; redacting it must not
+    leave unquoted text in the JSON (the bug FreeTurtle hit: every participant report answered 500)."""
+    import json
+
+    from market_replay.observations.masking import LeakScanner, redact_for_role
+
+    scanner = LeakScanner(private_terms=set(), allow_dates=False)
+    report = {"coverage_and_assumptions": {"availability_model": {"acquisition_utc_ms": 1789739082056, "note": "x"}}, "list": [{"created_at": "1789739082056"}], "addr": "sent to 0x4200000000000000000000000000000000000006 today", "outcome": {"final_cash_raw": "1006772206301670659"}}
+    out = redact_for_role(report, "participant", scanner)
+    json.dumps(out)  # serializable, hence valid
+    assert out["coverage_and_assumptions"]["availability_model"]["acquisition_utc_ms"] == "[redacted]"
+    assert out["list"][0]["created_at"] == "[redacted]"
+    assert out["addr"] == "sent to [redacted] today"
+    assert out["outcome"]["final_cash_raw"] == "1006772206301670659"  # a raw quantity is not a timestamp
+    assert not scanner.scan(out)
+    assert redact_for_role(report, "admin", scanner) is report

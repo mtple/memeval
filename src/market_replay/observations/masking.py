@@ -110,17 +110,62 @@ class LeakDetected(RuntimeError):
         super().__init__(f"{len(findings)} leakage finding(s): " + "; ".join(f"{x.kind}@{x.path}" for x in findings[:5]))
 
 
+_PATH_TOKEN_RE = re.compile(r"\.([^.\[\]]+)|\[(\d+)\]")
+
+
+def _redact_at(data: Any, finding: LeakFinding) -> bool:
+    """Replace the leaking value at the finding's path in place. Returns False when the path cannot be
+    resolved (a key containing a dot, for instance), so the caller can fall back."""
+    tokens: list[str | int] = [int(i) if i else k for k, i in _PATH_TOKEN_RE.findall(finding.path)]
+    if not tokens:
+        return False
+    node = data
+    for t in tokens[:-1]:
+        try:
+            node = node[t]
+        except (KeyError, IndexError, TypeError):
+            return False
+    last = tokens[-1]
+    try:
+        if isinstance(node, dict) and isinstance(last, str):
+            if last not in node:
+                return False
+            if finding.value in last and not isinstance(node[last], str | int):
+                node["[redacted]"] = node.pop(last)  # the key itself leaked
+                return True
+            cur = node[last]
+            node[last] = cur.replace(finding.value, "[redacted]") if isinstance(cur, str) else "[redacted]"
+            if finding.value in last:
+                node["[redacted]"] = node.pop(last)
+            return True
+        if isinstance(node, list) and isinstance(last, int) and last < len(node):
+            cur = node[last]
+            node[last] = cur.replace(finding.value, "[redacted]") if isinstance(cur, str) else "[redacted]"
+            return True
+    except (AttributeError, TypeError):
+        return False
+    return False
+
+
 def redact_for_role(obj: Any, role: str, scanner: LeakScanner | None) -> Any:
-    """Role-based redaction for exports: 'admin' sees everything; 'participant' gets the scanned public view."""
+    """Role-based redaction for exports: 'admin' sees everything; 'participant' gets the scanned public view.
+
+    Findings are replaced at their path in the parsed object, never by text substitution: a bare
+    number (an epoch timestamp) replaced inside the JSON text would leave the document unparsable."""
     if role == "admin":
         return obj
-    text = json.dumps(obj, sort_keys=True, default=str)
-    data = json.loads(text)
-    if scanner is not None:
+    data = json.loads(json.dumps(obj, sort_keys=True, default=str))
+    if scanner is None:
+        return data
+    for _ in range(3):  # a replacement can expose nothing new, but a key rename changes paths: re-scan
         findings = scanner.scan(data)
-        if findings:
-            # Replace offending strings rather than failing the export.
-            for f in findings:
-                text = text.replace(json.dumps(f.value)[1:-1], "[redacted]")
-            data = json.loads(text)
+        if not findings:
+            break
+        for f in findings:
+            if not _redact_at(data, f):
+                # Path not resolvable: fall back to replacing the value wherever it appears, as a string.
+                text = json.dumps(data, sort_keys=True)
+                quoted = json.dumps(f.value)
+                text = text.replace(quoted, json.dumps("[redacted]")).replace(quoted[1:-1], "[redacted]")
+                data = json.loads(text)
     return data
