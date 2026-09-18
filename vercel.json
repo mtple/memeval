@@ -38,7 +38,8 @@
   ],
   "git": {
     "deploymentEnabled": {
-      "status-probe": false
+      "status-probe": false,
+      "record-week": false
     }
   }
 }

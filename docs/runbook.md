@@ -133,7 +133,9 @@ trade) into one pack, validates it, and writes it only when it qualifies as rese
 that does not qualify is reported with the failing gate; do not commit it. An interrupted recording
 keeps its working files under `weeks/<name>_work/` (ignored by git) and resumes when the same
 command runs again. The optional `collect-week` GitHub workflow runs the same command on GitHub's
-runners and commits the result, if you would rather not tie up your machine.
+runners and commits the result to `main`, if you would rather not tie up your machine: start it from
+the Actions tab, or push a commit whose message contains the date to the `record-week` branch
+(`git commit --allow-empty -m "record 2026-09-07" && git push -f origin HEAD:record-week`).
 
 On deploy, Vercel builds the repository into the function, so every instance has every week on its
 own disk. The server registers the weeks under `weeks/` on its first request (reading the committed

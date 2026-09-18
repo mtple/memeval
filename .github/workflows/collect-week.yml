@@ -3,6 +3,10 @@ name: collect-week
 # Optional: record one real week from GitHub's runners instead of your own machine, and commit it.
 # The same command works locally: `make week START=YYYY-MM-DD` (see docs/how-a-real-week-is-built.md).
 #
+# Start it from the Actions tab (week_start input), or push any commit to the `record-week` branch
+# whose message contains the date, e.g. `git commit --allow-empty -m "record 2026-09-07"` then
+# `git push -f origin HEAD:record-week` (Vercel never deploys that branch, see vercel.json).
+#
 # Secret: BASE_RPC_URL (your read-only Base RPC endpoint). Nothing else; the finished week is committed
 # to the default branch and the site registers it on its next deploy.
 
@@ -13,6 +17,8 @@ on:
         description: "Week start (UTC date, YYYY-MM-DD). Empty = the most recent Monday whose week ended at least a day ago."
         required: false
         default: ""
+  push:
+    branches: [record-week]
 
 permissions:
   contents: write
@@ -28,6 +34,9 @@ jobs:
         run: |
           if [ -z "$BASE_RPC_URL" ]; then echo "BASE_RPC_URL secret is not set; nothing to record." ; exit 1; fi
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
       - name: Install
         run: uv sync --extra dev
@@ -35,10 +44,14 @@ jobs:
         id: pick
         env:
           WEEK_START: ${{ inputs.week_start }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           start=$(python3 -c "
-          import datetime as dt, os
+          import datetime as dt, os, re
           ws = os.environ.get('WEEK_START') or ''
+          if not ws:
+              m = re.search(r'\b(\d{4}-\d{2}-\d{2})\b', os.environ.get('COMMIT_MESSAGE') or '')
+              ws = m.group(1) if m else ''
           if ws:
               print(ws)
           else:
@@ -59,4 +72,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add weeks/
           git commit -m "Base week of ${{ steps.pick.outputs.start }}" || { echo "nothing new to commit"; exit 0; }
-          git push
+          git push origin HEAD:main
