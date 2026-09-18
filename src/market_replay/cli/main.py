@@ -112,6 +112,18 @@ def packs_revalidate(path: Path) -> None:
     _echo({"pack_id": pack.pack_id, "qualification": pack.validation.get("resulting_qualification"), "demoted": [d["pool"] for d in demoted]})
 
 
+@packs_app.command("baseline")
+def packs_baseline(path: Path) -> None:
+    """Write market_baseline.json next to a pack: what an equal-weight buyer of every launch would have
+    seen that day, so results can be read against the market. Not a hashed object, so the pack id
+    stays the same."""
+    from ..datasets.baseline import baseline_sentence, write_market_baseline
+
+    b = write_market_baseline(path)
+    typer.echo(baseline_sentence(b) or "no launch traded in this pack", err=True)
+    _echo({k: b[k] for k in ("launches", "established")})
+
+
 @packs_app.command("import")
 def packs_import(path: Path, name: str | None = None, data_dir: Path = DEFAULT_DATA) -> None:
     """Import a pack into the local control plane."""
@@ -376,6 +388,9 @@ def week(
         raise typer.Exit(1)
     import shutil
 
+    from ..datasets.baseline import write_market_baseline
+
+    write_market_baseline(out / name)
     shutil.rmtree(work, ignore_errors=True)
     typer.echo(f"done: {out / name} qualifies as research. Commit it: git add {out / name} && git commit -m 'Base {unit} of {t0:%Y-%m-%d}' && git push", err=True)
 

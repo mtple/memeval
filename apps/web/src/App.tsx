@@ -6,6 +6,7 @@ import { Badge } from "./ui";
 import Home from "./pages/Home";
 import ResultsFeed from "./pages/ResultsFeed";
 import Episodes from "./pages/Episodes";
+import AgentHistory from "./pages/AgentHistory";
 import Agents from "./pages/Agents";
 import Runs from "./pages/Runs";
 import RunDetail from "./pages/RunDetail";
@@ -197,6 +198,7 @@ function Shell({ conn, recheck }: { conn: Conn; recheck: () => void }) {
           <Route path="/" element={<Home />} />
           <Route path="/episodes" element={<Episodes />} />
           <Route path="/agents" element={<Agents />} />
+          <Route path="/agents/:id" element={<AgentHistory />} />
           <Route path="/runs" element={<Runs />} />
           <Route path="/runs/:id" element={<RunDetail />} />
           <Route path="/runs/:id/results" element={<Results />} />

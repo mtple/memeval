@@ -25,6 +25,7 @@ from typing import Any
 
 import yaml
 
+from ..datasets.baseline import baseline_sentence, read_market_baseline
 from ..datasets.generator import dev_short_config, generate_pack, standard_suite_configs
 from ..datasets.pack import Pack, PackError
 from ..datasets.validator import validate_pack
@@ -326,6 +327,7 @@ class RunManager:
             "supported_actions": sorted(TOOLS) if summary.get("pools_executable", 0) > 0 else [t for t in TOOLS if not t.startswith("broker.")],
             "unsupported_capabilities": UNSUPPORTED_CAPABILITIES,
             "predictive_validity": "not_established",
+            "market_baseline": _market_public(read_market_baseline(Path(row["path"]))) if row.get("path") else None,
         }
         # The calendar is public on real data (the leaderboard is labelled by it); what stays generic is
         # everything an agent sees inside a session (pool and token names). Generated fixtures have no
@@ -461,6 +463,93 @@ class RunManager:
 
     def agents(self) -> list[dict[str, Any]]:
         return [self.agent_view(r["agent_id"]) for r in self.store.agents()]
+
+    def agent_history(self, agent_id: str) -> dict[str, Any]:
+        """Everything one agent has done here, day by day, in plain words: each run with what it was,
+        how it ended, the number that counts and how the market did that day. For the site's agent page
+        and for an owner asking their agent how it has done."""
+        agent = self.agent_view(agent_id)
+        by_pack: dict[str, dict[str, Any]] = {}
+        order: list[str] = []
+        for row in sorted(self.store.runs(agent_id=agent_id), key=lambda r: r["created_at"], reverse=True):
+            pack_row = self.store.pack(row["pack_id"])
+            pid = row["pack_id"]
+            if pid not in by_pack:
+                ctx = self._episode_context(pack_row) if pack_row and str(pack_row.get("origin", "")) != "generated_fixture" else {}
+                by_pack[pid] = {
+                    "pack_id": pid,
+                    "pack_name": pack_row["name"] if pack_row else None,
+                    "label": _episode_label(pack_row) if pack_row else "a withdrawn episode",
+                    "kind": "practice" if pack_row and str(pack_row.get("origin", "")) == "generated_fixture" else "real",
+                    "date": ctx.get("date"),
+                    "available": bool(pack_row and pack_row["use_status"] in ("demo", "research", "qualified_for_named_suite")),
+                    "market_note": ctx.get("market_note"),
+                    "market_return": ((ctx.get("market") or {}).get("launches") or {}).get("equal_weight_return"),
+                    "runs": [],
+                }
+                order.append(pid)
+            by_pack[pid]["runs"].append(self._history_item(row))
+        days = [by_pack[pid] for pid in order]
+        for d in days:
+            counted = [r for r in d["runs"] if r["counts_for_ranking"]]
+            d["counted_run_id"] = counted[0]["run_id"] if counted else None
+            d["counted_return"] = counted[0]["headline_return"] if counted else None
+            d["summary"] = _day_summary(d, counted[0] if counted else None)
+        finished = [r for d in days for r in d["runs"] if r["counts_for_ranking"]]
+        return {
+            "agent": agent,
+            "days": days,
+            "totals": {
+                "runs": sum(len(d["runs"]) for d in days),
+                "days_played": len(days),
+                "days_finished": sum(1 for d in days if d["counted_run_id"]),
+                "runs_in_progress": sum(1 for d in days for r in d["runs"] if r["state"] in ("queued", "running", "paused")),
+                "fills": sum(int(r["fills"] or 0) for r in finished),
+            },
+            "note": "Each run is one attempt at one recorded day. The run that counts on the leaderboard is the latest finished one scored on final ETH; earlier attempts and unfinished runs are listed but not ranked. The market line is a naive reference, not a target.",
+        }
+
+    def _history_item(self, row: dict[str, Any]) -> dict[str, Any]:
+        summ = self._result_summary(row.get("report_json")) or {}
+        state = str(row["state"])
+        counts = state == str(RunState.COMPLETED) and summ.get("primary_metric") == "final_cash_return_v1" and summ.get("headline_return") is not None
+        dec = int(summ.get("numeraire_decimals") or 18)
+        unit = summ.get("numeraire") or "ETH"
+
+        def amount(raw: Any) -> str | None:
+            if raw is None:
+                return None
+            try:
+                return f"{int(raw) / 10**dec:.4f} {unit}"
+            except (TypeError, ValueError):
+                return None
+
+        outcome = _state_in_words(state, row.get("error"))
+        ret = summ.get("headline_return")
+        if counts:
+            outcome = f"Finished with a final ETH return of {float(ret) * 100:+.2f}% after gas and fees" if unit == "ETH" else f"Finished with a final cash return of {float(ret) * 100:+.2f}% after modeled costs"
+        elif state == str(RunState.COMPLETED) and summ:
+            outcome = "Finished under the old portfolio scoring, so it is not ranked; play the day again to get a ranked result"
+        return {
+            "run_id": row["run_id"],
+            "state": state,
+            "outcome": outcome,
+            "counts_for_ranking": bool(counts),
+            "primary_metric": summ.get("primary_metric"),
+            "headline_return": ret,
+            "started_at": row.get("started_at"),
+            "finished_at": row.get("finished_at"),
+            "created_at": row.get("created_at"),
+            "fills": summ.get("confirmed_fills"),
+            "orders": summ.get("orders_total"),
+            "final_cash": amount(summ.get("final_cash_raw")),
+            "started_with": amount(summ.get("initial_equity_raw")),
+            "gas_paid": amount(summ.get("gas_total_raw")),
+            "max_drawdown": summ.get("max_drawdown"),
+            "unsold_holdings": summ.get("unpriced_inventory"),
+            "activity": _activity_in_words(summ) if summ else None,
+            "results_path": f"/runs/{row['run_id']}/results" if row.get("report_json") else None,
+        }
 
     # ------------------------------------------------------------------ usage caps
     def usage_today(self) -> dict[str, Any]:
@@ -1116,6 +1205,19 @@ class RunManager:
             raise ApiError(401, "unknown or retired agent token; join again (POST /api/v1/enroll with the same name and version) to get a new one", "UNAUTHORIZED")
         return row
 
+    def rename_agent(self, *, agent_token: str, name: str) -> dict[str, Any]:
+        """Change the name an agent shows under, keeping its id, token, runs and board rows. For an agent
+        that joined with a suffix its user never asked for."""
+        row = self.agent_by_token(agent_token)
+        name = name.strip()
+        if not name or len(name) > 64 or not name.isprintable():
+            raise ApiError(400, "agent name must be 1-64 printable characters", "INVALID")
+        other = self.store.agent_by_name_version(name, row["version"])
+        if other and other["agent_id"] != row["agent_id"]:
+            raise ApiError(409, f"another agent already uses the name {name!r} with version {row['version']!r}", "NAME_TAKEN")
+        self.store.set_agent_name(row["agent_id"], name)
+        return self.agent_view(row["agent_id"])
+
     def _episode_context(self, row: dict[str, Any]) -> dict[str, Any]:
         """What an agent's owner needs to choose an episode: size, launches, gas, and who is on its board.
         Read once per pack per process from the small pack files; never the tape."""
@@ -1137,6 +1239,7 @@ class RunManager:
                 pass
             gas = int(params.get("gas_cost_raw") or 0)
             dec = int(summary.get("numeraire_decimals") or 18)
+            baseline = read_market_baseline(path)
             cached = {
                 "date": str(row.get("start_utc") or "")[:10] or None,
                 "duration_ms": row.get("duration_ms"),
@@ -1147,9 +1250,18 @@ class RunManager:
                 "gas_per_fill_raw": str(gas),
                 "gas_per_fill": f"{gas / 10**dec:.9f}".rstrip("0").rstrip(".") if gas else "0",
                 "gas_basis": params.get("gas_basis"),
+                "market": _market_public(baseline),
+                "market_note": baseline_sentence(baseline),
             }
             self._episode_ctx_cache[row["pack_id"]] = cached
         return dict(cached)
+
+    def _market_fields(self, row: dict[str, Any]) -> dict[str, Any]:
+        """The day's naive market baseline for a leaderboard category, when the pack carries one."""
+        if str(row.get("origin", "")) == "generated_fixture":
+            return {}
+        ctx = self._episode_context(row)
+        return {"market": ctx.get("market"), "market_note": ctx.get("market_note")}
 
     def episodes_for(self, agent_id: str) -> list[dict[str, Any]]:
         """Every real episode on the server, with the context to choose between them and this agent's
@@ -1239,7 +1351,7 @@ class RunManager:
         weeks made for testing agents), each labelled in plain words."""
         cats: list[dict[str, Any]] = []
         for r in self.real_weeks():
-            cats.append({"kind": "pack", "id": r["pack_id"], "label": _episode_label(r), "description": _episode_description(r), "episodes": [r["name"]]})
+            cats.append({"kind": "pack", "id": r["pack_id"], "label": _episode_label(r), "description": _episode_description(r), "episodes": [r["name"]], **self._market_fields(r)})
         if include_artificial:
             for s in self.suites.values():
                 if s.sealed or len(s.packs) < 2:  # a one-episode suite is its episode's own tab
@@ -1247,7 +1359,7 @@ class RunManager:
                 cats.append({"kind": "suite", "id": s.suite_id, "label": _suite_label(s), "description": s.description, "episodes": list(s.packs)})
             for r in self.store.packs():
                 if str(r.get("origin", "")) == "generated_fixture":
-                    cats.append({"kind": "pack", "id": r["pack_id"], "label": _episode_label(r), "description": _episode_description(r), "episodes": [r["name"]]})
+                    cats.append({"kind": "pack", "id": r["pack_id"], "label": _episode_label(r), "description": _episode_description(r), "episodes": [r["name"]], **self._market_fields(r)})
         return cats
 
     def leaderboard(self, *, suite_id: str | None = None, pack_id: str | None = None) -> dict[str, Any]:
@@ -1265,7 +1377,7 @@ class RunManager:
             if r is None:
                 raise ApiError(404, f"unknown pack {pack_id}", "NOT_FOUND")
             wanted_packs = {r["pack_id"]}
-            category = {"kind": "pack", "id": r["pack_id"], "label": _episode_label(r), "description": _episode_description(r), "episodes": [r["name"]]}
+            category = {"kind": "pack", "id": r["pack_id"], "label": _episode_label(r), "description": _episode_description(r), "episodes": [r["name"]], **self._market_fields(r)}
         else:
             wanted_packs = {r["pack_id"] for r in self.store.packs()}
             category = {"kind": "all", "id": "all", "label": "Every episode", "description": "Every episode on this server, artificial and real, ranked together.", "episodes": [r["name"] for r in self.store.packs()]}
@@ -1408,6 +1520,63 @@ FIXTURE_SCENARIO_NAMES = {
     "gen_week_liquidity_shift": "liquidity moves between pools",
     "gen_dev_short": "short warm-up",
 }
+
+
+def _state_in_words(state: str, error: str | None) -> str:
+    """What happened to a run, for someone who has never seen the state names."""
+    words = {
+        "queued": "Waiting for the agent to connect and start trading",
+        "running": "Still playing: the agent is trading through the day right now",
+        "paused": "Paused: the agent stopped calling and can resume",
+        "completed": "Finished",
+        "agent_failed": "Stopped because the agent failed or went away before the day ended",
+        "environment_failed": "Stopped because the server hit an error; not the agent's fault",
+        "budget_exhausted": "Stopped because the run used up its compute budget",
+        "aborted": "Cancelled before the day ended",
+    }
+    out = words.get(state, state.replace("_", " ").capitalize())
+    if error and state in ("agent_failed", "environment_failed"):
+        out += f" ({error})"
+    return out
+
+
+def _activity_in_words(summ: dict[str, Any]) -> str:
+    fills, orders = int(summ.get("confirmed_fills") or 0), int(summ.get("orders_total") or 0)
+    if orders == 0:
+        return "Placed no orders and held ETH the whole day"
+    parts = [f"{fills} of {orders} orders filled"]
+    dd = summ.get("max_drawdown")
+    if dd is not None:
+        parts.append(f"worst drop from a peak {float(dd) * 100:.1f}%")
+    if int(summ.get("unpriced_inventory") or 0):
+        parts.append(f"{summ['unpriced_inventory']} holding(s) left unsold, which count for nothing")
+    return "; ".join(parts)
+
+
+def _day_summary(day: dict[str, Any], counted: dict[str, Any] | None) -> str:
+    """One sentence per day: the ranked result against the market, or why there is none yet."""
+    n = len(day["runs"])
+    attempts = f"{n} attempt{'s' if n != 1 else ''}"
+    if counted is None:
+        open_ = [r for r in day["runs"] if r["state"] in ("queued", "running", "paused")]
+        if open_:
+            return f"{attempts}, one still in progress. No ranked result yet."
+        return f"{attempts}, none finished with a ranked result."
+    ret = float(counted["headline_return"]) * 100
+    out = f"Ranked result {ret:+.2f}% from {attempts}."
+    mr = day.get("market_return")
+    if mr is not None:
+        m = float(mr) * 100
+        rel = "better than" if ret > m else "worse than" if ret < m else "the same as"
+        out += f" That is {rel} the naive market reference of {m:+.0f}% (a stake in every launch, sold at the close, before gas) and {'better than' if ret > 0 else 'worse than' if ret < 0 else 'the same as'} holding ETH."
+    return out
+
+
+def _market_public(baseline: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The market baseline without the pack id: it is agent-visible and must carry no private key."""
+    if not baseline:
+        return None
+    return {k: v for k, v in baseline.items() if k != "pack_id"}
 
 
 def _episode_label(row: dict[str, Any]) -> str:

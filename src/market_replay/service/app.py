@@ -79,6 +79,11 @@ class EnrollBody(BaseModel):
     agent: InlineAgentBody
 
 
+class RenameBody(BaseModel):
+    name: str
+    agent_token: str | None = None
+
+
 class PlayBody(BaseModel):
     agent_token: str | None = None  # or Authorization: Bearer agn_...
     suite_id: str | None = None
@@ -284,6 +289,11 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
         """Trade: one run with a session credential per episode this agent has not finished. Repeatable."""
         return manager.play(agent_token=identity_token(body.agent_token, authorization), suite_id=body.suite_id, pack_id=body.pack_id, pack_ids=body.pack_ids, client_key=client_ip(request))
 
+    @app.patch("/api/v1/agents/me", dependencies=[Depends(public_write("agents"))])
+    def rename_me(body: RenameBody, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+        """Rename the agent this identity token belongs to; id, token, runs and rankings stay."""
+        return manager.rename_agent(agent_token=identity_token(body.agent_token, authorization), name=body.name)
+
     @app.get("/api/v1/play", dependencies=[Depends(public_read)])
     def episodes(authorization: str | None = Header(default=None)) -> dict[str, Any]:
         """What this agent could play: every real episode with its standing on it (new, running, finished)."""
@@ -331,6 +341,11 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     @app.get("/api/v1/agents/{agent_id}", dependencies=[Depends(public_read)])
     def get_agent(agent_id: str) -> dict[str, Any]:
         return manager.agent_view(agent_id)
+
+    @app.get("/api/v1/agents/{agent_id}/history", dependencies=[Depends(public_read)])
+    def get_agent_history(agent_id: str) -> dict[str, Any]:
+        """The agent's runs day by day, each described in plain words with the number that counts."""
+        return manager.agent_history(agent_id)
 
     # ------------------------------------------------------------------ suites
     @app.get("/api/v1/suites", dependencies=[Depends(public_read)])

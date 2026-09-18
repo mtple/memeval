@@ -168,6 +168,7 @@ export type Pack = {
   supported_actions: string[];
   unsupported_capabilities: string[];
   predictive_validity: string;
+  market_baseline?: MarketBaseline | null;
   period_dev_mode?: { start_utc: string; end_utc: string; note: string } | null;
   period?: { start_utc: string; end_utc: string } | null;
   label?: string;
@@ -496,7 +497,23 @@ export type Stats = { median: string | number | null; mean: string | number | nu
 export const EXAMPLES = ["cash_only", "scheduled_basket", "random_actions", "model_client"] as const;
 export const RUNTIMES = ["python", "typescript"] as const;
 
-export type LeaderboardCategory = { kind: "suite" | "pack" | "all"; id: string; label: string; description?: string; episodes: string[] };
+export type MarketBasket = {
+  pools: number;
+  pools_priced: number;
+  pools_one_swap?: number;
+  equal_weight_return?: string;
+  median_return?: string;
+  share_up?: string;
+  share_down?: string;
+  share_drained?: string;
+  p10_return?: string;
+  p90_return?: string;
+  best_return?: string;
+  worst_return?: string;
+};
+/** What the market itself did on a recorded day: a naive fixed stake in every pool, sold at the close. Never a verdict. */
+export type MarketBaseline = { basis: string; rule: string; stake?: string; numeraire_hold_return: string; launches: MarketBasket; established: MarketBasket; all_pools: MarketBasket; caveats: string[] };
+export type LeaderboardCategory = { kind: "suite" | "pack" | "all"; id: string; label: string; description?: string; episodes: string[]; market?: MarketBaseline | null; market_note?: string | null };
 export type LeaderboardRow = {
   rank: number;
   agent_id: string;

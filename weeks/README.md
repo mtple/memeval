@@ -18,3 +18,7 @@ git add weeks/base_day_2026-09-08 && git commit -m "Base day of 2026-09-08" && g
 ```
 
 A recording in progress keeps its working files in `weeks/<name>_work/`, which git ignores.
+
+Each day also carries `market_baseline.json`, what a naive fixed stake in every pool would have
+returned that day, written by the build and regenerated with `market-replay packs baseline
+weeks/<name>` (it is not part of the pack hash, so the pack id does not change).

@@ -1,7 +1,8 @@
 import { TradeReview } from "../TradeReview";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { get, post, type Report, type ReplayResult, type Run } from "../api";
+import { MarketCard } from "../MarketCard";
+import { get, post, type Pack, type Report, type ReplayResult, type Run } from "../api";
 import { DIMENSION_ORDER, dimensionLabel, explainDimension, summarySentence } from "../explain";
 import { fmtAmount, fmtDuration, fmtMs, fmtPct, fmtRaw, fmtReturn, humanize, shortHash } from "../format";
 import { useRole } from "../role";
@@ -12,6 +13,8 @@ export default function Results() {
   const { role } = useRole();
   const rep = useLoad(() => get<Report>(`/runs/${id}/report?role=${role === "admin" ? "admin" : "participant"}`), [id, role]);
   const run = useLoad(() => get<Run>(`/runs/${id}`), [id]);
+  const packId = run.data?.pack_id ?? "";
+  const pack = useLoad(() => (packId ? get<Pack>(`/packs/${packId}`) : Promise.resolve(null)), [packId]);
   const [replay, setReplay] = useState<ReplayResult | null>(null);
   const [replayErr, setReplayErr] = useState<unknown>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -95,6 +98,7 @@ export default function Results() {
             )}
           </Card>
 
+          {pack.data?.market_baseline && <MarketCard market={pack.data.market_baseline} compact />}
           <TradeReview key={id} runId={id} />
           <Card title="How much to trust this">
             <ul className="plain" style={{ paddingLeft: 18 }}>

@@ -1,0 +1,57 @@
+{
+ "all_pools": {
+  "best_return": "90.471564",
+  "equal_weight_return": "-0.600816",
+  "median_return": "-1.000000",
+  "p10_return": "-1.000000",
+  "p90_return": "-0.014215",
+  "pools": 1761,
+  "pools_one_swap": 188,
+  "pools_priced": 1758,
+  "share_down": "0.951650",
+  "share_drained": "0.700228",
+  "share_up": "0.043231",
+  "worst_return": "-1.000000"
+ },
+ "basis": "naive_fixed_stake_first_swap_sell_at_close_v2",
+ "caveats": [
+  "Pays no gas. On a day with thousands of launches the gas alone would exceed the stakes, so an agent doing the same trades would do far worse.",
+  "The buy is placed right after the first recorded swap, which nobody can do without seeing the launch first. It is a reference point, not an achievable trade.",
+  "A concentrated pool is sold at its closing price, capped by the numeraire its active liquidity holds; that cap is an upper bound, so the value may be optimistic.",
+  "Pools with no recorded swap in the day are left out, so the basket is the pools that traded at least once.",
+  "Not a prediction and not a benchmark strategy: it says what a fixed small stake in everything would have seen that day."
+ ],
+ "established": {
+  "best_return": "2.288912",
+  "equal_weight_return": "0.232786",
+  "median_return": "-0.000201",
+  "p10_return": "-0.186614",
+  "p90_return": "1.150287",
+  "pools": 16,
+  "pools_one_swap": 3,
+  "pools_priced": 13,
+  "share_down": "0.692308",
+  "share_drained": "0.000000",
+  "share_up": "0.230769",
+  "worst_return": "-0.347621"
+ },
+ "launches": {
+  "best_return": "90.471564",
+  "equal_weight_return": "-0.607026",
+  "median_return": "-1.000000",
+  "p10_return": "-1.000000",
+  "p90_return": "-0.016055",
+  "pools": 1745,
+  "pools_one_swap": 185,
+  "pools_priced": 1745,
+  "share_down": "0.953582",
+  "share_drained": "0.705444",
+  "share_up": "0.041834",
+  "worst_return": "-1.000000"
+ },
+ "numeraire_hold_return": "0.000000",
+ "pack_id": "pack_764925bfad0046316fc3ebd1e48171c5",
+ "rule": "Put the same small stake into every pool right after its first recorded swap of the day, hold to the end, and sell back into the pool as it stands at the close. A pulled pool pays dust.",
+ "stake": "0.01",
+ "stake_raw": "10000000000000000"
+}

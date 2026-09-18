@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { list, post, get, type Pack, type Validation } from "../api";
 import { fmtDuration, fmtMs, fmtDate, humanize } from "../format";
+import { MarketCard } from "../MarketCard";
 import { useRole } from "../role";
 import { Badge, Card, EmptyState, ErrorState, GateList, GateSummary, JsonView, KV, Loading, StrList, toneForStatus, useLoad } from "../ui";
 
@@ -13,7 +14,7 @@ export default function Episodes() {
   const [origin, setOrigin] = useState("");
   const [use, setUse] = useState("");
   const [kind, setKind] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(window.location.search).get("pack"));
   const { role } = useRole();
 
   const filtered = useMemo(
@@ -51,6 +52,7 @@ export default function Episodes() {
                     <th>Kind</th>
                     <th>Dates</th>
                     <th className="num">Pools</th>
+                    <th className="num" title="a stake of 0.01 ETH in every pool launched that day right after its first trade, sold at the close, before gas">Market that day</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -59,11 +61,20 @@ export default function Episodes() {
                     .filter((p) => p.runnable)
                     .sort((a, b) => (a.kind === b.kind ? (b.period?.start_utc ?? "").localeCompare(a.period?.start_utc ?? "") : a.kind === "real" ? -1 : 1))
                     .map((p) => (
-                      <tr key={p.pack_id}>
+                      <tr key={p.pack_id} className={selected === p.pack_id ? "selected" : ""}>
                         <td>{p.label ?? p.name}</td>
                         <td>{p.kind === "real" ? <Badge tone="ok">Real data</Badge> : <Badge tone="warn">Practice (artificial)</Badge>}</td>
                         <td className="small">{p.period ? `${p.period.start_utc.slice(0, 10)} to ${p.period.end_utc.slice(0, 10)}` : fmtDuration(p.duration_ms, p.is_full_week)}</td>
                         <td className="num">{p.summary?.pools_executable ?? "?"}</td>
+                        <td className="num">
+                          {p.market_baseline?.launches?.pools_priced ? (
+                            <button type="button" className="rowbtn" onClick={() => setSelected(selected === p.pack_id ? null : p.pack_id)} aria-expanded={selected === p.pack_id}>
+                              {marketPct(p.market_baseline.launches.equal_weight_return)}
+                            </button>
+                          ) : (
+                            <span className="muted">n/a</span>
+                          )}
+                        </td>
                         <td className="small">
                           <Link to={`/?pack=${p.pack_id}`}>Leaderboard</Link>
                         </td>
@@ -73,6 +84,7 @@ export default function Episodes() {
               </table>
             </div>
           )}
+          {sel?.market_baseline && <MarketCard market={sel.market_baseline} title={`Market on ${sel.label ?? sel.name}`} />}
         </Card>
       )}
       {packs && role === "admin" && (
@@ -178,6 +190,12 @@ function Sel({ label, value, onChange, options }: { label: string; value: string
       </select>
     </label>
   );
+}
+
+function marketPct(v: string | undefined): string {
+  if (v === undefined) return "n/a";
+  const n = Number(v) * 100;
+  return `${n > 0 ? "+" : ""}${n.toFixed(0)}%`;
 }
 
 function PackDetail({ pack: p, onClose }: { pack: Pack; onClose: () => void }) {
@@ -327,6 +345,7 @@ function PackDetail({ pack: p, onClose }: { pack: Pack; onClose: () => void }) {
         <GateList gates={s?.gates} />
       )}
       <JsonView value={p} />
+      {p.market_baseline && <MarketCard market={p.market_baseline} />}
     </Card>
   );
 }

@@ -100,6 +100,11 @@ export default function Home() {
             {board.data.category.description}
           </p>
         )}
+        {board.data?.category.market_note && (
+          <p className="small" style={{ margin: "0 0 12px", maxWidth: "72ch" }} title={board.data.category.market?.caveats?.join(" ")}>
+            {board.data.category.market_note} <Link to={`/episodes?pack=${board.data.category.id}`}>Details</Link>
+          </p>
+        )}
         {board.error && <ErrorState error={board.error} retry={board.reload} />}
         {board.loading && !board.data && <Loading what="leaderboard" />}
         {board.data && rows.length === 0 && (
@@ -132,7 +137,7 @@ export default function Home() {
                     <tr key={r.agent_id} className={me ? "mine" : ""}>
                       <td>{r.rank}</td>
                       <td className="agent">
-                        <Link to={`/runs?agent_id=${r.agent_id}`}>{r.agent_name}</Link> <span className="muted">v{r.agent_version}</span>
+                        <Link to={`/agents/${r.agent_id}`} title="this agent's run history">{r.agent_name}</Link> <span className="muted">v{r.agent_version}</span>
                         {me && <span className="you">you</span>}
                       </td>
                       <td className="num" title={r.covers_all ? "covered every episode in this category" : "partial coverage ranks below full coverage"}>

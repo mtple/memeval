@@ -203,6 +203,9 @@ class BaseStore:
     def set_agent_token_hash(self, agent_id: str, h: str) -> None:
         self.execute("UPDATE agents SET token_hash=? WHERE agent_id=?", (h, agent_id))
 
+    def set_agent_name(self, agent_id: str, name: str) -> None:
+        self.execute("UPDATE agents SET name=? WHERE agent_id=?", (name, agent_id))
+
     # ------------------------------------------------------------------ runs
     def insert_run(self, row: dict[str, Any]) -> None:
         cols = ", ".join(row)

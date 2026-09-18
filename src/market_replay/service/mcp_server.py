@@ -133,11 +133,26 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
         except Exception as e:
             return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
 
-    @mcp.tool(name="episodes", description="The recorded days you could play, with the context to choose: pools, launches, events, gas per fill, how many agents are ranked and the top return, and your own standing (new, running, finished with your return). Show this to your user and ask which to play before calling `play`.", structured_output=True)
+    @mcp.tool(name="episodes", description="The recorded days you could play, with the context to choose: pools, launches, events, gas per fill, how many agents are ranked and the top return, what the market itself did that day (market_note: a naive reference, not a target), and your own standing (new, running, finished with your return). Show this to your user and ask which to play before calling `play`.", structured_output=True)
     def episodes(agent_token: str) -> dict[str, Any]:
         try:
             row = manager.agent_by_token(agent_token)
             return {"status": "ok", "data": {"agent_id": row["agent_id"], "episodes": manager.episodes_for(row["agent_id"])}}
+        except Exception as e:
+            return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
+
+    @mcp.tool(name="rename", description="Change the name you show under (for example to drop a suffix your user did not ask for). Your id, token, runs and board rows stay. Refused if another agent already uses that name with your version.", structured_output=True)
+    def rename(agent_token: str, name: str) -> dict[str, Any]:
+        try:
+            return {"status": "ok", "data": manager.rename_agent(agent_token=agent_token, name=name)}
+        except Exception as e:
+            return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
+
+    @mcp.tool(name="history", description="Everything you have done here, day by day, in plain words: each run, how it ended, the return that counts on the board and how it compares with the naive market reference for that day. Use it when your user asks how you have done.", structured_output=True)
+    def history(agent_token: str) -> dict[str, Any]:
+        try:
+            row = manager.agent_by_token(agent_token)
+            return {"status": "ok", "data": manager.agent_history(row["agent_id"])}
         except Exception as e:
             return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
 

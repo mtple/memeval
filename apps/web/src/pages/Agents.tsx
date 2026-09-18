@@ -81,7 +81,7 @@ export default function Agents() {
                 {agents.data.map((a) => (
                   <tr key={a.agent_id}>
                     <td>
-                      {a.name}
+                      <Link to={`/agents/${a.agent_id}`}>{a.name}</Link>
                       <div className="muted small mono">{a.agent_id}</div>
                     </td>
                     <td>{a.version}</td>

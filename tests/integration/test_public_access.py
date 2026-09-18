@@ -243,10 +243,12 @@ def test_default_bankroll_is_one_whole_unit_of_the_cash_asset(tmp_path: Path, de
 def test_enrolling_again_adds_only_unfinished_episodes(tmp_path: Path, dev_pack_dir: Path, monkeypatch):
     """A returning agent plays the new day and not the episodes it already completed."""
     import market_replay.service.runs as runs_mod
+    from market_replay.datasets.baseline import write_market_baseline
     from tests.unit.test_engine_clmm import make_cl_pack
 
     weeks = tmp_path / "weeks"
     make_cl_pack(weeks / "base_day_2026-09-08")
+    write_market_baseline(weeks / "base_day_2026-09-08")
     monkeypatch.setattr(runs_mod, "WEEKS_DIR", weeks)
     mgr = RunManager(data_dir=tmp_path / "a", store_url=str(tmp_path / "store.sqlite"), hosted=True)
     mgr.register_shipped_weeks()
@@ -254,6 +256,10 @@ def test_enrolling_again_adds_only_unfinished_episodes(tmp_path: Path, dev_pack_
     ep = joined["episodes"][0]
     assert ep["your_status"] == "new" and ep["agents_ranked"] == 0 and ep["top_return"] is None
     assert ep["pools_tradable"] >= 1 and ep["tape_events"] >= 1 and ep["gas_per_fill_raw"] == "0" and ep["date"]  # a fixture-built pack measured no gas
+    assert ep["market"]["launches"]["pools_priced"] == 1 and "pack_id" not in ep["market"] and ep["market_note"].startswith("Market that day")
+    cat = mgr.leaderboard(pack_id=ep["pack_id"])["category"]
+    assert cat["market_note"] == ep["market_note"] and cat["market"]["basis"] == ep["market"]["basis"]
+    assert mgr.pack_row(ep["pack_id"])["market_baseline"]["launches"] == ep["market"]["launches"]
     chosen = mgr.play(agent_token=joined["agent_token"], pack_ids=[ep["pack_id"]])
     assert [r["pack_name"] for r in chosen["runs"]] == ["base_day_2026-09-08"] and chosen["skipped"] == []
     mgr.abort(chosen["runs"][0]["run_id"]) if hasattr(mgr, "abort") else None
@@ -280,3 +286,57 @@ def test_enrolling_again_adds_only_unfinished_episodes(tmp_path: Path, dev_pack_
     v2 = mgr.enroll(agent={"name": "turtle", "version": "2"})
     assert [r["pack_name"] for r in mgr.play(agent_token=v2["agent_token"])["runs"]] == ["base_day_2026-09-08"]
     mgr.close()
+
+
+def test_agent_history_reads_in_plain_words(tmp_path: Path, monkeypatch):
+    """An owner clicking an agent sees each day, each run, how it ended and how it compares with the market."""
+    import market_replay.service.runs as runs_mod
+    from market_replay.datasets.baseline import write_market_baseline
+    from tests.unit.test_engine_clmm import make_cl_pack
+
+    weeks = tmp_path / "weeks"
+    make_cl_pack(weeks / "base_day_2026-09-08")
+    write_market_baseline(weeks / "base_day_2026-09-08")
+    monkeypatch.setattr(runs_mod, "WEEKS_DIR", weeks)
+    mgr = RunManager(data_dir=tmp_path / "a", store_url=str(tmp_path / "store.sqlite"), hosted=True)
+    mgr.register_shipped_weeks()
+    joined = mgr.enroll(agent={"name": "FreeTurtle", "version": "1"})
+    empty = mgr.agent_history(joined["agent_id"])
+    assert empty["days"] == [] and empty["totals"]["runs"] == 0 and empty["agent"]["name"] == "FreeTurtle"
+    played = mgr.play(agent_token=joined["agent_token"])
+    run_id = played["runs"][0]["run_id"]
+    h = mgr.agent_history(joined["agent_id"])
+    assert len(h["days"]) == 1 and h["totals"]["runs_in_progress"] == 1
+    day = h["days"][0]
+    assert day["kind"] == "real" and day["available"] and day["market_note"].startswith("Market that day") and day["counted_run_id"] is None
+    assert "in progress" in day["summary"] and day["runs"][0]["run_id"] == run_id
+    assert day["runs"][0]["outcome"].startswith("Waiting for the agent") and day["runs"][0]["counts_for_ranking"] is False
+    # the session finishes the day holding ETH: a ranked result of exactly 0
+    token = played["runs"][0]["session_credential"]["token"]
+    duration = mgr.handle_command(token, "r1", "session.describe", {}).data["episode"]["duration_ms"]
+    mgr.handle_command(token, "r2", "clock.advance", {"to_ms": duration})
+    assert mgr.handle_command(token, "r3", "session.finish", {}).status == "ok"
+    c = TestClient(create_app(mgr, "adm_public_test"))
+    h = mgr.agent_history(joined["agent_id"])
+    day = h["days"][0]
+    assert day["counted_run_id"] == run_id and day["counted_return"] is not None
+    assert day["summary"].startswith("Ranked result") and "market reference" in day["summary"] and "holding ETH" in day["summary"]
+    assert day["runs"][0]["outcome"].startswith("Finished with a final") and day["runs"][0]["results_path"] == f"/runs/{run_id}/results"
+    assert c.get(f"/api/v1/agents/{joined['agent_id']}/history").json()["days"][0]["summary"] == day["summary"]
+
+
+def test_agent_can_drop_a_suffix_from_its_name(tmp_path: Path):
+    """An agent that joined as 'FreeTurtle-Momentum v2' renames itself to 'FreeTurtle' and keeps everything."""
+    mgr = RunManager(data_dir=tmp_path / "a", store_url=str(tmp_path / "store.sqlite"), hosted=True)
+    c = TestClient(create_app(mgr, "adm_public_test"))
+    joined = c.post("/api/v1/enroll", json={"agent": {"name": "FreeTurtle-Replay-Momentum", "version": "2"}}).json()
+    other = mgr.register_or_reuse_agent(name="Taken", version="2")  # a second join from the same address would be refused
+    hdr = {"Authorization": f"Bearer {joined['agent_token']}"}
+    assert c.patch("/api/v1/agents/me", json={"name": "FreeTurtle"}).status_code == 401
+    assert c.patch("/api/v1/agents/me", headers=hdr, json={"name": "Taken"}).status_code == 409
+    assert c.patch("/api/v1/agents/me", headers=hdr, json={"name": " "}).status_code == 400
+    r = c.patch("/api/v1/agents/me", headers=hdr, json={"name": "FreeTurtle"})
+    assert r.status_code == 200 and r.json()["agent_id"] == joined["agent_id"] and r.json()["name"] == "FreeTurtle"
+    assert c.get(f"/api/v1/agents/{joined['agent_id']}").json()["name"] == "FreeTurtle"
+    assert c.get("/api/v1/play", headers=hdr).status_code == 200  # the token still works
+    assert other["agent_id"] != joined["agent_id"]

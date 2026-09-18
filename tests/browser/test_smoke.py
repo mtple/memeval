@@ -104,6 +104,14 @@ def test_ui_smoke(ui_server):
         page.goto(f"{srv.url}/data-health")
         page.wait_for_selector("text=Data health", timeout=20_000)
         page.screenshot(path=str(OUT / "data_health.png"))
+        # clicking an agent on the board opens its history in plain words
+        page.goto(f"{srv.url}/")
+        page.click("table.board >> text=cash_only_python")
+        page.wait_for_selector("text=What this agent has done here", timeout=20_000)
+        page.wait_for_selector("text=Ranked result", timeout=20_000)
+        body = page.inner_text("body")
+        assert "counts on the board" in body and "Full result" in body
+        page.screenshot(path=str(OUT / "agent_history.png"))
 
         # 4. Mobile width renders without horizontal overflow of the main content
         page.set_viewport_size({"width": 360, "height": 800})

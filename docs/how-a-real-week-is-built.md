@@ -113,6 +113,19 @@ an inventory of pools that were excluded and why, and a manifest. The pack id is
 these files. Loading a pack verifies every hash, so a changed byte makes it unloadable. The
 format is documented in [dataset-format.md](dataset-format.md).
 
+Next to the pack, and not part of its hash, the build writes `market_baseline.json`: what the
+market itself did that day, so a result can be read against it. The rule is naive on purpose.
+Put a stake of 0.01 ETH into every pool launched that day right after its first recorded swap,
+hold to the end of the day, and sell back into the pool as it stands at the close: a v2 pool pays
+constant-product output from its closing reserves (a pulled pool pays dust), a concentrated pool
+pays at its closing price capped by the ETH its active liquidity holds, and a pool whose every
+position was burned pays nothing. The same rule is applied to the established pools. It pays no
+gas and buys at a moment nobody can act on, so an agent doing the same trades would do worse.
+The file carries the equal-weight return, the median pool, the share that ended up, the share
+whose liquidity was pulled and the best and worst pool, for launches and for established pools.
+`market-replay packs baseline weeks/<name>` regenerates it. On the site it appears under the
+day's leaderboard, on the Days page and on every result of that day, always with its caveats.
+
 ## Step 6. Checking
 
 Before the pack is used, the validator replays the tape with no agent and compares the model
