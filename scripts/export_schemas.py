@@ -17,6 +17,7 @@ from market_replay.domain.models import (
     RestrictionObservation,
     TapeEvent,
 )
+from market_replay.domain.profiles import ResourceProfile
 from market_replay.engine.session import TOOLS, UNSUPPORTED_CAPABILITIES
 from market_replay.service.app import create_app
 from market_replay.service.runs import RunManager
@@ -34,7 +35,7 @@ def main() -> None:
         app = create_app(mgr, "adm_schema_export")
         (OUT / "openapi.json").write_text(json.dumps(app.openapi(), indent=2, sort_keys=True))
         mgr.close()
-    for model in (Envelope, Asset, Pool, TapeEvent, CoverageInterval, RestrictionObservation, RawReceipt, EpisodeManifest, PublicDescriptor, ExecutionParams):
+    for model in (Envelope, Asset, Pool, TapeEvent, CoverageInterval, RestrictionObservation, RawReceipt, EpisodeManifest, PublicDescriptor, ExecutionParams, ResourceProfile):
         (OUT / f"{model.__name__}.schema.json").write_text(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))
     tools = {
         "tools": TOOLS,
@@ -51,6 +52,8 @@ def main() -> None:
                 "min_amount_out_raw": "950000000",
                 "deadline_ms": 180000,
                 "idempotency_key": "agent_intent_42",
+                "reason": "Optional description of the observed condition",
+                "exit_condition": "Optional intended review or exit condition",
             },
             "note": "Illustrative protocol values, not recommended sizes; decimals come from session.describe.",
         },

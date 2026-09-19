@@ -1,3 +1,4 @@
+import { DecisionTimeline } from "../DecisionTimeline";
 import { TradeReview } from "../TradeReview";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -57,7 +58,16 @@ export default function Results() {
       {rep.loading && !R && <Loading what="report" />}
       {R && (
         <>
-          <Card title="What happened">
+          <Card title="Evaluation validity">
+            {R.execution_validity ? <>
+              <p className={R.provisional ? "notice warn" : "muted"}>{R.provisional ? "Provisional outcome. This run is excluded from ranking under the execution eligibility rule." : "This run passes the execution eligibility gates. Assessment eligibility also requires the complete frozen assignment and compatible profiles."}</p>
+              <KV rows={R.execution_validity.gates.map(g => [humanize(g.gate), g.passed ? "Pass" : "Excluded"])} />
+              <p className="small muted">Rule: {R.execution_validity.rule_version}. {R.execution_validity.capacity_policy} Rejections: {R.execution_validity.capacity_rejections}.</p>
+            </> : <p className="notice">This report predates execution eligibility gates. A fresh run is needed for the current protocol.</p>}
+            <KV rows={[["Isolation", humanize(R.status_dimensions.isolation)], ["Token behavior", humanize(R.status_dimensions.token_behavior)], ["Data completeness at delivery", Object.entries(R.activity.quality_exposure?.delivered_completeness ?? {}).map(([k, v]) => `${humanize(k)}: ${v}`).join(", ") || "Not recorded"], ["Stale deliveries", R.activity.quality_exposure?.stale_deliveries ?? "Not recorded"], ["Prior attempts", Math.max(0, Number(R.run.attempt_number ?? 1) - 1)], ["Predictive validity", "Not established"]]} />
+            {R.resource_profile && <KV rows={[["Resource profile", humanize(R.resource_profile.profile_id)], ["Computation treatment", R.resource_profile.decision_latency_basis], ["Assumed decision time", `${R.resource_profile.decision_latency_ms} ms`], ["Execution stress", R.resource_profile.stress_basis]]} />}
+          </Card>
+          <Card title="Trading outcome">
             <p style={{ fontSize: 15, margin: 0 }}>
               {summarySentence({
                 agent: run.data?.agent_name ?? "The agent",
@@ -98,6 +108,9 @@ export default function Results() {
             )}
           </Card>
 
+          {R.attribution && <Card title="Concentration and trade dependence"><KV rows={[["Largest asset share of buy notional", fmtPct(R.attribution.largest_asset_share_of_buy_notional)], ["Best sale's share of positive realized contributions", fmtPct(R.attribution.best_trade_share_of_positive_realized_contributions)], ["Cash reference return", fmtReturn(R.attribution.cash_reference_return)]]} /><p className="muted small">{R.attribution.note}</p></Card>}
+          <DecisionTimeline key={`timeline-${id}`} runId={id} />
+          {R.execution_evidence && <Card title="Execution evidence"><KV rows={Object.entries(R.execution_evidence.mechanics).map(([key, value]) => [humanize(key), humanize(value)])} /><p className="muted small">{humanize(R.execution_evidence.flow_basis)}. {R.execution_evidence.calibration}</p></Card>}
           {pack.data?.market_baseline && <MarketCard market={pack.data.market_baseline} compact />}
           <TradeReview key={id} runId={id} />
           <Card title="How much to trust this">

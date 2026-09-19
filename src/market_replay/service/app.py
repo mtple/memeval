@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from ..domain.envelope import Envelope
+from ..domain.profiles import PROFILES
 from ..engine.session import TOOLS, UNSUPPORTED_CAPABILITIES
 from .auth import constant_time_equal, resolve_admin_token
 from .mcp_server import build_remote_mcp
@@ -35,6 +36,25 @@ def skill_text(gateway_url: str, name: str = "SKILL.md") -> str:
 class ImportPackBody(BaseModel):
     path: str
     name: str | None = None
+    visibility: str = "public"
+
+
+class AssessmentBundleBody(BaseModel):
+    label: str
+    pack_ids: list[str] = Field(min_length=1, max_length=32)
+    resource_profile_id: str = "controlled_v1"
+    bankroll_raw: str | None = None
+
+
+class AssessmentEntryBody(BaseModel):
+    agent_token: str | None = None
+    bundle_id: str
+    code_sha256: str
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class RecoveryBody(BaseModel):
+    agent_token: str | None = None
 
 
 class AgentBody(BaseModel):
@@ -73,9 +93,12 @@ class RunBody(BaseModel):
     agent_seed: str | None = None
     isolation: str = "trusted_external_client"
     launch: LaunchBody | None = None
+    resource_profile_id: str = "pack_defaults_v1"
+    execute: str | None = None
 
 
 class EnrollBody(BaseModel):
+    agent_token: str | None = None
     agent: InlineAgentBody
 
 
@@ -191,8 +214,13 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
             raise HTTPException(401, {"code": "UNAUTHORIZED", "message": "admin bearer token required"})
         return "admin"
 
-    def public_read(authorization: str | None = Header(default=None)) -> str:
-        return role_of(authorization)
+    def public_read(request: Request, authorization: str | None = Header(default=None)) -> str:
+        role = role_of(authorization)
+        if role != "admin":
+            parts = request.url.path.split("/")
+            if len(parts) >= 5 and parts[3] in ("packs", "runs"):
+                manager.require_public(parts[3], parts[4])
+        return role
 
     def public_write(kind: str):
         """Self-serve writes: anyone when public runs are on (rate-limited per address); the operator always."""
@@ -201,6 +229,9 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
             role = role_of(authorization)
             if role == "admin":
                 return role
+            parts = request.url.path.split("/")
+            if len(parts) >= 5 and parts[3] in ("packs", "runs"):
+                manager.require_public(parts[3], parts[4])
             if not public_runs:
                 raise HTTPException(401, {"code": "UNAUTHORIZED", "message": "admin bearer token required (public runs are switched off on this server)"})
             manager.rate_limit(kind, client_ip(request))
@@ -248,7 +279,7 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     # ------------------------------------------------------------------ packs
     @app.post("/api/v1/packs/import", dependencies=[Depends(require_admin)])
     def import_pack(body: ImportPackBody) -> dict[str, Any]:
-        return manager.import_pack(body.path, body.name)
+        return manager.import_pack(body.path, body.name, body.visibility)
 
     @app.get("/api/v1/packs")
     def list_packs(role: str = Depends(public_read)) -> dict[str, Any]:
@@ -274,15 +305,55 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
 
     # ------------------------------------------------------------------ agents
     @app.post("/api/v1/enroll", dependencies=[Depends(public_write("runs"))], status_code=201)
-    def enroll(body: EnrollBody, request: Request) -> dict[str, Any]:
+    def enroll(body: EnrollBody, request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
         """Join: register by name (once) and receive the agent's identity token. Playing is a separate call."""
-        return manager.enroll(agent=body.agent.model_dump(), client_key=client_ip(request))
+        return manager.enroll(agent=body.agent.model_dump(), client_key=client_ip(request), agent_token=authorization[7:] if authorization and authorization.startswith("Bearer agn_") else body.agent_token)
 
     def identity_token(body_token: str | None, authorization: str | None) -> str:
         supplied = authorization[7:] if authorization and authorization.startswith("Bearer ") else (body_token or "")
         if not supplied.startswith("agn_"):
             raise HTTPException(401, {"code": "UNAUTHORIZED", "message": "agent identity token (agn_...) required: the agent_token from joining, as Authorization: Bearer or in the body"})
         return supplied
+
+    @app.get("/api/v1/resource-profiles", dependencies=[Depends(public_read)])
+    def resource_profiles() -> dict:
+        return {"items": [p.public() for p in PROFILES.values()]}
+
+    @app.post("/api/v1/assessment-bundles", dependencies=[Depends(require_admin)], status_code=201)
+    def create_assessment_bundle(body: AssessmentBundleBody) -> dict:
+        from .assessments import create_bundle
+        return create_bundle(manager, **body.model_dump())
+
+    @app.get("/api/v1/assessment-bundles", dependencies=[Depends(public_read)])
+    def assessment_bundles() -> dict:
+        from .assessments import catalog
+        return {"items": catalog(manager)}
+
+    @app.post("/api/v1/assessments", dependencies=[Depends(public_write("runs"))], status_code=201)
+    def enter_assessment(body: AssessmentEntryBody, authorization: str | None = Header(default=None)) -> dict:
+        from .assessments import enter
+        return enter(manager, agent_token=identity_token(body.agent_token, authorization), bundle_id=body.bundle_id,
+                     code_sha256=body.code_sha256, config=body.config)
+
+    @app.get("/api/v1/assessments/{assessment_id}", dependencies=[Depends(public_read)])
+    def assessment_result(assessment_id: str) -> dict:
+        from .assessments import result
+        return result(manager, assessment_id)
+
+    @app.post("/api/v1/assessments/{assessment_id}/credentials", dependencies=[Depends(public_write("runs"))])
+    def recover_assessment(assessment_id: str, body: RecoveryBody, authorization: str | None = Header(default=None)) -> dict:
+        from .assessments import recover
+        return recover(manager, assessment_id, identity_token(body.agent_token, authorization))
+
+    @app.post("/api/v1/assessments/{assessment_id}/abort", dependencies=[Depends(public_write("runs"))])
+    def abort_assessment(assessment_id: str, body: RecoveryBody, authorization: str | None = Header(default=None)) -> dict:
+        from .assessments import abort
+        return abort(manager, assessment_id, identity_token(body.agent_token, authorization))
+
+    @app.get("/api/v1/assessment-bundles/{bundle_id}/leaderboard", dependencies=[Depends(public_read)])
+    def assessment_board(bundle_id: str) -> dict:
+        from .assessments import leaderboard
+        return leaderboard(manager, bundle_id)
 
     @app.post("/api/v1/play", dependencies=[Depends(public_write("runs"))], status_code=201)
     def play(body: PlayBody, request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
@@ -379,6 +450,8 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
             isolation=body.isolation,
             launch_spec=body.launch.model_dump() if body.launch else None,
             agent_seed=body.agent_seed,
+            resource_profile_id=body.resource_profile_id,
+            execute=body.execute,
         )
 
     @app.get("/api/v1/runs", dependencies=[Depends(public_read)])
@@ -386,9 +459,18 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
         where = {k: v for k, v in {"agent_id": agent_id, "pack_id": pack_id, "suite_id": suite_id}.items() if v}
         return {"items": manager.runs(**where)}
 
-    @app.get("/api/v1/runs/{run_id}", dependencies=[Depends(public_read)])
-    def get_run(run_id: str) -> dict[str, Any]:
-        return manager.run_view(run_id)
+    @app.get("/api/v1/runs/{run_id}")
+    def get_run(run_id: str, caller: str = Depends(public_read)) -> dict[str, Any]:
+        return manager.run_view(run_id, allow_private=caller == "admin")
+
+    @app.get("/api/v1/runs/{run_id}/timeline", dependencies=[Depends(public_read)])
+    def decision_timeline(run_id: str, cursor: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=500)) -> dict:
+        from ..evaluation.debrief import timeline
+        from ..observations.masking import redact_for_role
+        with manager.store.run_lock(run_id):
+            ctx = manager._ctx(run_id)
+            manager._catch_up(ctx)
+            return redact_for_role(timeline(ctx.session, cursor, limit), "participant", ctx.session.scanner)
 
     @app.post("/api/v1/runs/{run_id}/execute", dependencies=[Depends(public_write("runs"))])
     def execute_run(run_id: str) -> dict[str, Any]:
@@ -475,7 +557,11 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
 
         @app.get("/{full_path:path}", include_in_schema=False)
         def spa(full_path: str) -> FileResponse:
-            candidate = WEB_DIST / full_path
+            if full_path == "api" or full_path.startswith("api/"):
+                raise HTTPException(404, {"code": "NOT_FOUND", "message": "unknown API route"})
+            candidate = (WEB_DIST / full_path).resolve()
+            if not candidate.is_relative_to(WEB_DIST.resolve()):
+                raise HTTPException(404, {"code": "NOT_FOUND", "message": "unknown resource"})
             if full_path and candidate.exists() and candidate.is_file():
                 return FileResponse(str(candidate))
             return FileResponse(str(WEB_DIST / "index.html"))
@@ -487,4 +573,3 @@ def default_manager() -> RunManager:
     data_dir = Path(os.environ.get("MARKET_REPLAY_DATA_DIR", str(REPO_ROOT / "data")))
     dev_mode = os.environ.get("MARKET_REPLAY_DEV_MODE", "1") != "0"
     return RunManager(data_dir=data_dir, dev_mode=dev_mode)
-

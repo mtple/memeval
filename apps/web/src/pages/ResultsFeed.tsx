@@ -89,6 +89,7 @@ export function ResultCard({ run: r }: { run: Run }) {
         </strong>
         <RunStateBadge state={r.state} />
       </div>
+      {s?.ranking_eligible === false && <p className="notice warn">Provisional outcome. Excluded from ranking; see the report's eligibility gates.</p>}
       {headline}
       {s && (
         <div className="muted small">

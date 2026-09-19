@@ -222,3 +222,8 @@ textarea { font-family: var(--mono); min-height: 64px; }
 .choice label:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }
 .choice input { margin-top: 3px; }
 details.more summary { cursor: pointer; color: var(--muted); font-size: 12.5px; margin: var(--s-1) 0; }
+
+.decision-timeline { padding-left: 1.5rem; }
+.decision-timeline > li { padding: 1rem 0; border-bottom: 1px solid var(--line); }
+.decision-timeline summary { cursor: pointer; }
+.decision-timeline p { margin: .5rem 0; }

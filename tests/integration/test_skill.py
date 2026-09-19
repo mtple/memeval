@@ -88,6 +88,10 @@ def test_the_skills_script_plays_a_suite_end_to_end(server):
     mgr.wait_for_run(runs[0]["run_id"], 60)
     view = httpx.get(srv.url + f"/api/v1/runs/{runs[0]['run_id']}").json()
     assert view["state"] == "completed" and view["result_summary"]["confirmed_fills"] == 0
+    report = mgr.report(runs[0]["run_id"])
+    assert report["activity"]["tool_calls"]["session.snapshot"] > 1
+    assert report["activity"]["tool_calls"]["clock.wait"] > 1
+    assert report["activity"]["orders_total"] == 0
 
 
 def test_mcp_agent_enrolls_and_plays_without_headers(server):
@@ -112,12 +116,16 @@ def test_mcp_agent_enrolls_and_plays_without_headers(server):
                 desc = payload(await s.call_tool("session_describe", {"arguments": {}, "token": token}))
                 adv = payload(await s.call_tool("clock_advance", {"arguments": {"to_ms": 120_000}, "token": token}))
                 status = payload(await s.call_tool("run_status", {"run_id": run_id}))
-                return names, denied, enrolled, desc, adv, status
+                snapshot = payload(await s.call_tool("session_snapshot", {"arguments": {"limit": 1}, "token": token}))
+                wake = payload(await s.call_tool("clock_wait", {"arguments": {"until_ms": 180_000, "conditions": [{"kind": "new_pool"}]}, "token": token}))
+                return names, denied, enrolled, desc, adv, status, snapshot, wake
 
-    names, denied, enrolled, desc, adv, status = asyncio.run(go())
-    assert {"enroll", "episodes", "play", "run_status", "session_describe", "broker_submit", "session_finish"} <= names
+    names, denied, enrolled, desc, adv, status, snapshot, wake = asyncio.run(go())
+    assert {"enroll", "episodes", "play", "run_status", "session_describe", "session_snapshot", "clock_wait", "broker_submit", "session_finish"} <= names
     assert denied["status"] == "error" and denied["error"]["code"] == "UNAUTHORIZED"
     assert enrolled["status"] == "ok" and enrolled["data"]["agent_name"] == "mcp-skill-bot"
     assert desc["status"] == "ok" and desc["data"]["episode"]["duration_ms"] > 0
     assert adv["status"] == "ok" and adv["data"]["clock_ms"] == 120_000
     assert status["status"] == "ok" and status["data"]["clock_ms"] == 120_000 and "session_credential" not in status["data"]
+    assert snapshot["status"] == "ok" and len(snapshot["data"]["markets"]["items"]) == 1
+    assert wake["status"] == "ok" and wake["data"]["clock_ms"] <= 180_000

@@ -43,6 +43,10 @@ make demo             # generate 4 full weeks, run 3 participants (py+ts), compa
 make build && make serve   # web UI at http://127.0.0.1:8000 (operator token printed; not needed to start runs)
 ```
 
+SQLite tests run by default. PostgreSQL backend tests require `TEST_DATABASE_URL` pointing
+to a disposable test database, which those tests reset. Without it, they skip without
+connecting to a local PostgreSQL installation.
+
 Without Make:
 
 ```bash
@@ -99,10 +103,10 @@ limit, and can be switched off with `MARKET_REPLAY_PUBLIC_RUNS=0`.
 
 Every tool returns the same envelope (`request_id, session_id, clock_ms, status, data,
 quality, error`). Quantities are decimal strings in raw units; time is integer milliseconds
-relative to the episode start. Fourteen tools: `session.describe, markets.list, markets.get,
+relative to the episode start. Sixteen tools: `session.describe, session.snapshot, markets.list, markets.get,
 market.trades, market.candles, market.liquidity, market.restrictions, broker.quote,
 broker.submit, broker.order, portfolio.get, portfolio.history, clock.advance,
-session.finish`. Everything else returns `UNSUPPORTED_CAPABILITY`.
+clock.wait, session.finish`. Everything else returns `UNSUPPORTED_CAPABILITY`.
 
 SDKs: `sdk/python/market_replay_client` (httpx) and `sdk/typescript/src/index.ts` (fetch,
 BigInt). Reference participants: `agents/examples/{python,typescript}`. MCP facade over the
@@ -132,6 +136,7 @@ sdk/python, sdk/typescript, agents/examples, schemas/, fixtures/, tests/, docs/,
 
 - [docs/architecture.md](docs/architecture.md) — components, boundaries, data flow
 - [docs/agent-integration.md](docs/agent-integration.md) — connecting any agent; tool reference
+- [docs/agent-experience-roadmap.md](docs/agent-experience-roadmap.md) — terminal, assessment protocol and execution evidence work
 - [docs/dataset-format.md](docs/dataset-format.md) — packs, manifests, coverage, qualification gates
 - [docs/execution-assumptions.md](docs/execution-assumptions.md) — `cpmm_fixed_flow_v1`, capacity guardrails, gas, valuation
 - [docs/benchmark-protocol.md](docs/benchmark-protocol.md) — suites, comparisons, what is and is not claimed
@@ -149,3 +154,11 @@ market-data-only test does not evaluate social research.
 
 License: MIT.
 
+### Terminal and assessment protocol
+
+Agents can use a point-in-time snapshot, watchlist and delayed alerts with the strategy-neutral
+starter. The UI separates practice from frozen private assessments and shows execution
+eligibility before trading outcomes, with an expandable decision timeline. See the
+[shipped roadmap](docs/agent-experience-roadmap.md) and
+[assessment protocol](docs/assessment-protocol.md) for profiles, operator setup, API/MCP calls,
+all-attempt accounting and the limits of external-client assurance.

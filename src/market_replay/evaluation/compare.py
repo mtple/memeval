@@ -11,7 +11,9 @@ from decimal import Decimal
 from statistics import mean, median
 from typing import Any
 
-COMPARISON_VERSION = "paired_comparison_v2"
+from .validity import execution_validity
+
+COMPARISON_VERSION = "paired_comparison_v3"
 
 
 def _d(s: str | None) -> Decimal | None:
@@ -62,6 +64,7 @@ def pair_runs(runs_a: list[dict[str, Any]], runs_b: list[dict[str, Any]]) -> dic
                 out.append(
                     {
                         "run_id": r["run_id"],
+                        "execution_validity": execution_validity(rep),
                         "state": r["state"],
                         "primary_metric": oc.get("primary_metric", "legacy_portfolio_return"),
                         "headline_return": oc.get("headline_return") if oc.get("primary_metric") == "final_cash_return_v1" else None,
@@ -78,12 +81,25 @@ def pair_runs(runs_a: list[dict[str, Any]], runs_b: list[dict[str, Any]]) -> dic
 
         sa, sb = summarize(ra), summarize(rb)
         # Pair the first completed run of each side (all runs remain listed).
-        fa = next((s for s in sa if s["state"] == "completed" and s["headline_return"] is not None), None)
-        fb = next((s for s in sb if s["state"] == "completed" and s["headline_return"] is not None), None)
+        fa = next((s for s in sa if s["state"] == "completed" and s["headline_return"] is not None and s["execution_validity"]["eligible"]), None)
+        fb = next((s for s in sb if s["state"] == "completed" and s["headline_return"] is not None and s["execution_validity"]["eligible"]), None)
         diff = None
         fee_diff = None
         dd_diff = None
+        incompatibilities = []
         if fa and fb:
+            source_a = next(r for r in ra if r["run_id"] == fa["run_id"])
+            source_b = next(r for r in rb if r["run_id"] == fb["run_id"])
+            for key in ("profile_hash", "mask_seed", "capabilities"):
+                if source_a.get(key) != source_b.get(key):
+                    incompatibilities.append(key)
+            for section, key in (("outcome", "initial_equity_raw"), ("status_dimensions", "isolation"), ("versions", "engine")):
+                if source_a["report"].get(section, {}).get(key) != source_b["report"].get(section, {}).get(key):
+                    incompatibilities.append(key)
+        paired = bool(fa and fb and not incompatibilities)
+        if incompatibilities:
+            warnings.append("INCOMPATIBLE_PAIRS_EXCLUDED")
+        if paired:
             diff = _d(fa["headline_return"]) - _d(fb["headline_return"])  # type: ignore[operator]
             diffs.append(diff)
             if fa["gas_total_raw"] is not None and fb["gas_total_raw"] is not None:
@@ -97,7 +113,8 @@ def pair_runs(runs_a: list[dict[str, Any]], runs_b: list[dict[str, Any]]) -> dic
                 "episode_label": (ra or rb)[0].get("episode_label"),
                 "runs_a": sa,
                 "runs_b": sb,
-                "paired": bool(fa and fb),
+                "paired": paired,
+                "incompatible_dimensions": incompatibilities,
                 "return_diff_a_minus_b": None if diff is None else str(diff),
                 "gas_diff_a_minus_b_raw": None if fee_diff is None else str(fee_diff),
                 "drawdown_diff_a_minus_b": None if dd_diff is None else str(dd_diff),
@@ -111,6 +128,8 @@ def pair_runs(runs_a: list[dict[str, Any]], runs_b: list[dict[str, Any]]) -> dic
         "runs_not_completed_a": sum(1 for r in runs_a if r["state"] != "completed"),
         "runs_not_completed_b": sum(1 for r in runs_b if r["state"] != "completed"),
     }
+    if len(origins) > 1:
+        diffs, fee_diffs, dd_diffs = [], [], []
     if diffs:
         summary["return_diff"] = {
             "median": str(median(diffs)),

@@ -11,14 +11,17 @@ import hashlib
 import json
 from collections import deque
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from fractions import Fraction
 from typing import Any
 
 from ..datasets.pack import Pack
 from ..domain.envelope import Envelope, Quality
 from ..domain.identity import AliasMap, looks_like_canonical
+from ..domain.profiles import ResourceProfile, effective_pack
 from ..domain.quantities import QuantityError, fraction_to_decimal_str, parse_raw
 from ..domain.status import (
+    TERMINAL_ORDER_STATES,
     AvailabilityBasis,
     Completeness,
     ErrorCode,
@@ -30,6 +33,7 @@ from .simulation import INF, Simulation, SubmitRejected, cl_supported, cpmm_supp
 
 TOOLS: dict[str, str] = {
     "session.describe": "Capabilities, limits, relative horizon, numeraire, assumptions and virtual clock.",
+    "session.snapshot": "Compact visible market activity, freshness, coverage, modeled depth, portfolio and orders. Optional pool_ids select a client-owned watchlist; discoveries remain separate. Accepts since_ms, window_ms, stale_after_ms, limit and market/discovery/order cursors.",
     "markets.list": "Paginated currently discoverable pools with point-in-time filters; sort by newest, most_traded or recently_traded to find launches worth a look.",
     "markets.get": "Time-qualified metadata and available current observations for one pool.",
     "market.trades": "Bounded visible trade history ending at or before virtual now.",
@@ -37,11 +41,12 @@ TOOLS: dict[str, str] = {
     "market.liquidity": "Current modeled liquidity facts for a supported pool (CPMM reserves, or CL sqrt price / tick / active liquidity / virtual depth; model-labelled).",
     "market.restrictions": "Available individual restriction observations or explicit unknown/unsupported.",
     "broker.quote": "Exact-input simulated quote against the current model state.",
-    "broker.submit": "Submit an exact-input simulated swap with min-output, deadline and idempotency key.",
+    "broker.submit": "Optional reason and exit_condition metadata are bounded to 512 characters each and included in idempotency. Submit an exact-input simulated swap with min-output, deadline and idempotency key.",
     "broker.order": "Own order lifecycle and confirmed simulated fill records.",
     "portfolio.get": "Available/reserved/pending balances, holdings and valuation status.",
     "portfolio.history": "Own immutable ledger history, paginated.",
     "clock.advance": "Advance virtual time to a relative time or the next observable event (bounded).",
+    "clock.wait": "Wait until until_ms or a delayed one-shot notification. Up to 32 conditions: new_pool (since_ms, min_visible_trades, min_numeraire_depth_raw), price_cross (pool_id, direction above/below, price), liquidity_below (pool_id, depth_raw), order_terminal (order_id). Never submits orders.",
     "session.finish": "Stop agent decisions and apply the fixed terminal reporting procedure.",
 }
 
@@ -65,7 +70,7 @@ UNSUPPORTED_CAPABILITIES = [
 
 KNOWN_NAMESPACES = {"session", "markets", "market", "broker", "portfolio", "clock"}
 MARKETS_SORTS = frozenset({"pool_id", "newest", "most_traded", "recently_traded"})
-DATA_TOOLS = {"markets.list", "markets.get", "market.trades", "market.candles", "market.liquidity", "market.restrictions"}
+DATA_TOOLS = {"session.snapshot", "clock.wait", "markets.list", "markets.get", "market.trades", "market.candles", "market.liquidity", "market.restrictions"}
 FREE_TOOLS = {"session.describe", "broker.order", "portfolio.get", "portfolio.history", "session.finish"}
 
 
@@ -98,6 +103,8 @@ class TraceRecord:
     clock_after_ms: int
     status: str
     error_code: str | None
+    decision_elapsed_ms: int = 0
+    delivered: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -114,6 +121,7 @@ class Session:
     paused: bool = False
     finished: bool = False
     terminal: dict[str, Any] | None = None
+    resource_profile: ResourceProfile = field(default_factory=ResourceProfile)
 
     # ------------------------------------------------------------------ construction
     @classmethod
@@ -126,7 +134,10 @@ class Session:
         mask_seed: str,
         engine_seed: str,
         mode: str = "practice",
+        resource_profile: dict | None = None,
     ) -> Session:
+        profile = ResourceProfile.model_validate(resource_profile or {})
+        pack = effective_pack(pack, profile)
         sim = Simulation(pack, bankroll_raw=bankroll_raw, engine_seed=engine_seed)
         alias = AliasMap(mask_seed, numeraire_key=pack.numeraire, numeraire_alias=pack.manifest.numeraire_alias)
         # Assign aliases for everything up front so assignment never depends on later returns.
@@ -142,7 +153,8 @@ class Session:
             alias=alias,
             scanner=LeakScanner.for_pack(pack),
             mode=mode,
-            budget=BudgetState(max_requests=b.max_requests, max_decisions=b.max_decisions),
+            budget=BudgetState(max_requests=min(b.max_requests, profile.max_requests), max_decisions=min(b.max_decisions, profile.max_decisions)),
+            resource_profile=profile,
         )
         return s
 
@@ -314,7 +326,7 @@ class Session:
         )
 
     # ------------------------------------------------------------------ dispatcher
-    def handle(self, request_id: str, tool: str, arguments: dict[str, Any] | None) -> Envelope:
+    def handle(self, request_id: str, tool: str, arguments: dict[str, Any] | None, *, decision_elapsed_ms: int = 0) -> Envelope:
         args = arguments or {}
         before = self.now
         try:
@@ -332,7 +344,16 @@ class Session:
             if self.finished and tool not in FREE_TOOLS:
                 raise SessionError(ErrorCode.SESSION_FINISHED, "session.finish was already called")
             self._account_request(tool)
-            data, quality = self._dispatch(tool, args)
+            if not self.finished:
+                delay = decision_elapsed_ms if self.resource_profile.timing == "runner_measured" else (self.resource_profile.decision_latency_ms if tool not in FREE_TOOLS else 0)
+                self.sim.process_until(min(self.now + max(0, delay), self.sim.end_ms))
+            dispatch_args = args
+            # A deadline that was future at receipt can pass while computation is charged.
+            # Service it immediately; genuinely stale deadlines still fail validation.
+            deadline_key = {"clock.advance": "to_ms", "clock.wait": "until_ms"}.get(tool)
+            if deadline_key and type(args.get(deadline_key)) is int and before <= args[deadline_key] < self.now:
+                dispatch_args = {**args, deadline_key: self.now}
+            data, quality = self._dispatch(tool, dispatch_args)
             env = Envelope.ok(request_id=request_id, session_id=self.session_id, clock_ms=self.now, data=data, quality=quality)
         except SessionError as e:
             if e.code in (ErrorCode.INVALID_REQUEST, ErrorCode.INVALID_ORDER):
@@ -365,9 +386,22 @@ class Session:
                 clock_after_ms=self.now,
                 status=env.status,
                 error_code=str(env.error.code) if env.error else None,
+                decision_elapsed_ms=decision_elapsed_ms,
+                delivered=self._delivery_record(env),
             )
         )
         return env
+
+    @staticmethod
+    def _delivery_record(env: Envelope) -> dict[str, Any]:
+        """Bounded record of what this command actually delivered, after leakage scanning."""
+        payload = {"data": env.data, "quality": env.quality.model_dump(mode="json"),
+                   "error": env.error.model_dump(mode="json") if env.error else None}
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return {"evidence_basis": "recorded_delivery", "sha256": hashlib.sha256(encoded.encode()).hexdigest(),
+                "quality": payload["quality"],
+                "payload": payload if len(encoded.encode()) <= 16_384 else None,
+                "payload_omitted": len(encoded.encode()) > 16_384}
 
     def _account_request(self, tool: str) -> None:
         self.budget.requests += 1
@@ -385,7 +419,7 @@ class Session:
             window_start = self.now - 60_000
             while self.request_times and self.request_times[0] < window_start:
                 self.request_times.popleft()
-            limit = self.params.rate_limit.simulated_requests_per_minute
+            limit = min(self.params.rate_limit.simulated_requests_per_minute, self.resource_profile.requests_per_minute)
             if len(self.request_times) >= limit:
                 self.budget.rate_limited += 1
                 retry = self.request_times[0] + 60_000 - self.now
@@ -399,6 +433,8 @@ class Session:
             return self.finish(), self._quality(Completeness.COMPLETE)
         if tool == "clock.advance":
             return self.advance(args), self._quality(Completeness.COMPLETE)
+        if tool == "clock.wait":
+            return self.wait(args), self._quality(Completeness.COMPLETE)
         if tool == "portfolio.get":
             return self.portfolio(), self._quality(Completeness.COMPLETE)
         if tool == "portfolio.history":
@@ -410,6 +446,8 @@ class Session:
         # Data and broker tools consume declared simulated service latency first.
         latency = self.params.quote_latency_ms if tool.startswith("broker.") else self.params.data_latency_ms
         self.sim.process_until(min(self.now + latency, self.sim.end_ms))
+        if tool == "session.snapshot":
+            return self.snapshot(args)
         if tool == "markets.list":
             return self.markets_list(args)
         if tool == "markets.get":
@@ -436,6 +474,7 @@ class Session:
             "session_id": self.session_id,
             "objective": "Maximize final settled ETH (NATIVE), or CASH in practice episodes. Submit your own sells before the episode ends and allow time for confirmation. Unsold tokens and unconfirmed sale proceeds do not count toward final cash return; liquidatable portfolio value is secondary. session.finish does not sell holdings for you.",
             "mode": self.mode,
+            "resource_profile": self.resource_profile.public(),
             "clock_ms": self.now,
             "episode": {
                 "duration_ms": m.period.duration_ms,
@@ -453,7 +492,7 @@ class Session:
                 "model": str(m.execution.model),
                 "swap_type": "exact_input_atomic_full_fill_or_revert",
                 "capacity_profile": p.capacity.model_dump(),
-                "latency_assumptions": p.public_latency_assumptions(),
+                "latency_assumptions": p.public_latency_assumptions() | {"computation_time_basis": self.resource_profile.public()["decision_latency_basis"]},
                 "gas_cost_raw": p.gas_cost_raw,
                 "gas_basis": p.gas_basis,
                 "valuation_policy": p.valuation_policy,
@@ -465,13 +504,16 @@ class Session:
                 "time_basis": "integer milliseconds relative to episode start; prehistory is negative",
                 "liquidity_and_quotes": "reflect the current private model state at response time (declared mechanics)",
                 "candles": {"intervals_ms": p.candle_intervals_ms, "default_include_partial": False},
+                "notifications": {"delivery_delay_ms": p.data_latency_ms, "max_conditions": 32,
+                                  "lifetime": "one clock.wait call; client resubmits conditions on each wait",
+                                  "computation_time": self.resource_profile.public()["decision_latency_basis"]},
             },
             "budgets": {
                 "max_requests": self.budget.max_requests,
                 "requests_used": self.budget.requests,
                 "max_decisions": self.budget.max_decisions,
                 "decisions_used": self.budget.decisions,
-                "simulated_requests_per_minute": p.rate_limit.simulated_requests_per_minute,
+                "simulated_requests_per_minute": min(p.rate_limit.simulated_requests_per_minute, self.resource_profile.requests_per_minute),
                 "max_page_size": p.budgets.max_page_size,
             },
             "tools": TOOLS,
@@ -484,6 +526,260 @@ class Session:
                 "Missing data is reported as missing, never as zero activity.",
             ],
         }
+
+    def _modeled_depth(self, key: str) -> int | None:
+        meta = self.pack.pools[key]
+        state = self.sim.pools.get(key)
+        if (state is None or self.pack.numeraire not in (meta.asset0, meta.asset1)
+                or key in self.sim.fidelity_failed or not (cpmm_supported(meta) or cl_supported(meta))):
+            return None
+        return state.depth_for(self.pack.numeraire)[0]
+
+    def _visible_price(self, key: str) -> Fraction | None:
+        trade = self.sim.obs[key].last_visible(self.now)
+        if trade is None:
+            return None
+        base, quote = self._base_quote(key)
+        n, d = (trade.amount_in, trade.amount_out) if trade.asset_in == quote else (trade.amount_out, trade.amount_in)
+        return Fraction(n * 10**self._decimals(base), d * 10**self._decimals(quote)) if d else None
+
+    def snapshot(self, args: dict[str, Any]) -> tuple[dict[str, Any], Quality]:
+        since = self._int_arg(args, "since_ms")
+        if since is not None and since > self.now:
+            raise SessionError(ErrorCode.INVALID_REQUEST, "since_ms must not be in the future")
+        window = self._int_arg(args, "window_ms", default=300_000, minimum=1, required=True)
+        stale_after = self._int_arg(args, "stale_after_ms", default=window, minimum=1, required=True)
+        limit = min(self._int_arg(args, "limit", default=25, minimum=1, required=True), self.params.budgets.max_page_size)
+        cursors = {k: self._int_arg(args, k, default=0, minimum=0, required=True) for k in ("market_cursor", "discovery_cursor", "order_cursor")}
+        # Discovery order is stable across pages as later pools become available.
+        discovered = sorted(self.sim.discovered_pools(self.now), key=lambda k: (self.sim.pool_discovery_ms[k], self.alias.pool(k)))
+        selected = discovered
+        if "pool_ids" in args:
+            ids = args["pool_ids"]
+            if not isinstance(ids, list) or len(ids) > self.params.budgets.max_page_size:
+                raise SessionError(ErrorCode.INVALID_REQUEST, "pool_ids must be a list within max_page_size")
+            selected_keys = {self._resolve_pool_discovered(pid) for pid in ids}
+            selected = [k for k in discovered if k in selected_keys]
+
+        def page(rows, cursor_name):
+            cursor = cursors[cursor_name]
+            return rows[cursor:cursor + limit], cursor + limit if cursor + limit < len(rows) else None
+
+        keys, next_market = page(selected, "market_cursor")
+        rows = []
+        for key in keys:
+            pub = self._pool_public(key)
+            obs = self.sim.obs[key]
+            base, quote = self._base_quote(key)
+            start = max(self.now - window, self.sim.pool_discovery_ms[key])
+            trades = sorted(obs.visible_between(start, self.now, self.now), key=lambda t: (t.event_ms, t.seq))
+            last = obs.last_visible(self.now)
+            cov = obs.coverage_state(start, self.now) if start < self.now else None
+            first_price = self._trade_public(trades[0], base, quote)["price_quote_per_base"] if trades else None
+            last_price = self._trade_public(trades[-1], base, quote)["price_quote_per_base"] if trades else None
+            # Compute the change from exact raw ratios, not the rounded wire prices.
+            change = None
+            if len(trades) >= 2:
+                def price(t, quote=quote):
+                    n, d = (t.amount_in, t.amount_out) if t.asset_in == quote else (t.amount_out, t.amount_in)
+                    return Fraction(n, d) if d else None
+                first, final = price(trades[0]), price(trades[-1])
+                if first and final is not None:
+                    change = fraction_to_decimal_str(final / first - 1, 18)
+            state = self.sim.pools.get(key)
+            depth = self._modeled_depth(key)
+            restrictions = self._restrictions_for(key)
+            pub.update({
+                "newly_discovered": since is None or self.sim.pool_discovery_ms[key] > since,
+                "last_trade": self._trade_public(last, base, quote) if last else None,
+                "freshness": {"last_event_ms": last.event_ms if last else None,
+                              "last_available_ms": last.available_ms if last else None,
+                              "age_ms": self.now - last.event_ms if last else None,
+                              "stale_after_ms": stale_after,
+                              "stale": self.now - last.event_ms > stale_after if last else None},
+                "activity": {"start_ms": start, "end_ms": self.now,
+                             "observed_trade_count": len(trades),
+                             "observed_volume_base_raw": str(sum(t.amount_in if t.asset_in == base else t.amount_out for t in trades)),
+                             "observed_volume_quote_raw": str(sum(t.amount_in if t.asset_in == quote else t.amount_out for t in trades)),
+                             "first_price_quote_per_base": first_price,
+                             "last_price_quote_per_base": last_price,
+                             "price_change_fraction": change,
+                             "newly_available_trade_count": sum(t.available_ms > since for t in obs.visible(self.now)) if since is not None else obs.visible_count(self.now)},
+                "coverage": str(cov) if cov else "unknown",
+                "modeled_liquidity": {"basis": "modeled_private_market_state", "as_of_ms": self.now,
+                                      "numeraire_depth_raw": None if depth is None else str(depth),
+                                      "fee": {"numerator": state.fee_num, "denominator": state.fee_den} if depth is not None else None,
+                                      "depth_kind": "active_range_virtual_depth" if isinstance(state, ClPoolState) else "cpmm_reserve" if state is not None else "unavailable"},
+                "restrictions": {"basis": restrictions["basis"], "status": restrictions["status"]},
+            })
+            rows.append(pub)
+        discoveries = [k for k in discovered if since is None or self.sim.pool_discovery_ms[k] > since]
+        new_keys, next_discovery = page(discoveries, "discovery_cursor")
+        changed_orders = [o for o in self.sim.orders.values() if since is None or any(t >= since for t, _ in o.history)]
+        orders, next_order = page(changed_orders, "order_cursor")
+        data = {
+            "as_of_ms": self.now, "since_ms": since,
+            "markets": {"items": rows, "next_cursor": next_market, "total": len(selected)},
+            "discoveries": {"items": [self._pool_public(k) for k in new_keys], "next_cursor": next_discovery, "total": len(discoveries)},
+            "orders": {"items": [o.to_public(self.alias) for o in orders], "next_cursor": next_order, "total": len(changed_orders)},
+            "portfolio": self.portfolio(),
+            "costs": {"gas_per_included_transaction_raw": self.params.gas_cost_raw, "gas_basis": self.params.gas_basis,
+                      "quote_tool": "broker.quote", "note": "Pool fees are embedded in swap outputs. Request a quote for your chosen amount."},
+            "note": "Activity counts only delivered observations, not all market activity. Missing coverage and undelivered data are not zero activity. Depth is current modeled state, not delayed trade data. Orders include changes at since_ms; deduplicate by order_id.",
+        }
+        warnings = ["OBSERVATION_DELAY_APPLIES"] if self.params.availability_delay_ms else []
+        if any(r["coverage"] != "completed_and_checked" for r in rows):
+            warnings.append("COVERAGE_INCOMPLETE")
+        if any(r["last_trade"] is None for r in rows):
+            warnings.append("NO_VISIBLE_TRADES")
+        quality = self._quality(Completeness.PARTIAL if warnings else Completeness.COMPLETE, warnings)
+        quality.stale = any(r["freshness"]["stale"] is True for r in rows)
+        return data, quality
+
+    def _watch_conditions(self, args: dict[str, Any]) -> list[dict[str, Any]]:
+        raw = args.get("conditions", [])
+        if not isinstance(raw, list) or len(raw) > 32:
+            raise SessionError(ErrorCode.INVALID_REQUEST, "conditions must be a list of at most 32 objects")
+        conditions = []
+        fields = {"new_pool": {"since_ms", "min_visible_trades", "min_numeraire_depth_raw"},
+                  "price_cross": {"pool_id", "direction", "price"},
+                  "liquidity_below": {"pool_id", "depth_raw"}, "order_terminal": {"order_id"}}
+        for index, raw_condition in enumerate(raw):
+            if not isinstance(raw_condition, dict):
+                raise SessionError(ErrorCode.INVALID_REQUEST, "each condition must be an object")
+            c = dict(raw_condition)
+            kind = c.get("kind")
+            if not isinstance(kind, str) or kind not in fields or c.keys() - fields[kind] - {"kind"}:
+                raise SessionError(ErrorCode.INVALID_REQUEST, "unsupported condition kind or arguments")
+            c["index"] = index
+            if kind == "new_pool":
+                c["since_ms"] = self._int_arg(c, "since_ms", default=self.now, required=True)
+                if c["since_ms"] > self.now:
+                    raise SessionError(ErrorCode.INVALID_REQUEST, "since_ms must not be in the future")
+                c["min_visible_trades"] = self._int_arg(c, "min_visible_trades", default=0, minimum=0, required=True)
+                c["depth"] = self._raw_arg(c, "min_numeraire_depth_raw") if "min_numeraire_depth_raw" in c else None
+            elif kind in ("price_cross", "liquidity_below"):
+                c["key"] = self._resolve_pool_discovered(c.get("pool_id"))
+                if kind == "price_cross":
+                    if c.get("direction") not in ("above", "below"):
+                        raise SessionError(ErrorCode.INVALID_REQUEST, "direction must be above or below")
+                    value = c.get("price")
+                    try:
+                        if not isinstance(value, str) or len(value) > 128:
+                            raise ValueError
+                        value = Decimal(value)
+                        if not value.is_finite() or value <= 0 or abs(value.adjusted()) > 128:
+                            raise ValueError
+                        c["threshold"] = Fraction(value)
+                    except (InvalidOperation, ValueError):
+                        raise SessionError(ErrorCode.INVALID_REQUEST, "price must be a positive finite decimal string") from None
+                    c["previous"] = self._visible_price(c["key"])
+                else:
+                    c["depth"] = self._raw_arg(c, "depth_raw")
+                    if self._modeled_depth(c["key"]) is None:
+                        raise SessionError(ErrorCode.UNSUPPORTED_CAPABILITY, "no modeled numeraire depth for this pool")
+            else:
+                if not isinstance(c.get("order_id"), str) or c["order_id"] not in self.sim.orders:
+                    raise SessionError(ErrorCode.INVALID_REQUEST, "unknown order_id")
+            conditions.append(c)
+        return conditions
+
+    def _watch_matches(self, conditions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        alerts = []
+        for c in conditions:
+            kind, match = c["kind"], None
+            if kind == "new_pool":
+                for key in sorted(self.sim.discovered_pools(self.now), key=lambda k: (self.sim.pool_discovery_ms[k], self.alias.pool(k))):
+                    if self.sim.pool_discovery_ms[key] <= c["since_ms"] or self.sim.obs[key].visible_count(self.now) < c["min_visible_trades"]:
+                        continue
+                    depth = self._modeled_depth(key)
+                    if c["depth"] is not None and (depth is None or depth < c["depth"]):
+                        continue
+                    match = {"pool_id": self.alias.pool(key), "listed_ms": self.sim.pool_discovery_ms[key]}
+                    break
+            elif kind == "price_cross":
+                value, prev = self._visible_price(c["key"]), c["previous"]
+                c["previous"] = value
+                if value is not None and prev is not None:
+                    crossed = prev < c["threshold"] <= value if c["direction"] == "above" else prev > c["threshold"] >= value
+                    if crossed:
+                        trade = self.sim.obs[c["key"]].last_visible(self.now)
+                        match = {"pool_id": c["pool_id"], "price": fraction_to_decimal_str(value, 18),
+                                 "event_ms": trade.event_ms, "available_ms": trade.available_ms}
+            elif kind == "liquidity_below":
+                depth = self._modeled_depth(c["key"])
+                if depth is not None and depth < c["depth"]:
+                    match = {"pool_id": c["pool_id"], "numeraire_depth_raw": str(depth), "basis": "modeled_private_market_state"}
+            else:
+                order = self.sim.orders[c["order_id"]]
+                if order.state in TERMINAL_ORDER_STATES:
+                    match = {"order_id": order.order_id, "state": str(order.state)}
+            if match is not None:
+                alerts.append({"condition_index": c["index"], "kind": kind, "matched_ms": self.now,
+                               "delivery_ms": self.now + self.params.data_latency_ms, **match})
+        return alerts
+
+    def _watch_checkpoints(self, conditions: list[dict[str, Any]], until: int) -> list[int]:
+        """Internal evaluation times. Only satisfied, delivered conditions can wake the client."""
+        times = {self.now, until}
+        price_keys = {c["key"] for c in conditions if c["kind"] == "price_cross"}
+        depth_keys = {c["key"] for c in conditions if c["kind"] == "liquidity_below"}
+        for c in conditions:
+            if c["kind"] == "new_pool":
+                keys = {k for k, d in self.sim.pool_discovery_ms.items() if c["since_ms"] < d <= until}
+                times.update(self.sim.pool_discovery_ms[k] for k in keys)
+                if c["min_visible_trades"]:
+                    price_keys.update(keys)
+                if c["depth"] is not None:
+                    depth_keys.update(keys)
+        for key in price_keys:
+            # Delayed observations of events already processed, including own trades.
+            for trade in reversed(self.sim.obs[key].trades):
+                if trade.available_ms <= self.now:
+                    break
+                times.add(max(trade.available_ms, self.sim.pool_discovery_ms[key]))
+        if price_keys or depth_keys:
+            for i in range(self.sim.cursor, len(self.sim.tape)):
+                event = self.sim.tape[i]
+                if event.time_ms > until:
+                    break
+                discovery = self.sim.pool_discovery_ms.get(event.pool, INF)
+                if event.pool in price_keys and event.kind in ("swap", "cl_swap"):
+                    available = event.available_ms if event.available_ms is not None else event.time_ms + self.params.availability_delay_ms
+                    times.add(max(event.time_ms, available, discovery))
+                if event.pool in depth_keys:
+                    times.add(max(event.time_ms, discovery))
+        for order in self.sim.unresolved_orders():
+            if order.inclusion_time_ms is not None:
+                times.add(order.inclusion_time_ms)
+                times.add(order.inclusion_time_ms + self.params.availability_delay_ms)
+            if order.inclusion_block is not None:
+                block = order.inclusion_block + self.params.confirm_blocks
+                if block <= self.sim.schedule.last_block:
+                    times.add(self.sim.schedule.time_of(block))
+        return sorted(t for t in times if self.now <= t <= until)
+
+    def wait(self, args: dict[str, Any]) -> dict[str, Any]:
+        until = self._int_arg(args, "until_ms", required=True)
+        if until < self.now:
+            raise SessionError(ErrorCode.INVALID_REQUEST, "until_ms is in the past")
+        conditions = self._watch_conditions(args)
+        before, until = self.now, min(until, self.sim.end_ms)
+        alerts = []
+        for checkpoint in self._watch_checkpoints(conditions, until):
+            self.sim.process_until(checkpoint)
+            matched = self._watch_matches(conditions)
+            if matched:
+                delivery = matched[0]["delivery_ms"]
+                self.sim.process_until(min(delivery, until))
+                if delivery <= until:
+                    alerts = matched
+                break
+        return {"advanced_from_ms": before, "clock_ms": self.now,
+                "episode_ended": self.now >= self.sim.end_ms,
+                "reason": "alert" if alerts else "episode_end" if self.now >= self.sim.end_ms else "deadline",
+                "alerts": alerts,
+                "note": "Conditions expire when this call returns. Notifications do not submit orders. A match whose delivery is after until_ms is not delivered; no notification is retained."}
 
     def markets_list(self, args: dict[str, Any]) -> tuple[dict[str, Any], Quality]:
         limit = self._int_arg(args, "limit", default=50, minimum=1) or 50
@@ -768,6 +1064,13 @@ class Session:
         if quote_id is not None and not isinstance(quote_id, str):
             raise SessionError(ErrorCode.INVALID_ORDER, "quote_id must be a string")
         assert deadline is not None
+        intent = {}
+        for field_name in ("reason", "exit_condition"):
+            if field_name in args:
+                value = args[field_name]
+                if not isinstance(value, str) or len(value) > 512 or self.scanner.scan({field_name: value}):
+                    raise SessionError(ErrorCode.INVALID_ORDER, "intent metadata must be at most 512 characters and contain no private identifiers")
+                intent[field_name] = value
         order, created = self.sim.submit(
             pool_key=key,
             asset_in=asset_in,
@@ -777,6 +1080,7 @@ class Session:
             deadline_ms=deadline,
             idempotency_key=idem,
             quote_id=quote_id,
+            intent=intent,
         )
         if created:
             self.budget.decisions += 1
@@ -912,10 +1216,13 @@ class Session:
         return hashlib.sha256((self.sim.state_hash() + self.trace_hash()).encode()).hexdigest()
 
 
-def replay_trace(pack: Pack, trace: list[dict[str, Any]], *, bankroll_raw: int, mask_seed: str, engine_seed: str, session_id: str = "replay", mode: str = "practice") -> Session:
+def replay_trace(pack: Pack, trace: list[dict[str, Any]], *, bankroll_raw: int, mask_seed: str, engine_seed: str, session_id: str = "replay", mode: str = "practice", resource_profile: dict | None = None) -> Session:
     """Re-execute recorded agent commands against a fresh session; used for action-replay reproducibility."""
-    s = Session.create(session_id=session_id, pack=pack, bankroll_raw=bankroll_raw, mask_seed=mask_seed, engine_seed=engine_seed, mode=mode)
+    s = Session.create(session_id=session_id, pack=pack, bankroll_raw=bankroll_raw, mask_seed=mask_seed, engine_seed=engine_seed, mode=mode, resource_profile=resource_profile)
     for r in trace:
-        s.handle(r["request_id"], r["tool"], r.get("arguments") or {})
+        s.handle(r["request_id"], r["tool"], r.get("arguments") or {}, decision_elapsed_ms=r.get("decision_elapsed_ms", 0))
+        if r.get("delivered"):
+            s.trace[-1].delivered = r["delivered"]
+        else:
+            s.trace[-1].delivered["evidence_basis"] = "reconstructed_under_current_engine"
     return s
-

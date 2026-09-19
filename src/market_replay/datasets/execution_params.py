@@ -90,6 +90,8 @@ class ExecutionParams(BaseModel):
             "confirm_blocks": self.confirm_blocks,
             "quote_ttl_ms": self.quote_ttl_ms,
             "availability_delay_ms": self.availability_delay_ms,
+            "notification_delivery_delay_ms": self.data_latency_ms,
+            "computation_time_basis": "client_runtime_not_charged_to_virtual_clock",
             "gas_cost_raw": self.gas_cost_raw,
             "gas_basis": self.gas_basis,
             "capacity_profile": self.capacity.model_dump(),

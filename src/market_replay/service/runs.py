@@ -20,6 +20,7 @@ import time
 import traceback
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -31,11 +32,13 @@ from ..datasets.pack import Pack, PackError
 from ..datasets.validator import validate_pack
 from ..domain.envelope import Envelope
 from ..domain.models import PublicDescriptor
+from ..domain.profiles import PROFILES
 from ..domain.status import ErrorCode, Isolation, RunState, UseStatus
 from ..engine.session import TOOLS, UNSUPPORTED_CAPABILITIES, Session, replay_trace
 from ..evaluation.compare import pair_runs
 from ..evaluation.report import ENGINE_VERSION, build_report
 from ..evaluation.study_registry import attach_outcome, new_study
+from ..evaluation.validity import ranking_eligible
 from ..observations.masking import redact_for_role
 from ..observations.store import basis_for
 from ..runners.inprocess import run_example_inprocess
@@ -137,7 +140,7 @@ class RunManager:
         self.store.close()
 
     # ------------------------------------------------------------------ packs
-    def import_pack(self, path: str | Path, name: str | None = None) -> dict[str, Any]:
+    def import_pack(self, path: str | Path, name: str | None = None, visibility: str = "public") -> dict[str, Any]:
         p = Path(path)
         try:
             pack = Pack.load(p)
@@ -146,15 +149,22 @@ class RunManager:
         report = validate_pack(pack)
         (p / "validation.json").write_text(json.dumps(report, indent=2, sort_keys=True))
         pack = Pack.load(p)
-        return self._register(pack, report, name or p.name)
+        return self._register(pack, report, name or p.name, visibility)
 
-    def _register(self, pack: Pack, report: dict[str, Any], pack_name: str) -> dict[str, Any]:
+    def _register(self, pack: Pack, report: dict[str, Any], pack_name: str, visibility: str = "public") -> dict[str, Any]:
         p = pack.path
         m = pack.manifest
         existing = self.store.pack(m.pack_id)
+        if visibility not in ("public", "holdout"):
+            raise ApiError(400, "visibility must be public or holdout", "INVALID")
+        if existing and existing["visibility"] != visibility:
+            raise ApiError(409, "pack visibility is immutable; public packs cannot become hidden holdouts", "EXPOSURE_CONFLICT")
+        if visibility == "holdout" and (pack.path.resolve().is_relative_to(WEEKS_DIR.resolve()) or pack_name in FIXTURE_CONFIGS or (m.generator or {}).get("config", {}).get("seed") in {cfg.seed for cfg in FIXTURE_CONFIGS.values()}):
+            raise ApiError(400, "shipped material cannot be a private holdout", "EXPOSURE_CONFLICT")
         episode_id = existing["episode_id"] if existing else "ep_" + secrets.token_hex(6)
         row = {
             "pack_id": m.pack_id,
+            "visibility": visibility,
             "episode_id": episode_id,
             "name": pack_name,
             "path": str(p.resolve()),
@@ -173,7 +183,7 @@ class RunManager:
         self.store.upsert_pack(row)
         with self._global:
             self._packs[m.pack_id] = pack
-        return self.pack_row(m.pack_id)
+        return self.pack_row(m.pack_id, reveal_dates=True)
 
     def register_shipped_weeks(self) -> list[dict[str, Any]]:
         """Register every recorded week committed under ``weeks/`` (one pack directory each). The
@@ -300,7 +310,7 @@ class RunManager:
 
     def pack_row(self, pack_ref: str, reveal_dates: bool = False) -> dict[str, Any]:
         row = self.store.pack(pack_ref)
-        if row is None:
+        if row is None or (row["visibility"] == "holdout" and not reveal_dates):
             raise ApiError(404, f"unknown pack {pack_ref}", "NOT_FOUND")
         return self._pack_view(row, reveal_dates)
 
@@ -309,6 +319,7 @@ class RunManager:
         sealed_only = any(row["name"] in s.packs and s.sealed for s in self.suites.values()) and not any(row["name"] in s.packs and not s.sealed for s in self.suites.values())
         view = {
             "pack_id": row["pack_id"],
+            "visibility": row["visibility"],
             "episode_id": row["episode_id"],
             "name": row["name"],
             "origin": row["origin"],
@@ -339,7 +350,17 @@ class RunManager:
         return view
 
     def packs(self, reveal_dates: bool = False) -> list[dict[str, Any]]:
-        return [self._pack_view(r, reveal_dates) for r in self.store.packs()]
+        return [self._pack_view(r, reveal_dates) for r in self.store.packs() if reveal_dates or r["visibility"] == "public"]
+
+    def is_private_run(self, run_id: str) -> bool:
+        row = self.store.run(run_id)
+        pack = self.store.pack(row["pack_id"]) if row else None
+        return bool((pack and pack["visibility"] == "holdout") or self.store.one("SELECT run_id FROM assessment_episodes WHERE run_id=?", (run_id,)))
+
+    def require_public(self, kind: str, ref: str) -> None:
+        private = self.is_private_run(ref) if kind == "runs" else bool((row := self.store.pack(ref)) and row["visibility"] == "holdout")
+        if private:
+            raise ApiError(404, "unknown resource", "NOT_FOUND")
 
     def public_descriptor(self, pack: Pack, row: dict[str, Any], isolation: str) -> PublicDescriptor:
         m = pack.manifest
@@ -472,6 +493,8 @@ class RunManager:
         by_pack: dict[str, dict[str, Any]] = {}
         order: list[str] = []
         for row in sorted(self.store.runs(agent_id=agent_id), key=lambda r: r["created_at"], reverse=True):
+            if self.is_private_run(row["run_id"]):
+                continue
             pack_row = self.store.pack(row["pack_id"])
             pid = row["pack_id"]
             if pid not in by_pack:
@@ -512,7 +535,7 @@ class RunManager:
     def _history_item(self, row: dict[str, Any]) -> dict[str, Any]:
         summ = self._result_summary(row.get("report_json")) or {}
         state = str(row["state"])
-        counts = state == str(RunState.COMPLETED) and summ.get("primary_metric") == "final_cash_return_v1" and summ.get("headline_return") is not None
+        counts = state == str(RunState.COMPLETED) and summ.get("primary_metric") == "final_cash_return_v1" and summ.get("headline_return") is not None and summ.get("ranking_eligible", False)
         dec = int(summ.get("numeraire_decimals") or 18)
         unit = summ.get("numeraire") or "ETH"
 
@@ -520,14 +543,16 @@ class RunManager:
             if raw is None:
                 return None
             try:
-                return f"{int(raw) / 10**dec:.4f} {unit}"
+                return f"{Decimal(raw) / 10**dec:.4f} {unit}"
             except (TypeError, ValueError):
                 return None
 
         outcome = _state_in_words(state, row.get("error"))
         ret = summ.get("headline_return")
         if counts:
-            outcome = f"Finished with a final ETH return of {float(ret) * 100:+.2f}% after gas and fees" if unit == "ETH" else f"Finished with a final cash return of {float(ret) * 100:+.2f}% after modeled costs"
+            outcome = f"Finished with a final ETH return of {Decimal(ret) * 100:+.2f}% after gas and fees" if unit == "ETH" else f"Finished with a final cash return of {Decimal(ret) * 100:+.2f}% after modeled costs"
+        elif state == str(RunState.COMPLETED) and summ.get("primary_metric") == "final_cash_return_v1":
+            outcome = "Finished with a provisional outcome; excluded from ranking by the execution eligibility gates"
         elif state == str(RunState.COMPLETED) and summ:
             outcome = "Finished under the old portfolio scoring, so it is not ranked; play the day again to get a ranked result"
         return {
@@ -590,17 +615,29 @@ class RunManager:
         suite_run_id: str | None = None,
         agent_seed: str | None = None,
         execute: str | None = None,
+        resource_profile_id: str = "pack_defaults_v1",
+        allow_holdout: bool = False,
+        assigned_run_id: str | None = None,
     ) -> dict[str, Any]:
         agent = self.agent_view(agent_id)
         if not agent["compatibility"]["compatible"]:
             raise ApiError(400, f"agent requests unsupported capabilities: {agent['compatibility']['unsupported_requested']}", "INCOMPATIBLE")
+        if not allow_holdout:
+            self.require_public("packs", pack_ref)
         row, pack = self.load_pack(pack_ref)
+        profile = PROFILES.get(resource_profile_id)
+        if profile is None:
+            raise ApiError(400, "unknown resource profile", "INVALID")
+        if profile.timing == "runner_measured" and not (launch_spec and launch_spec.get("runtime", "python") == "python" and (execute or ("inprocess" if self.hosted else "subprocess")) == "inprocess"):
+            raise ApiError(400, "deployment timing requires the in-process measured Python runner", "UNSUPPORTED_CAPABILITY")
         if row["use_status"] not in ("demo", "research", "qualified_for_named_suite"):
             raise ApiError(400, f"pack use status '{row['use_status']}' is not runnable; see its validation report", "NOT_RUNNABLE")
         if mode not in ("practice", "sealed"):
             raise ApiError(400, "mode must be practice or sealed", "INVALID")
         if isolation not in ("trusted_external_client", "restricted_local_runner"):
             raise ApiError(400, "invalid isolation", "INVALID")
+        if isolation == "restricted_local_runner" and (not launch_spec or (execute or ("inprocess" if self.hosted else "subprocess")) != "subprocess"):
+            raise ApiError(400, "restricted isolation requires the restricted subprocess runner", "INVALID")
         if bankroll_raw is None:
             # One whole unit of the cash asset: 1.0 CASH on a practice pack, 1 ETH on a real Base day.
             bankroll_raw = 10 ** int(pack.manifest.numeraire_decimals)
@@ -618,10 +655,11 @@ class RunManager:
             if launch_spec.get("name") not in known:
                 raise ApiError(400, f"unknown reference participant {launch_spec.get('name')}", "INVALID")
         self._check_caps()
-        run_id = "run_" + secrets.token_hex(8)
+        run_id = assigned_run_id or "run_" + secrets.token_hex(8)
         mask_seed = mask_seed or ("mask-" + secrets.token_hex(8))
         engine_seed = engine_seed or ("engine-" + secrets.token_hex(8))
-        session = Session.create(session_id="ses_" + run_id[4:], pack=pack, bankroll_raw=bankroll, mask_seed=mask_seed, engine_seed=engine_seed, mode=mode)
+        session = Session.create(session_id="ses_" + run_id[4:], pack=pack, bankroll_raw=bankroll, mask_seed=mask_seed, engine_seed=engine_seed, mode=mode, resource_profile=profile.model_dump())
+        profile_hash = pack.manifest.execution.parameters_hash if resource_profile_id == "pack_defaults_v1" else hashlib.sha256((pack.manifest.execution.parameters_hash + profile.fingerprint()).encode()).hexdigest()
         token = new_agent_token()
         attempt = self.store.bump_attempt(row["pack_id"], agent_id)
         run_row = {
@@ -636,7 +674,7 @@ class RunManager:
             "bankroll_raw": str(bankroll),
             "mask_seed": mask_seed,
             "engine_seed": engine_seed,
-            "profile_hash": pack.manifest.execution.parameters_hash,
+            "profile_hash": profile_hash,
             "token_hash": token_hash(token),
             "launch_json": json.dumps(launch_spec) if launch_spec else None,
             "created_at": now_iso(),
@@ -658,7 +696,8 @@ class RunManager:
                 "mask_seed": mask_seed,
                 "engine_seed": engine_seed,
                 "agent_seed": agent_seed,
-                "profile_hash": pack.manifest.execution.parameters_hash,
+                "profile_hash": profile_hash,
+                "resource_profile": profile.model_dump(),
                 "execution_profile": pack.params.profile_name,
                 "budgets": pack.params.budgets.model_dump(),
                 "engine_version": ENGINE_VERSION,
@@ -675,8 +714,8 @@ class RunManager:
                 self.execute_run(run_id, token=token)
             else:
                 self._launch(ctx, token, launch_spec, isolation, agent_seed)
-            return self.run_view(run_id)
-        result = self.run_view(run_id)
+            return self.run_view(run_id, allow_private=allow_holdout)
+        result = self.run_view(run_id, allow_private=allow_holdout)
         # The credential is returned only to the caller who created the run (the participant or its runner).
         result["session_credential"] = {"token": token, "gateway_url": self.gateway_url, "commands_url": self.gateway_url + "/agent/v1/commands", "mcp_url": self.gateway_url + "/agent/mcp"}
         return result
@@ -703,7 +742,7 @@ class RunManager:
         self.store.update_run(run_id, state=str(RunState.RUNNING), started_at=now_iso())
         ctx = self._ctx(run_id)
         ctx.controls = {"isolation": "in_process_reference_participant", "enforced": ["no_network_from_agent_code_is_not_enforced"], "unenforced": ["network", "filesystem"], "note": "reference participant executed inside the server process"}
-        res = run_example_inprocess(self.handle_command, token=token, name=str(spec["name"]), agent_seed=manifest.get("agent_seed"))
+        res = run_example_inprocess(self.handle_command, token=token, name=str(spec["name"]), agent_seed=manifest.get("agent_seed"), measure_decisions=ctx.session.resource_profile.timing == "runner_measured")
         self.store.put_doc(run_id, "agent_log", res["log"])
         self.store.add_usage(cpu_seconds=res["cpu_seconds"])
         row = self.store.run(run_id)
@@ -772,9 +811,13 @@ class RunManager:
         row = self.store.run(run_id)
         if row is None:
             raise ApiError(404, f"unknown run {run_id}", "NOT_FOUND")
-        _pack_row, pack = self.load_pack(row["pack_id"])
+        try:
+            _pack_row, pack = self.load_pack(row["pack_id"])
+        except (ApiError, ValueError, OSError):
+            raise ApiError(410, "session episode unavailable on this instance", "PACK_FILES_MISSING") from None
         trace = self.store.trace(run_id)
-        session = replay_trace(pack, trace, bankroll_raw=int(row["bankroll_raw"]), mask_seed=row["mask_seed"], engine_seed=row["engine_seed"], session_id="ses_" + run_id[4:], mode=row["mode"])
+        manifest = self.store.get_doc(run_id, "run_manifest") or {}
+        session = replay_trace(pack, trace, bankroll_raw=int(row["bankroll_raw"]), mask_seed=row["mask_seed"], engine_seed=row["engine_seed"], session_id="ses_" + run_id[4:], mode=row["mode"], resource_profile=manifest.get("resource_profile"))
         session.paused = row["state"] == str(RunState.PAUSED)
         ctx = RunContext(run_id=run_id, session=session, token_hash=row["token_hash"] or "", started_wall=time.time(), launch=json.loads(row["launch_json"]) if row["launch_json"] else None, trace_written=len(trace))
         with self._global:
@@ -785,7 +828,11 @@ class RunManager:
         """Apply commands another instance appended since this cache was last synced."""
         missing = self.store.trace(ctx.run_id, after=len(ctx.session.trace) - 1)
         for r in missing:
-            ctx.session.handle(r["request_id"], r["tool"], r.get("arguments") or {})
+            ctx.session.handle(r["request_id"], r["tool"], r.get("arguments") or {}, decision_elapsed_ms=r.get("decision_elapsed_ms", 0))
+            if r.get("delivered"):
+                ctx.session.trace[-1].delivered = r["delivered"]
+            else:
+                ctx.session.trace[-1].delivered["evidence_basis"] = "reconstructed_under_current_engine"
         ctx.trace_written = len(ctx.session.trace)
 
     def _ctx_for_token(self, token: str) -> RunContext:
@@ -794,22 +841,26 @@ class RunManager:
             raise ApiError(401, "invalid credential", "UNAUTHORIZED")
         return self._ctx(row["run_id"])
 
-    def handle_command(self, token: str, request_id: str, tool: str, arguments: dict[str, Any] | None, session_id: str | None = None) -> Envelope:
+    def handle_command(self, token: str, request_id: str, tool: str, arguments: dict[str, Any] | None, session_id: str | None = None, *, measured_elapsed_ms: int | None = None) -> Envelope:
         ctx = self._ctx_for_token(token)
         if session_id is not None and session_id != ctx.session.session_id:
             raise ApiError(403, "session_id does not match the credential", "FORBIDDEN")
         with self.store.run_lock(ctx.run_id):
             row = self.store.run(ctx.run_id)
             assert row is not None
+            if row["token_hash"] != token_hash(token):
+                raise ApiError(401, "invalid credential", "UNAUTHORIZED")
             state = row["state"]
             if state in TERMINAL:
                 return Envelope.fail(request_id=request_id, session_id=ctx.session.session_id, clock_ms=ctx.session.now, code=ErrorCode.SESSION_FINISHED, message=f"run is {state}")
             self._catch_up(ctx)
+            if ctx.session.resource_profile.timing == "runner_measured" and measured_elapsed_ms is None:
+                raise ApiError(403, "this run only accepts commands through its measured runner", "RUNNER_REQUIRED")
             ctx.session.paused = state == str(RunState.PAUSED)
             if state == str(RunState.QUEUED):
                 self.store.update_run(ctx.run_id, state=str(RunState.RUNNING), started_at=now_iso())
             try:
-                env = ctx.session.handle(request_id, tool, arguments)
+                env = ctx.session.handle(request_id, tool, arguments, decision_elapsed_ms=measured_elapsed_ms or 0)
             except Exception as e:  # environment failure, never blamed on the agent
                 tb = traceback.format_exc(limit=5)
                 self._finalize(ctx, RunState.ENVIRONMENT_FAILED, error=f"{type(e).__name__}: {e}\n{tb}")
@@ -827,7 +878,9 @@ class RunManager:
         recs = ctx.session.trace[ctx.trace_written :]
         if not recs:
             return
-        self.store.append_trace(ctx.run_id, [{"index": r.index, "request_id": r.request_id, "tool": r.tool, "arguments": r.arguments, "clock_before_ms": r.clock_before_ms, "clock_after_ms": r.clock_after_ms, "status": r.status, "error_code": r.error_code} for r in recs])
+        from dataclasses import asdict
+
+        self.store.append_trace(ctx.run_id, [asdict(r) for r in recs])
         ctx.trace_written = len(ctx.session.trace)
 
     def _run_meta(self, ctx: RunContext, row: dict[str, Any]) -> dict[str, Any]:
@@ -849,6 +902,7 @@ class RunManager:
             "engine_seed": row["engine_seed"],
             "agent_seed": manifest.get("agent_seed"),
             "profile_hash": row["profile_hash"],
+            "resource_profile": ctx.session.resource_profile.public(),
             "wall_clock": wall,
             "inference": ctx.inference,
         }
@@ -876,14 +930,14 @@ class RunManager:
         with self.store.run_lock(run_id):
             ctx.session.paused = True
             self.store.update_run(run_id, state=str(RunState.PAUSED))
-        return self.run_view(run_id)
+        return self.run_view(run_id, allow_private=True)
 
     def resume(self, run_id: str) -> dict[str, Any]:
         ctx = self._ctx(run_id)
         with self.store.run_lock(run_id):
             ctx.session.paused = False
             self.store.update_run(run_id, state=str(RunState.RUNNING))
-        return self.run_view(run_id)
+        return self.run_view(run_id, allow_private=True)
 
     def abort(self, run_id: str) -> dict[str, Any]:
         ctx = self._ctx(run_id)
@@ -892,12 +946,14 @@ class RunManager:
                 ctx.proc.terminate()
             self._catch_up(ctx)
             self._finalize(ctx, RunState.ABORTED, error="aborted by operator")
-        return self.run_view(run_id)
+        return self.run_view(run_id, allow_private=True)
 
     def _active(self, run_id: str) -> RunContext:
         return self._ctx(run_id)
 
-    def run_view(self, run_id: str) -> dict[str, Any]:
+    def run_view(self, run_id: str, allow_private: bool = False) -> dict[str, Any]:
+        if not allow_private:
+            self.require_public("runs", run_id)
         row = self.store.run(run_id)
         if row is None:
             raise ApiError(404, f"unknown run {run_id}", "NOT_FOUND")
@@ -958,7 +1014,7 @@ class RunManager:
         return view
 
     def runs(self, **where: Any) -> list[dict[str, Any]]:
-        return [self.run_view(r["run_id"]) for r in self.store.runs(**where)]
+        return [self.run_view(r["run_id"]) for r in self.store.runs(**where) if not self.is_private_run(r["run_id"])]
 
     @staticmethod
     def _result_summary(report_json: str | None) -> dict[str, Any] | None:
@@ -976,6 +1032,8 @@ class RunManager:
         unresolved = rep.get("unresolved", {}) or {}
         return {
             "primary_metric": outcome.get("primary_metric", "legacy_portfolio_return"),
+            "ranking_eligible": ranking_eligible(rep),
+            "execution_validity": rep.get("execution_validity"),
             "final_cash_raw": outcome.get("final_cash_raw"),
             "liquidatable_portfolio_return": outcome.get("liquidatable_portfolio_return"),
             "headline_return": outcome.get("headline_return"),
@@ -1075,7 +1133,7 @@ class RunManager:
         bundle: dict[str, Any] = {
             "bundle_version": "run_export_v1",
             "role": role,
-            "run": self.run_view(run_id),
+            "run": self.run_view(run_id, allow_private=role == "admin"),
             "public_descriptor": self.public_descriptor(pack, pack_row, row["isolation"]).model_dump(mode="json"),
             "report": report,
             "trace": trace,
@@ -1103,9 +1161,13 @@ class RunManager:
         row = self.store.run(run_id)
         if row is None:
             raise ApiError(404, f"unknown run {run_id}", "NOT_FOUND")
-        _pack_row, pack = self.load_pack(row["pack_id"])
+        try:
+            _pack_row, pack = self.load_pack(row["pack_id"])
+        except (ApiError, ValueError, OSError):
+            raise ApiError(410, "session episode unavailable on this instance", "PACK_FILES_MISSING") from None
         trace = self.store.trace(run_id)
-        replayed = replay_trace(pack, trace, bankroll_raw=int(row["bankroll_raw"]), mask_seed=row["mask_seed"], engine_seed=row["engine_seed"], mode=row["mode"])
+        manifest = self.store.get_doc(run_id, "run_manifest") or {}
+        replayed = replay_trace(pack, trace, bankroll_raw=int(row["bankroll_raw"]), mask_seed=row["mask_seed"], engine_seed=row["engine_seed"], mode=row["mode"], resource_profile=manifest.get("resource_profile"))
         original = json.loads(row["report_json"]) if row["report_json"] else None
         orig_hashes = (original or {}).get("reproducibility", {})
         return {
@@ -1123,6 +1185,8 @@ class RunManager:
     def suites_view(self) -> list[dict[str, Any]]:
         out = []
         for s in self.suites.values():
+            if any((r := self.store.pack(n)) and r["visibility"] == "holdout" for n in s.packs):
+                continue
             ids = []
             for name in s.packs:
                 r = self.store.pack(name)
@@ -1166,7 +1230,7 @@ class RunManager:
 
     ONE_NAME_WINDOW_S = 2 * 3600.0
 
-    def enroll(self, *, agent: dict[str, Any], client_key: str | None = None) -> dict[str, Any]:
+    def enroll(self, *, agent: dict[str, Any], client_key: str | None = None, agent_token: str | None = None) -> dict[str, Any]:
         """Join: register (or reuse) the agent and hand it its identity token. Creates no runs; that is
         ``play``, which an agent calls whenever it wants to trade what it has not finished yet.
 
@@ -1185,8 +1249,13 @@ class RunManager:
                 self.store.add_rate_event("enroll_name:" + name.lower(), client_key, now)
         view = self.register_or_reuse_agent(name=name, version=str(agent.get("version", "1")), runtime=str(agent.get("runtime", "external")), capabilities=list(agent.get("capabilities") or []), config=dict(agent.get("config") or {}))
         agent_id = view["agent_id"]
-        token = new_identity_token()
-        self.store.set_agent_token_hash(agent_id, token_hash(token))
+        with self.store.run_lock("identity:" + agent_id):
+            protected = self.store.one("SELECT assessment_id FROM assessments WHERE agent_id=?", (agent_id,))
+            current = self.store.agent(agent_id)
+            if protected and (not agent_token or not current or current["token_hash"] != token_hash(agent_token)):
+                raise ApiError(403, "this identity has committed assessments; its current identity token is required to rotate credentials", "IDENTITY_LOCKED")
+            token = new_identity_token()
+            self.store.set_agent_token_hash(agent_id, token_hash(token))
         return {
             "agent_id": agent_id,
             "agent_name": view["name"],
@@ -1209,6 +1278,8 @@ class RunManager:
         """Change the name an agent shows under, keeping its id, token, runs and board rows. For an agent
         that joined with a suffix its user never asked for."""
         row = self.agent_by_token(agent_token)
+        if self.store.one("SELECT assessment_id FROM assessments WHERE agent_id=?", (row["agent_id"],)):
+            raise ApiError(409, "an identity with committed assessments cannot be renamed", "IDENTITY_LOCKED")
         name = name.strip()
         if not name or len(name) > 64 or not name.isprintable():
             raise ApiError(400, "agent name must be 1-64 printable characters", "INVALID")
@@ -1248,7 +1319,7 @@ class RunManager:
                 "pools_created": candidates,
                 "tape_events": summary.get("tape_events"),
                 "gas_per_fill_raw": str(gas),
-                "gas_per_fill": f"{gas / 10**dec:.9f}".rstrip("0").rstrip(".") if gas else "0",
+                "gas_per_fill": f"{Decimal(gas) / 10**dec:.9f}".rstrip("0").rstrip(".") if gas else "0",
                 "gas_basis": params.get("gas_basis"),
                 "market": _market_public(baseline),
                 "market_note": baseline_sentence(baseline),
@@ -1273,8 +1344,15 @@ class RunManager:
             open_ = [x for x in mine if x["state"] not in TERMINAL]
             status = "finished" if done else "running" if open_ else "new"
             board = self.leaderboard(pack_id=r["pack_id"])["rows"]
+            # Episode selection gives context for the default practice lane only.
+            decimals = int(json.loads(r["summary_json"]).get("numeraire_decimals") or 18)
+            board = [x for x in board if x["group"]["resource_profile"] == "pack_defaults_v1"
+                     and x["group"]["isolation"] == "trusted_external_client"
+                     and x["group"]["bankroll_raw"] == str(10**decimals)
+                     and x["group"]["engine"] == ENGINE_VERSION]
             item = {"pack_id": r["pack_id"], "pack_name": r["name"], "label": _episode_label(r), **self._episode_context(r)}
             item.update({
+                "ranking_basis": "default practice profile, one whole cash unit, trusted external client, current evaluator",
                 "agents_ranked": len(board),
                 "top_return": board[0].get("median_return") if board else None,
                 "your_status": status,
@@ -1343,7 +1421,7 @@ class RunManager:
     # ------------------------------------------------------------------ leaderboard
     def real_weeks(self) -> list[dict[str, Any]]:
         """Recorded weeks that agents can trade, newest first (the public catalogue)."""
-        rows = [r for r in self.store.packs() if str(r.get("origin", "")) != "generated_fixture" and r["use_status"] in ("demo", "research", "qualified_for_named_suite")]
+        rows = [r for r in self.store.packs() if r["visibility"] == "public" and str(r.get("origin", "")) != "generated_fixture" and r["use_status"] in ("demo", "research", "qualified_for_named_suite")]
         return sorted(rows, key=lambda r: str(r.get("start_utc") or ""), reverse=True)
 
     def leaderboard_categories(self, include_artificial: bool = True) -> list[dict[str, Any]]:
@@ -1354,10 +1432,14 @@ class RunManager:
             cats.append({"kind": "pack", "id": r["pack_id"], "label": _episode_label(r), "description": _episode_description(r), "episodes": [r["name"]], **self._market_fields(r)})
         if include_artificial:
             for s in self.suites.values():
+                if any((p := self.store.pack(n)) and p["visibility"] == "holdout" for n in s.packs):
+                    continue
                 if s.sealed or len(s.packs) < 2:  # a one-episode suite is its episode's own tab
                     continue
                 cats.append({"kind": "suite", "id": s.suite_id, "label": _suite_label(s), "description": s.description, "episodes": list(s.packs)})
             for r in self.store.packs():
+                if r["visibility"] != "public":
+                    continue
                 if str(r.get("origin", "")) == "generated_fixture":
                     cats.append({"kind": "pack", "id": r["pack_id"], "label": _episode_label(r), "description": _episode_description(r), "episodes": [r["name"]], **self._market_fields(r)})
         return cats
@@ -1370,42 +1452,60 @@ class RunManager:
             if s is None:
                 raise ApiError(404, f"unknown suite {suite_id}", "NOT_FOUND")
             episode_names = list(s.packs)
+            for name in episode_names:
+                self.require_public("packs", name)
             category = {"kind": "suite", "id": suite_id, "label": _suite_label(s), "description": s.description, "episodes": episode_names}
             wanted_packs = {r["pack_id"] for n in episode_names if (r := self.store.pack(n))}
         elif pack_id:
+            self.require_public("packs", pack_id)
             r = self.store.pack(pack_id)
             if r is None:
                 raise ApiError(404, f"unknown pack {pack_id}", "NOT_FOUND")
             wanted_packs = {r["pack_id"]}
             category = {"kind": "pack", "id": r["pack_id"], "label": _episode_label(r), "description": _episode_description(r), "episodes": [r["name"]], **self._market_fields(r)}
         else:
-            wanted_packs = {r["pack_id"] for r in self.store.packs()}
-            category = {"kind": "all", "id": "all", "label": "Every episode", "description": "Every episode on this server, artificial and real, ranked together.", "episodes": [r["name"] for r in self.store.packs()]}
+            public_packs = [r for r in self.store.packs() if r["visibility"] == "public"]
+            wanted_packs = {r["pack_id"] for r in public_packs}
+            category = {"kind": "all", "id": "all", "label": "Every practice episode", "description": "Public practice episodes; use a frozen assessment bundle for assessment rankings.", "episodes": [r["name"] for r in public_packs]}
         # latest valued run per (agent, pack)
-        best: dict[tuple[str, str], dict[str, Any]] = {}
+        best: dict[tuple[str, str, str], dict[str, Any]] = {}
+        groups: dict[str, dict[str, Any]] = {}
         attempts: dict[str, int] = {}
         for row in self.store.runs():
-            if row["pack_id"] not in wanted_packs:
+            if row["pack_id"] not in wanted_packs or self.is_private_run(row["run_id"]):
                 continue
             attempts[row["agent_id"]] = attempts.get(row["agent_id"], 0) + 1
             if row["state"] != str(RunState.COMPLETED) or not row["report_json"]:
                 continue
             summ = self._result_summary(row["report_json"])
-            if not summ or summ["primary_metric"] != "final_cash_return_v1" or summ["headline_return"] is None:
+            if not summ or summ["primary_metric"] != "final_cash_return_v1" or summ["headline_return"] is None or not summ["ranking_eligible"]:
                 continue
-            key = (row["agent_id"], row["pack_id"])
+            report = json.loads(row["report_json"])
+            group = {"resource_profile": report.get("resource_profile", PROFILES["pack_defaults_v1"].public())["profile_id"],
+                     "resource_fingerprint": report.get("resource_profile", PROFILES["pack_defaults_v1"].public())["fingerprint"],
+                     "origin": report.get("status_dimensions", {}).get("data_origin"),
+                     "execution_model": report.get("status_dimensions", {}).get("execution_model"),
+                     "isolation": row["isolation"], "bankroll_raw": row["bankroll_raw"],
+                     "numeraire": report.get("outcome", {}).get("numeraire"),
+                     "decimals": report.get("outcome", {}).get("numeraire_decimals"),
+                     "engine": report.get("versions", {}).get("engine")}
+            gid = hashlib.sha256(json.dumps(group, sort_keys=True).encode()).hexdigest()[:16]
+            groups[gid] = group
+            key = (row["agent_id"], row["pack_id"], gid)
             if key not in best or (row["finished_at"] or "") > (best[key]["finished_at"] or ""):
                 best[key] = {"finished_at": row["finished_at"], "run_id": row["run_id"], **summ}
-        per_agent: dict[str, list[dict[str, Any]]] = {}
-        for (aid, _pid), v in best.items():
-            per_agent.setdefault(aid, []).append(v)
+        per_agent: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for (aid, _pid, gid), v in best.items():
+            per_agent.setdefault((aid, gid), []).append(v)
         rows = []
-        for aid, vals in per_agent.items():
+        for (aid, gid), vals in per_agent.items():
+            group = groups[gid]
+            episode_count = sum(1 for pid in wanted_packs if (p := self.store.pack(pid)) and p["origin"] == group["origin"] and p["execution_model"] == group["execution_model"])
             a = self.store.agent(aid)
-            rets = sorted(float(v["headline_return"]) for v in vals)
+            rets = sorted(Decimal(v["headline_return"]) for v in vals)
             mid = len(rets) // 2
             median = rets[mid] if len(rets) % 2 else (rets[mid - 1] + rets[mid]) / 2
-            dds = [float(v["max_drawdown"]) for v in vals if v.get("max_drawdown") is not None]
+            dds = [Decimal(v["max_drawdown"]) for v in vals if v.get("max_drawdown") is not None]
             rows.append(
                 {
                     "agent_id": aid,
@@ -1413,8 +1513,10 @@ class RunManager:
                     "agent_version": a["version"] if a else "",
                     "runtime": a["runtime"] if a else "",
                     "episodes_valued": len(vals),
-                    "episodes_total": len(wanted_packs),
-                    "covers_all": len(vals) >= len(wanted_packs),
+                    "episodes_total": episode_count,
+                    "covers_all": len(vals) >= episode_count,
+                    "comparison_group": gid,
+                    "group": group,
                     "runs_attempted": attempts.get(aid, 0),
                     "median_return": f"{median:.6f}",
                     "mean_return": f"{sum(rets) / len(rets):.6f}",
@@ -1426,14 +1528,18 @@ class RunManager:
                     "run_ids": [v["run_id"] for v in vals],
                 }
             )
-        rows.sort(key=lambda r: (not r["covers_all"], -float(r["median_return"]), r["agent_name"]))
-        for i, r in enumerate(rows, 1):
-            r["rank"] = i
+        rows.sort(key=lambda r: (r["comparison_group"], not r["covers_all"], -Decimal(r["median_return"]), r["agent_name"]))
+        ranks: dict[str, int] = {}
+        for r in rows:
+            gid = r["comparison_group"]
+            ranks[gid] = ranks.get(gid, 0) + 1
+            r["rank"] = ranks[gid]
         return {
             "category": category,
+            "evaluation_mode": "practice",
             "categories": self.leaderboard_categories(),
             "rows": rows,
-            "note": "Ranked by median final ETH/cash return after modeled costs over each agent's latest completed final-cash-scored run per episode. Agents that covered every episode rank above partial coverage. Unsold tokens do not count. Legacy portfolio-scored runs require a new run and are excluded. Generated episodes are artificial; a high rank is not an edge and predicts nothing.",
+            "note": "Practice only. Ranks restart within each resource profile, data origin, execution model, bankroll, numeraire, engine version and isolation group. Material fidelity failures and budget exhaustion are excluded. Ranked by median final ETH/cash return after modeled costs over each agent's latest completed final-cash-scored run per episode. Agents that covered every episode rank above partial coverage. Unsold tokens do not count. Legacy portfolio-scored runs require a new run and are excluded. Generated episodes are artificial; a high rank is not an edge and predicts nothing.",
         }
 
     # ------------------------------------------------------------------ comparisons / studies
@@ -1443,6 +1549,10 @@ class RunManager:
             out = []
             for r in rows:
                 if r is None:
+                    continue
+                if self.is_private_run(r["run_id"]):
+                    if explicit:
+                        raise ApiError(404, "unknown resource", "NOT_FOUND")
                     continue
                 pack_row = self.store.pack(r["pack_id"])
                 agent = self.agent_view(r["agent_id"])
@@ -1487,6 +1597,8 @@ class RunManager:
         return json.loads(r["result_json"])
 
     def register_study(self, *, candidates: list[str], pack_ids: list[str], comparison_id: str | None, intended_outcome: str, prediction: str) -> dict[str, Any]:
+        for ref in pack_ids:
+            self.require_public("packs", ref)
         rec = new_study(candidates=candidates, evaluator_version=ENGINE_VERSION, pack_ids=pack_ids, comparison_id=comparison_id, intended_outcome=intended_outcome, prediction=prediction, registered_at_utc=now_iso())
         self.store.upsert_study(rec["study_id"], rec["registered_at_utc"], rec)
         return rec
@@ -1619,5 +1731,3 @@ def _suite_label(s: SuiteDef) -> str:
     n = len(s.packs)
     weeks = all(name.startswith("gen_week_") for name in s.packs)
     return f"Practice: all {n} artificial weeks" if weeks else f"Practice: all {n} episodes ({s.suite_id})"
-
-

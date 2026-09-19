@@ -152,6 +152,7 @@ export type Universe = {
 export type Rights = { storage_basis: string; local_processing_basis: string; redistribution: string; simulator_serving: string; notes: string[] | string };
 
 export type Pack = {
+  visibility?: "public" | "holdout";
   pack_id: string;
   episode_id: string;
   name: string;
@@ -275,6 +276,7 @@ export type Usage = { today: { runs: number; cpu_seconds: number }; month: { run
 
 /** The few numbers a result list needs; null until the run has a report. */
 export type ResultSummary = {
+  ranking_eligible?: boolean;
   primary_metric?: string;
   final_cash_raw?: string;
   liquidatable_portfolio_return?: string | null;
@@ -368,6 +370,12 @@ export type Observed = {
 };
 
 export type Report = {
+  provisional?: boolean;
+  execution_validity?: { eligible: boolean; rule_version: string; gates: { gate: string; passed: boolean }[]; capacity_policy: string; capacity_rejections: number; scope: string };
+  execution_evidence?: { flow_basis: string; mechanics: Record<string, string>; calibration: string };
+  resource_profile?: { profile_id: string; decision_latency_basis: string; decision_latency_ms: number; stress_basis: string };
+  attribution?: { method: string; best_trade_share_of_positive_realized_contributions: string | null; largest_asset_share_of_buy_notional: string | null; cash_reference_return: string; note: string };
+
   report_version: string;
   run: Record<string, unknown>;
   status_dimensions: Record<string, string>;
@@ -416,7 +424,9 @@ export type Report = {
     tool_calls: Record<string, number>;
     requests_total: number;
     decisions_total: number;
-    quality_exposure: { invalid_calls: number; rate_limited: number; errors_by_code: Record<string, number> };
+    quality_exposure: {
+      delivered_completeness?: Record<string, number>;
+      stale_deliveries?: number; invalid_calls: number; rate_limited: number; errors_by_code: Record<string, number> };
     budget_exhausted: boolean;
   };
   unresolved: {
@@ -515,6 +525,8 @@ export type MarketBasket = {
 export type MarketBaseline = { basis: string; rule: string; stake?: string; numeraire_hold_return: string; launches: MarketBasket; established: MarketBasket; all_pools: MarketBasket; caveats: string[] };
 export type LeaderboardCategory = { kind: "suite" | "pack" | "all"; id: string; label: string; description?: string; episodes: string[]; market?: MarketBaseline | null; market_note?: string | null };
 export type LeaderboardRow = {
+  comparison_group?: string;
+  group?: { resource_profile: string; origin: string; isolation: string; bankroll_raw: string };
   rank: number;
   agent_id: string;
   agent_name: string;

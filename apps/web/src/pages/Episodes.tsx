@@ -352,6 +352,7 @@ function PackDetail({ pack: p, onClose }: { pack: Pack; onClose: () => void }) {
 
 function ImportForm({ onImported }: { onImported: () => void }) {
   const [path, setPath] = useState("");
+  const [visibility, setVisibility] = useState("public");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
@@ -366,7 +367,7 @@ function ImportForm({ onImported }: { onImported: () => void }) {
           setErr(null);
           setOk(null);
           try {
-            const p = await post<Pack>("/packs/import", name ? { path, name } : { path });
+            const p = await post<Pack>("/packs/import", name ? { path, name, visibility } : { path, visibility });
             setOk(p);
             setPath("");
             setName("");
@@ -385,6 +386,10 @@ function ImportForm({ onImported }: { onImported: () => void }) {
         <label className="field">
           Name (optional)
           <input value={name} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label className="field">Visibility
+          <select value={visibility} onChange={e => setVisibility(e.target.value)}><option value="public">Public practice</option><option value="holdout">Private assessment holdout</option></select>
+          <span className="small muted">Private holdouts must be unpublished. Visibility cannot be changed after import.</span>
         </label>
         <div className="span2 row">
           <button className="btn btn-primary" disabled={busy || !path}>

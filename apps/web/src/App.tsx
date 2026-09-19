@@ -3,6 +3,7 @@ import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-d
 import { ApiError, get, getServerUrl, setMyAgent, setServerUrl, setToken } from "./api";
 import { RoleProvider, useRole } from "./role";
 import { Badge } from "./ui";
+import Assessments, { AssessmentResult } from "./pages/Assessments";
 import Home from "./pages/Home";
 import ResultsFeed from "./pages/ResultsFeed";
 import Episodes from "./pages/Episodes";
@@ -15,7 +16,8 @@ import Compare from "./pages/Compare";
 import DataHealth from "./pages/DataHealth";
 
 const NAV: [string, string, boolean][] = [
-  ["/", "Leaderboard", false],
+  ["/", "Practice", false],
+  ["/assessments", "Assessments", false],
   ["/results", "Results", false],
   ["/episodes", "Days", false],
   ["/agents", "Agents", true],
@@ -196,6 +198,8 @@ function Shell({ conn, recheck }: { conn: Conn; recheck: () => void }) {
       ) : (
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/assessments" element={<Assessments />} />
+          <Route path="/assessments/:id" element={<AssessmentResult />} />
           <Route path="/episodes" element={<Episodes />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/agents/:id" element={<AgentHistory />} />

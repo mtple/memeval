@@ -19,6 +19,8 @@ def exercise(s: Session) -> list[dict]:
     base = items[0]["base_asset"]
     outs.append(s.handle("r", "session.describe", {}))
     outs.append(s.handle("r", "clock.advance", {"to_ms": 1_200_000}))
+    outs.append(s.handle("r", "session.snapshot", {"since_ms": 0, "limit": 2}))
+    outs.append(s.handle("r", "clock.wait", {"until_ms": 1_201_000, "conditions": [{"kind": "new_pool"}]}))
     for tool, args in (("markets.get", {}), ("market.trades", {"limit": 50}), ("market.candles", {"interval_ms": 60_000}), ("market.liquidity", {}), ("market.restrictions", {})):
         outs.append(s.handle("r", tool, {"pool_id": pid, **args}))
     outs.append(s.handle("r", "broker.quote", {"pool_id": pid, "asset_in": "CASH", "amount_in_raw": "10000"}))

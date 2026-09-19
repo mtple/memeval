@@ -65,6 +65,8 @@ def test_python_and_typescript_clients_equivalent_semantics(server):
         ("session.describe", {}),
         ("markets.list", {"limit": 3}),
         ("clock.advance", {"to_ms": 600_000}),
+        ("session.snapshot", {"since_ms": 0, "limit": 2}),
+        ("clock.wait", {"until_ms": 900_000, "conditions": [{"kind": "new_pool"}]}),
         ("markets.get", {"pool_id": "pool_nonexistent"}),
         ("wallet.history", {}),
         ("portfolio.get", {}),
@@ -98,7 +100,9 @@ def test_python_and_typescript_clients_equivalent_semantics(server):
         return e
 
     assert [strip(e) for e in py_out] == [strip(e) for e in ts_out]
-    assert py_out[3]["error"]["code"] == "NOT_YET_DISCOVERED" and py_out[4]["error"]["code"] == "UNSUPPORTED_CAPABILITY"
+    by_tool = {tool: result for (tool, _), result in zip(script, py_out, strict=True)}
+    assert by_tool["markets.get"]["error"]["code"] == "NOT_YET_DISCOVERED"
+    assert by_tool["wallet.history"]["error"]["code"] == "UNSUPPORTED_CAPABILITY"
 
 
 def test_mcp_reaches_same_handler(server):
@@ -133,7 +137,7 @@ def test_two_reference_agents_run_without_engine_changes_and_replay(server):
     results = {}
     for name, runtime in (("cash_only", "python"), ("scheduled_basket", "python"), ("random_actions", "typescript"), ("model_client", "python")):
         aid = register(admin, f"{name}_{runtime}", runtime)
-        run = admin.post("/api/v1/runs", json={"agent_id": aid, "pack_id": "gen_dev_short", "agent_seed": "3", "launch": {"name": name, "runtime": runtime}}).json()
+        run = admin.post("/api/v1/runs", json={"agent_id": aid, "pack_id": "gen_dev_short", "agent_seed": "3", "mask_seed": "paired-reference-mask", "launch": {"name": name, "runtime": runtime}}).json()
         view = mgr.wait_for_run(run["run_id"], 300)
         assert view["state"] == "completed", (name, view["error"], mgr.agent_log(run["run_id"])[-500:])
         rep = admin.get(f"/api/v1/runs/{run['run_id']}/report").json()

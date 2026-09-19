@@ -180,6 +180,25 @@ def cl_fields(p: ClPoolState) -> tuple[int, int, int, dict]:
 # ---------------------------------------------------------------- validator
 
 
+def test_terminal_uses_cl_depth_and_keeps_historical_restrictions_unknown(cl_pack: Pack):
+    s = Session.create(session_id="ses_terminal", pack=cl_pack, bankroll_raw=BANK, mask_seed="m", engine_seed="e")
+    pid = s.alias.pool(POOL1)
+    snapshot = s.handle("s", "session.snapshot", {"pool_ids": [pid]})
+    assert snapshot.status == "ok", snapshot.error
+    row = snapshot.data["markets"]["items"][0]
+    assert row["modeled_liquidity"]["depth_kind"] == "active_range_virtual_depth"
+    assert row["modeled_liquidity"]["numeraire_depth_raw"] == str(s.sim.pools[POOL1].depth_for(WETH)[0])
+    assert row["modeled_liquidity"]["fee"] == {"numerator": s.sim.pools[POOL1].fee_num, "denominator": s.sim.pools[POOL1].fee_den}
+    assert row["restrictions"]["status"] == "unknown"
+    assert not s.scanner.scan(snapshot.model_dump(mode="json"))
+    threshold = int(row["modeled_liquidity"]["numeraire_depth_raw"]) + 1
+    wake = s.handle("w", "clock.wait", {"until_ms": s.now + 1000, "conditions": [
+        {"kind": "liquidity_below", "pool_id": pid, "depth_raw": str(threshold)},
+    ]})
+    assert wake.status == "ok" and wake.data["reason"] == "alert"
+    assert wake.clock_ms == snapshot.clock_ms + cl_pack.params.data_latency_ms
+
+
 def test_cl_pack_validates_as_research_with_zero_mismatches(cl_pack: Pack):
     report = validate_pack(cl_pack)
     gates = {g["gate"]: g for g in report["gates"]}

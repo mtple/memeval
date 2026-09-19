@@ -88,6 +88,7 @@ progress and the result summary.
 | Tool | Arguments | Notes |
 |---|---|---|
 | `session.describe` | – | capabilities, budgets, numeraire/decimals, bankroll, latency assumptions, limitations |
+| `session.snapshot` | `pool_ids?, since_ms?, window_ms?, stale_after_ms?, limit?, market_cursor?, discovery_cursor?, order_cursor?` | market summaries, separate discoveries, portfolio and changed orders in one budgeted read |
 | `markets.list` | `limit, cursor, filters{min_age_ms,max_age_ms,active_since_ms,venue_model,execution_supported_only}` | only currently discoverable pools; totals never include future listings |
 | `markets.get` | `pool_id` | metadata, last visible trade, restrictions, coverage to now |
 | `market.trades` | `pool_id, start_ms, end_ms, limit, cursor` | `end_ms` clamped to now (`RANGE_CLAMPED_TO_PRESENT`) |
@@ -100,6 +101,7 @@ progress and the result summary.
 | `portfolio.get` | – | available/reserved/pending per asset; valuation with classes |
 | `portfolio.history` | `cursor, limit` | balanced ledger entries |
 | `clock.advance` | `to_ms` or `next_event=true, max_ms` | processes every intervening event |
+| `clock.wait` | `until_ms, conditions?` | first delayed notification or deadline; never submits orders |
 | `session.finish` | – | terminal procedure; no forced sale |
 
 Data and broker tools consume the declared simulated latency (`session.describe →
@@ -108,6 +110,67 @@ UNSUPPORTED_CAPABILITY, MISSING_DATA, NO_ROUTE, INSUFFICIENT_FUNDS, QUOTE_EXPIRE
 SLIPPAGE_LIMIT, RATE_LIMITED, INVALID_ORDER, INVALID_REQUEST, EPISODE_ENDED,
 ENVIRONMENT_FIDELITY_LIMIT, MODEL_CAPACITY_LIMIT, IDEMPOTENCY_CONFLICT, BUDGET_EXHAUSTED,
 RUN_PAUSED, SESSION_FINISHED`.
+
+### Snapshot and decision loop
+
+Call `session.snapshot` after describing the session. Keep its `as_of_ms` and pass it as
+`since_ms` next time to receive discovery and order changes. `pool_ids` selects your watchlist;
+omitting it returns a market page and `[]` returns no market rows. Discoveries remain separate
+regardless of the watchlist. Each of `markets`, `discoveries` and `orders` has `items`, `total`
+and `next_cursor`; pass the corresponding cursor to fetch another page, keeping the same
+`since_ms`. `limit` defaults to 25 and is capped at `max_page_size`. Markets and discoveries
+are ordered by discovery time and alias, with later discoveries appended. Pages have their
+own `as_of_ms`, since each read consumes data latency. Do not advance your discovery cutoff
+past unread pages. Order changes include the cutoff timestamp; deduplicate by `order_id`.
+
+`window_ms` defaults to five minutes. Activity reports observed counts and raw volumes,
+first/last visible window prices, and a decimal `price_change_fraction`. The change is null
+without two usable observations. Those counts are not a claim about missing or undelivered
+activity. Coverage describes the pack's recorded interval; `OBSERVATION_DELAY_APPLIES` means
+recent events may still be unavailable. Freshness gives event time, availability time and age;
+`stale_after_ms` defaults to the window, and freshness is unknown when no trade is visible.
+Liquidity is explicitly current private model state, with CL depth labeled as virtual depth
+of the active range. Unknown restrictions remain unknown. Use `broker.quote` for the cost of
+your own chosen amount.
+
+Inspect candles, trades or quotes, submit any orders your policy chooses, then call `clock.wait`:
+
+```json
+{"until_ms": 600000, "conditions": [
+  {"kind": "new_pool", "since_ms": 300000, "min_visible_trades": 5, "min_numeraire_depth_raw": "1000000"},
+  {"kind": "price_cross", "pool_id": "pool_alias", "direction": "above", "price": "0.002"},
+  {"kind": "liquidity_below", "pool_id": "pool_alias", "depth_raw": "500000"},
+  {"kind": "order_terminal", "order_id": "order_alias"}
+]}
+```
+
+Values here illustrate the protocol; choose your own thresholds. At most 32 conditions are
+allowed. Each wait consumes a request and a virtual rate-limit slot. Notifications are delivered
+`data_latency_ms` after the matching observation or modeled-state condition, without another
+read charge. All intervening events execute while delivery is pending. A notification contains
+the original `matched_ms` and `delivery_ms`; its values may have changed by delivery. Price
+notifications also include the triggering trade's event and availability times. There is no
+automatic trade. With no conditions the call waits to the deadline, which can be a position
+review time. The response names the wake-up reason and whether the episode ended.
+
+`new_pool` considers only discoveries after `since_ms`, defaulting to wait start. Optional
+thresholds may become satisfied after discovery. It returns one matching pool per condition;
+use the next snapshot's discovery pages to inspect the rest. `price_cross` compares successive
+most recently delivered trade prices in whole quote units per whole base unit. Being above
+the level at registration is not a crossing; with no visible trade, the first one establishes
+the baseline. Observations delivered together are evaluated as one batch. `liquidity_below`
+uses modeled cash-side depth and can match immediately; unknown depth never satisfies it.
+`order_terminal` wakes for a confirmed, rejected, reverted, expired or capacity-rejected order.
+
+Conditions expire when the call returns. Only matches found at the first matching checkpoint
+are returned. A delivery later than `until_ms` is not delivered or retained. Re-arm conditions
+on your next wait; snapshots and order reads remain the source of current state. This first
+version has no background subscription or persistent notification queue. Client computation
+does not advance virtual time. These mechanics do not claim deployment-runtime realism.
+
+Python SDK: `client.snapshot(pool_ids=[...], since_ms=...)`, then
+`client.wait(until_ms, conditions)`. TypeScript: `client.snapshot({...})`, then
+`client.wait(untilMs, conditions)`. MCP names are `session_snapshot` and `clock_wait`.
 
 ## 3. Order lifecycle
 
@@ -167,3 +230,20 @@ restricted local runner scrubs the environment, uses an empty working directory 
 no dates or pack paths; network egress is only restricted by the container configuration
 (`compose.yaml`). Reports state which controls were enforced.
 
+## Assessments, timing profiles and decision debrief
+
+For a frozen private bundle, use the [assessment protocol](assessment-protocol.md) instead of
+choosing practice days. HTTP and remote MCP support bundle discovery, code/configuration
+commitment, complete assignments, same-run credential recovery and all-attempt results.
+Session tokens still call the same command handler.
+
+`GET /api/v1/resource-profiles` lists versioned timing and stress profiles. A run creation
+can set `resource_profile_id`; `session.describe` returns effective budgets and computation,
+notification, quote, submission and confirmation assumptions. Measured runtime requires the
+server's measured runner. Never report an external client's self-declared runtime as measured.
+
+Both SDKs accept optional `reason` and `exit_condition` on order submission. Each is at most
+512 characters and must not contain private identifiers. These are recorded intentions, not
+scored explanations; changing them when retrying an idempotency key is a conflict. Use the
+Results screen's decision timeline to inspect delivery records and eventual execution.
+The report's eligibility panel is independent of the trading return.

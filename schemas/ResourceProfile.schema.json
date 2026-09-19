@@ -1,0 +1,58 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "decision_latency_ms": {
+      "default": 0,
+      "maximum": 60000,
+      "minimum": 0,
+      "title": "Decision Latency Ms",
+      "type": "integer"
+    },
+    "max_decisions": {
+      "default": 20000,
+      "maximum": 20000,
+      "minimum": 1,
+      "title": "Max Decisions",
+      "type": "integer"
+    },
+    "max_requests": {
+      "default": 200000,
+      "maximum": 200000,
+      "minimum": 1,
+      "title": "Max Requests",
+      "type": "integer"
+    },
+    "profile_id": {
+      "default": "pack_defaults_v1",
+      "title": "Profile Id",
+      "type": "string"
+    },
+    "requests_per_minute": {
+      "default": 600,
+      "maximum": 600,
+      "minimum": 1,
+      "title": "Requests Per Minute",
+      "type": "integer"
+    },
+    "stress": {
+      "default": "none",
+      "enum": [
+        "none",
+        "adverse_execution_v1"
+      ],
+      "title": "Stress",
+      "type": "string"
+    },
+    "timing": {
+      "default": "controlled",
+      "enum": [
+        "controlled",
+        "runner_measured"
+      ],
+      "title": "Timing",
+      "type": "string"
+    }
+  },
+  "title": "ResourceProfile",
+  "type": "object"
+}

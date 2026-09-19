@@ -75,6 +75,14 @@ export class MarketReplayClient {
   describe() {
     return this.ok("session.describe");
   }
+  snapshot(args: Record<string, unknown> = {}) {
+    return this.ok<Record<string, any>>("session.snapshot", args);
+  }
+  wait(untilMs: number, conditions: Record<string, unknown>[] = []) {
+    return this.ok<{ clock_ms: number; episode_ended: boolean; reason: string; alerts: Record<string, any>[] }>(
+      "clock.wait", { until_ms: untilMs, conditions },
+    );
+  }
   markets(args: Record<string, unknown> = {}) {
     return this.ok<{ items: Record<string, any>[]; next_cursor: number | null }>("markets.list", args);
   }

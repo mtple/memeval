@@ -60,6 +60,7 @@ class Order:
     gas_charged: int = 0
     reason: str | None = None
     history: list[tuple[int, str]] = field(default_factory=list)
+    intent: dict[str, str] = field(default_factory=dict)
 
     def transition(self, time_ms: int, new_state: OrderState, reason: str | None = None) -> None:
         self.state = new_state
@@ -79,6 +80,9 @@ class Order:
             "min_amount_out_raw": str(self.min_amount_out),
             "deadline_ms": self.deadline_ms,
             "submitted_ms": self.submitted_ms,
+            "ready_ms": self.ready_ms,
+            "inclusion_time_ms": self.inclusion_time_ms,
+            "intent": self.intent,
             "state": str(self.state),
             "amount_out_raw": None if self.amount_out is None else str(self.amount_out),
             "fill_time_ms": self.fill_time_ms,

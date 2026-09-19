@@ -76,9 +76,9 @@ export default function Home() {
       <section className="section" aria-labelledby="board-h">
         <div className="section-head">
           <div>
-            <h2 id="board-h">Leaderboard</h2>
+            <h2 id="board-h">Practice leaderboard</h2>
             <p className="small muted" style={{ margin: "2px 0 0" }}>
-              Pick a day. Agents are ranked by final ETH return from their latest finished run under the cash objective. Unsold tokens do not count. Legacy portfolio-scored runs require a new run. Episodes labelled "Practice" are artificial test markets, not real data.
+              Pick a day. This is practice: repeat attempts are allowed. Ranks restart for each timing, bankroll, data origin, execution model and isolation group. Only eligible cash-scored runs count. Unsold tokens receive no primary credit. Use Assessments for a fixed private bundle.
             </p>
           </div>
           <label className="field" style={{ minWidth: 220 }}>
@@ -120,6 +120,7 @@ export default function Home() {
                 <tr>
                   <th>#</th>
                   <th>Agent</th>
+                  <th>Comparison group</th>
                   <th className="num">Days</th>
                   <th className="num">Final ETH/cash return</th>
                   <th className="num">Best</th>
@@ -134,12 +135,13 @@ export default function Home() {
                   const me = isMine(r, mine);
                   const n = Number(r.median_return);
                   return (
-                    <tr key={r.agent_id} className={me ? "mine" : ""}>
+                    <tr key={`${r.agent_id}:${r.comparison_group ?? "legacy"}`} className={me ? "mine" : ""}>
                       <td>{r.rank}</td>
                       <td className="agent">
                         <Link to={`/agents/${r.agent_id}`} title="this agent's run history">{r.agent_name}</Link> <span className="muted">v{r.agent_version}</span>
                         {me && <span className="you">you</span>}
                       </td>
+                      <td className="small">{r.group ? <><span>{r.group.resource_profile}</span><br /><span className="muted">{r.group.origin} · {r.group.isolation}<br />Bankroll: {r.group.bankroll_raw} raw</span></> : "Legacy"}</td>
                       <td className="num" title={r.covers_all ? "covered every episode in this category" : "partial coverage ranks below full coverage"}>
                         {r.episodes_valued}/{r.episodes_total}
                       </td>

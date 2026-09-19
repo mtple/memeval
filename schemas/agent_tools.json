@@ -5,9 +5,11 @@
       "asset_in": "CASH",
       "asset_out": "asset_p2dxyz12",
       "deadline_ms": 180000,
+      "exit_condition": "Optional intended review or exit condition",
       "idempotency_key": "agent_intent_42",
       "min_amount_out_raw": "950000000",
-      "pool_id": "pool_n7q2abcd"
+      "pool_id": "pool_n7q2abcd",
+      "reason": "Optional description of the observed condition"
     },
     "note": "Illustrative protocol values, not recommended sizes; decimals come from session.describe.",
     "request_id": "client_unique_001",
@@ -57,6 +59,7 @@
     "broker_quote": "broker.quote",
     "broker_submit": "broker.submit",
     "clock_advance": "clock.advance",
+    "clock_wait": "clock.wait",
     "market_candles": "market.candles",
     "market_liquidity": "market.liquidity",
     "market_restrictions": "market.restrictions",
@@ -66,23 +69,26 @@
     "portfolio_get": "portfolio.get",
     "portfolio_history": "portfolio.history",
     "session_describe": "session.describe",
-    "session_finish": "session.finish"
+    "session_finish": "session.finish",
+    "session_snapshot": "session.snapshot"
   },
   "tools": {
     "broker.order": "Own order lifecycle and confirmed simulated fill records.",
     "broker.quote": "Exact-input simulated quote against the current model state.",
-    "broker.submit": "Submit an exact-input simulated swap with min-output, deadline and idempotency key.",
+    "broker.submit": "Optional reason and exit_condition metadata are bounded to 512 characters each and included in idempotency. Submit an exact-input simulated swap with min-output, deadline and idempotency key.",
     "clock.advance": "Advance virtual time to a relative time or the next observable event (bounded).",
+    "clock.wait": "Wait until until_ms or a delayed one-shot notification. Up to 32 conditions: new_pool (since_ms, min_visible_trades, min_numeraire_depth_raw), price_cross (pool_id, direction above/below, price), liquidity_below (pool_id, depth_raw), order_terminal (order_id). Never submits orders.",
     "market.candles": "Generic OHLCV over visible trades with explicit completeness handling.",
-    "market.liquidity": "Current modeled reserve facts for a supported pool (model-labelled).",
+    "market.liquidity": "Current modeled liquidity facts for a supported pool (CPMM reserves, or CL sqrt price / tick / active liquidity / virtual depth; model-labelled).",
     "market.restrictions": "Available individual restriction observations or explicit unknown/unsupported.",
     "market.trades": "Bounded visible trade history ending at or before virtual now.",
     "markets.get": "Time-qualified metadata and available current observations for one pool.",
-    "markets.list": "Paginated currently discoverable pools with point-in-time filters.",
+    "markets.list": "Paginated currently discoverable pools with point-in-time filters; sort by newest, most_traded or recently_traded to find launches worth a look.",
     "portfolio.get": "Available/reserved/pending balances, holdings and valuation status.",
     "portfolio.history": "Own immutable ledger history, paginated.",
     "session.describe": "Capabilities, limits, relative horizon, numeraire, assumptions and virtual clock.",
-    "session.finish": "Stop agent decisions and apply the fixed terminal reporting procedure."
+    "session.finish": "Stop agent decisions and apply the fixed terminal reporting procedure.",
+    "session.snapshot": "Compact visible market activity, freshness, coverage, modeled depth, portfolio and orders. Optional pool_ids select a client-owned watchlist; discoveries remain separate. Accepts since_ms, window_ms, stale_after_ms, limit and market/discovery/order cursors."
   },
   "unsupported_capabilities": [
     "holder_graph",

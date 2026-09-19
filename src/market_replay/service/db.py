@@ -19,9 +19,21 @@ from typing import Any
 
 # Columns added after a table first shipped; each statement must be safe to re-run (SQLite raises on
 # a duplicate column and the error is swallowed; Postgres gets IF NOT EXISTS).
-MIGRATIONS = ["ALTER TABLE agents ADD COLUMN token_hash TEXT"]
+MIGRATIONS = ["ALTER TABLE agents ADD COLUMN token_hash TEXT", "ALTER TABLE packs ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'"]
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS assessment_bundles (
+  bundle_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, manifest_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS assessments (
+  assessment_id TEXT PRIMARY KEY, bundle_id TEXT NOT NULL, agent_id TEXT NOT NULL,
+  created_at TEXT NOT NULL, state TEXT NOT NULL, commitment_json TEXT NOT NULL,
+  UNIQUE(bundle_id, agent_id)
+);
+CREATE TABLE IF NOT EXISTS assessment_episodes (
+  assessment_id TEXT NOT NULL, slot INTEGER NOT NULL, pack_id TEXT NOT NULL,
+  run_id TEXT UNIQUE NOT NULL, PRIMARY KEY(assessment_id, slot)
+);
 CREATE TABLE IF NOT EXISTS packs (
   pack_id TEXT PRIMARY KEY,
   episode_id TEXT UNIQUE NOT NULL,
@@ -123,7 +135,7 @@ CREATE TABLE IF NOT EXISTS rate_events (
 CREATE INDEX IF NOT EXISTS rate_events_kind_key_ts ON rate_events (kind, key, ts);
 """
 
-TABLES = ("packs", "agents", "runs", "traces", "docs", "usage", "comparisons", "studies", "suite_runs", "attempts", "rate_events")
+TABLES = ("packs", "agents", "runs", "traces", "docs", "usage", "comparisons", "studies", "suite_runs", "attempts", "rate_events", "assessment_bundles", "assessments", "assessment_episodes")
 
 
 def today_key() -> str:
@@ -163,11 +175,11 @@ class BaseStore:
     def upsert_pack(self, row: dict[str, Any]) -> None:
         self.execute(
             """INSERT INTO packs (pack_id, episode_id, name, path, origin, chain, scope_label, use_status, duration_ms, is_full_week,
-               start_utc, end_utc, execution_model, imported_at, summary_json)
+               start_utc, end_utc, execution_model, imported_at, summary_json, visibility)
                VALUES (:pack_id, :episode_id, :name, :path, :origin, :chain, :scope_label, :use_status, :duration_ms, :is_full_week,
-               :start_utc, :end_utc, :execution_model, :imported_at, :summary_json)
+               :start_utc, :end_utc, :execution_model, :imported_at, :summary_json, :visibility)
                ON CONFLICT(pack_id) DO UPDATE SET path=excluded.path, name=excluded.name, use_status=excluded.use_status, summary_json=excluded.summary_json""",
-            row,
+            {"visibility": "public", **row},
         )
 
     def delete_pack(self, pack_id: str) -> None:

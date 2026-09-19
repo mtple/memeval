@@ -1,4 +1,4 @@
-"""Build the v2 run report from a finished (or failed) Session.
+"""Build the v3 run report from a finished (or failed) Session.
 
 Everything is derived from the simulator's ledger, orders, equity grid and trace.
 Incomplete valuations are reported as null secondary portfolio values; the primary
@@ -15,9 +15,11 @@ from ..broker.ledger import AGENT_AVAILABLE, AGENT_RESERVED
 from ..domain.quantities import fraction_to_decimal_str
 from ..domain.status import OrderState
 from ..engine.session import Session
+from .debrief import attribution
+from .validity import execution_validity
 
-ENGINE_VERSION = "market_replay_engine_v1"
-REPORT_VERSION = "run_report_v2"
+ENGINE_VERSION = "market_replay_engine_v2"
+REPORT_VERSION = "run_report_v3"
 
 
 def _dec(fr: Fraction | None, places: int = 8) -> str | None:
@@ -108,6 +110,10 @@ def build_report(session: Session, *, run_meta: dict[str, Any], role: str = "adm
     error_counts = Counter(r.error_code for r in session.trace if r.error_code)
     quality_exposure = {"invalid_calls": session.budget.invalid_calls, "rate_limited": session.budget.rate_limited, "errors_by_code": dict(error_counts)}
 
+    delivered_quality = [r.delivered["quality"] for r in session.trace if "quality" in r.delivered]
+    quality_exposure["delivered_completeness"] = dict(Counter(q["completeness"] for q in delivered_quality))
+    quality_exposure["stale_deliveries"] = sum(bool(q.get("stale")) for q in delivered_quality)
+    quality_exposure["delivery_warnings"] = dict(Counter(w for q in delivered_quality for w in q.get("warnings", [])))
     unresolved = [o.to_public(alias) for o in sim.unresolved_orders()]
     no_route = [h for h in term.holdings if h["class"] == "no_route"]
     unpriced = [h for h in term.holdings if h["class"] == "unpriced_missing_data"]
@@ -191,7 +197,7 @@ def build_report(session: Session, *, run_meta: dict[str, Any], role: str = "adm
                 "missing_count": m.universe.missing_count,
                 "description": m.universe.description,
             },
-            "latency_assumptions": pack.params.public_latency_assumptions(),
+            "latency_assumptions": pack.params.public_latency_assumptions() | {"computation_time_basis": session.resource_profile.public()["decision_latency_basis"]},
             "capacity_profile": pack.params.capacity.model_dump(),
             "availability_model": m.data.availability_model,
             "reconciliation_mismatches_in_run": len(sim.reconciliation_mismatches),
@@ -220,9 +226,23 @@ def build_report(session: Session, *, run_meta: dict[str, Any], role: str = "adm
         },
         "wall_clock": run_meta.get("wall_clock", {}),
         "inference": run_meta.get("inference", {"recorded": False}),
+        "resource_profile": session.resource_profile.public(),
+        "attribution": attribution(session),
         "statement": "This report describes behavior in modeled episodes after modeled costs. It does not establish an edge or future improvement.",
     }
     if role != "admin":
         report["versions"]["pack_id"] = "hidden"
+    report["execution_validity"] = execution_validity(report)
+    report["provisional"] = not report["execution_validity"]["eligible"]
+    report["execution_evidence"] = {
+        "flow_basis": "fixed_flow_with_stress_assumptions" if session.resource_profile.stress != "none" else "fixed_flow_simulation",
+        "mechanics": {
+            "quote_expiry": "modeled", "inclusion_slippage": "modeled", "failed_inclusion_gas": "modeled",
+            "concentrated_liquidity": "adapter_with_tick_state", "approvals": "excluded",
+            "transaction_replacement": "excluded", "transaction_cancellation": "excluded",
+            "market_reaction": "excluded", "hook_callbacks": "excluded_last_observed_fee_only",
+            "historical_transfer_restrictions": str(m.data.token_behavior_basis),
+        },
+        "calibration": "Independent historical wallet-fill and PnL calibration is not established. Passing reconciliation does not validate counterfactual fills or PnL.",
+    }
     return report
-

@@ -41,6 +41,8 @@ def ui_server(tmp_path_factory, dev_pack_dir):
 
 
 def _chromium_path() -> str | None:
+    if explicit := os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE"):
+        return explicit
     root = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers"))
     for cand in sorted(root.glob("chromium*/chrome-linux*/chrome")) + sorted(root.glob("chromium*/chrome-linux*/headless_shell")) + sorted(root.glob("chromium_headless_shell*/chrome-linux*/headless_shell")):
         if cand.exists():
@@ -59,7 +61,7 @@ def test_ui_smoke(ui_server):
 
         # 1. Anyone: the leaderboard, the sign-up link, no sign-in
         page.goto(f"{srv.url}/")
-        page.wait_for_selector("text=Leaderboard", timeout=20_000)
+        page.wait_for_selector("#board-h", timeout=20_000)
         page.wait_for_selector("table.board >> text=cash_only_python", timeout=20_000)
         assert page.inner_text("#join-link") == f"{srv.url}/join"
         assert "Play Market Replay again" in page.inner_text("#play-again")  # the returning case is on the page too
@@ -100,7 +102,15 @@ def test_ui_smoke(ui_server):
         assert "cpmm_fixed_flow_v1" not in body.split("All the details")[0]  # no raw tokens above the fold
         body = page.inner_text("body")
         assert "score" not in body.lower().replace("scored", "") or "0-100" not in body
+        page.wait_for_selector("text=Evaluation validity", timeout=20_000)
+        page.click("text=Load decision timeline")
+        page.wait_for_selector(".decision-timeline > li", timeout=20_000)
+        assert "session describe" in page.inner_text(".decision-timeline").lower()
         page.screenshot(path=str(OUT / "results.png"))
+        page.goto(f"{srv.url}/assessments")
+        page.wait_for_selector("text=No assessment bundles yet", timeout=20_000)
+        assert "Every assigned attempt counts" in page.inner_text("body")
+        page.screenshot(path=str(OUT / "assessments.png"))
         page.goto(f"{srv.url}/data-health")
         page.wait_for_selector("text=Data health", timeout=20_000)
         page.screenshot(path=str(OUT / "data_health.png"))
@@ -120,4 +130,50 @@ def test_ui_smoke(ui_server):
         width = page.evaluate("document.documentElement.scrollWidth")
         assert width <= 380
         page.screenshot(path=str(OUT / "home_mobile.png"))
+        browser.close()
+
+
+def test_assessment_ui_workflow(ui_server, tmp_path):
+    from dataclasses import replace
+
+    from market_replay.datasets.generator import dev_short_config, generate_pack
+    from market_replay.service.assessments import catalog, enter
+
+    pw = pytest.importorskip("playwright.sync_api")
+    srv, _ = ui_server
+    pack_path = tmp_path / "private_ui"
+    generate_pack(replace(dev_short_config(), name="private_ui", seed="ui-private-only", duration_ms=60_000, prehistory_ms=20_000, n_pools=2), pack_path)
+    private = srv.manager.import_pack(pack_path, "Private UI episode", visibility="holdout")
+    exe = _chromium_path()
+    with pw.sync_playwright() as p:
+        browser = p.chromium.launch(executable_path=exe) if exe else p.chromium.launch()
+        page = browser.new_page(viewport={"width": 1200, "height": 900})
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto(f"{srv.url}/assessments?token=adm_ui_token")
+        page.get_by_text("Create a frozen bundle", exact=True).click()
+        page.get_by_label("Public bundle label").fill("UI private bundle")
+        page.get_by_label("Private UI episode", exact=True).check()
+        page.get_by_role("button", name="Freeze bundle", exact=True).click()
+        page.get_by_role("heading", name="UI private bundle", exact=True).wait_for()
+        bundle = next(b for b in catalog(srv.manager) if b["label"] == "UI private bundle")
+        identity = srv.manager.enroll(agent={"name": "UI candidate", "version": "1", "runtime": "external"})
+        assessment = enter(srv.manager, agent_token=identity["agent_token"], bundle_id=bundle["bundle_id"], code_sha256="e" * 64, config={})
+        for run in assessment["runs"]:
+            assert srv.manager.handle_command(run["session_credential"]["token"], "finish", "session.finish", {}).status == "ok"
+        # A fresh public browser sees only bundle/slot data, never the private pack.
+        public = browser.new_page(viewport={"width": 1200, "height": 900})
+        public.on("pageerror", lambda error: errors.append(str(error)))
+        public.goto(f"{srv.url}/assessments")
+        public.get_by_role("button", name="View all attempts", exact=True).click()
+        public.get_by_role("link", name="UI candidate v1", exact=True).click()
+        public.get_by_text("Eligible within this bundle", exact=True).wait_for()
+        assert "1/1" in public.inner_text("body")
+        assert "assigned episode 1" in public.inner_text("body").lower()
+        assert "Private UI episode" not in public.content()
+        assert private["pack_id"] not in public.content()
+        assert not errors, errors
+        public.screenshot(path=str(OUT / "assessment_result.png"), full_page=True)
+        public.set_viewport_size({"width": 360, "height": 800})
+        assert public.evaluate("document.documentElement.scrollWidth") <= 380
         browser.close()

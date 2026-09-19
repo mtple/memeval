@@ -733,6 +733,7 @@ class Simulation:
         deadline_ms: int,
         idempotency_key: str,
         quote_id: str | None = None,
+        intent: dict[str, str] | None = None,
     ) -> tuple[Order, bool]:
         """Returns (order, created). Repeated idempotency key with same payload returns original."""
         payload = {
@@ -744,6 +745,8 @@ class Simulation:
             "deadline_ms": deadline_ms,
             "quote_id": quote_id,
         }
+        if intent:
+            payload["intent"] = intent
         ph = payload_hash(payload)
         existing = self.orders_by_key.get(idempotency_key)
         if existing is not None:
@@ -816,6 +819,7 @@ class Simulation:
             inclusion_time_ms=blk_time,
             reserved_gas=gas,
             quote_id=quote_id,
+            intent=dict(intent or {}),
         )
         order.transition(self.now_ms, OrderState.RECEIVED)
         try:

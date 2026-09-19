@@ -61,6 +61,14 @@ class MarketReplayClient:
     def describe(self) -> dict[str, Any]:
         return self.ok("session.describe")
 
+    def snapshot(self, **arguments: Any) -> dict[str, Any]:
+        """Observe markets, discoveries, portfolio and orders in one budgeted read."""
+        return self.ok("session.snapshot", arguments)
+
+    def wait(self, until_ms: int, conditions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        """Wait for a deadline or a delayed notification; conditions last for this call only."""
+        return self.ok("clock.wait", {"until_ms": until_ms, "conditions": conditions or []})
+
     def markets(self, *, limit: int = 100, cursor: int | None = None, **filters: Any) -> dict[str, Any]:
         args: dict[str, Any] = {"limit": limit}
         if cursor is not None:
@@ -97,7 +105,7 @@ class MarketReplayClient:
     def quote(self, pool_id: str, asset_in: str, amount_in_raw: str | int) -> dict[str, Any]:
         return self.ok("broker.quote", {"pool_id": pool_id, "asset_in": asset_in, "amount_in_raw": str(amount_in_raw)})
 
-    def submit(self, *, pool_id: str, asset_in: str, asset_out: str, amount_in_raw: str | int, min_amount_out_raw: str | int, deadline_ms: int, idempotency_key: str, quote_id: str | None = None) -> dict[str, Any]:
+    def submit(self, *, pool_id: str, asset_in: str, asset_out: str, amount_in_raw: str | int, min_amount_out_raw: str | int, deadline_ms: int, idempotency_key: str, quote_id: str | None = None, reason: str | None = None, exit_condition: str | None = None) -> dict[str, Any]:
         args = {
             "pool_id": pool_id,
             "asset_in": asset_in,
@@ -109,6 +117,10 @@ class MarketReplayClient:
         }
         if quote_id:
             args["quote_id"] = quote_id
+        if reason is not None:
+            args["reason"] = reason
+        if exit_condition is not None:
+            args["exit_condition"] = exit_condition
         return self.call("broker.submit", args)
 
     def order(self, order_id: str | None = None) -> dict[str, Any]:

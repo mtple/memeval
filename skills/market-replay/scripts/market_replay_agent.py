@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 
 DEFAULT_SERVER = "https://memeval-web.vercel.app"
-STEP_MS = 3_600_000  # advance the virtual clock one hour per decision (24 decisions for a day episode)
+REVIEW_AFTER_MS = 300_000  # example attention schedule, chosen by the client and replaceable in decide()
 
 
 def http(method: str, url: str, body: dict | None = None, token: str | None = None) -> dict:
@@ -58,43 +58,58 @@ class Session:
         return env["data"]
 
 
-def decide(s: Session, info: dict, memory: dict) -> list[dict]:
-    """Called once per step with the session, the session.describe data and a dict you may keep state in.
+def decide(s: Session, info: dict, snapshot: dict, notifications: list[dict], memory: dict) -> dict:
+    """Inspect the snapshot and decide what to do, then when to revisit.
 
-    Return broker.submit argument dicts to place orders, or [] to wait. Example that buys the first
-    tradable pool once with 10% of the bankroll:
+    The default observes and holds cash. Replace this function with your decision policy.
+    Use s.ok for drill-down reads or quotes; no LLM call is required. Return tool commands as
+    actions, e.g. {"tool": "broker.submit", "arguments": your_order}. Results are supplied to
+    the next decision in memory["action_results"]. Quotes use expected_amount_out_raw.
 
-        if not memory.get("bought"):
-            cash = info["numeraire"]["asset_id"]
-            pools = s.ok("markets.list", limit=50, filters={"execution_supported_only": True})["items"]
-            if pools:
-                p = pools[0]
-                amount = str(int(info["bankroll_raw"]) // 10)
-                q = s.ok("broker.quote", pool_id=p["pool_id"], asset_in=cash, amount_in_raw=amount)
-                memory["bought"] = True
-                return [{"pool_id": p["pool_id"], "asset_in": cash, "asset_out": p["base_asset_id"] if p["quote_asset_id"] == cash else p["quote_asset_id"],
-                         "amount_in_raw": amount, "min_amount_out_raw": str(int(q["amount_out_raw"]) * 95 // 100),
-                         "deadline_ms": s.clock_ms + 900_000, "idempotency_key": "first_buy", "quote_id": q.get("quote_id")}]
-        return []
+    Return watchlist as pool aliases to narrow the next snapshot, or None for the market page.
+    Discoveries remain separate. Check next_cursor on markets/discoveries/orders and fetch
+    further snapshot pages with the same since_ms when your policy needs them. A snapshot's
+    first page does not claim complete market inspection.
+
+    Conditions last for one wait. Add price_cross, liquidity_below or order_terminal conditions
+    as needed. Set review_after_ms for a position review deadline. All thresholds, order sizes,
+    slippage tolerances and exit decisions belong to your policy.
     """
-    return []
+    return {"actions": [], "watchlist": None, "review_after_ms": REVIEW_AFTER_MS,
+            "conditions": [{"kind": "new_pool", "since_ms": snapshot["as_of_ms"]}]}
 
 
 def play(s: Session) -> dict:
     info = s.ok("session.describe")
     duration = int(info["episode"]["duration_ms"])
     memory: dict = {}
-    while True:
-        for order in decide(s, info, memory):
-            env = s.call("broker.submit", **order)
+    since_ms, watchlist, notifications = None, None, []
+    while s.clock_ms < duration:
+        arguments = {} if since_ms is None else {"since_ms": since_ms}
+        if watchlist is not None:
+            arguments["pool_ids"] = watchlist
+        snapshot = s.ok("session.snapshot", **arguments)
+        if s.clock_ms >= duration:
+            break
+        plan = decide(s, info, snapshot, notifications, memory)
+        memory["action_results"] = []
+        for action in plan.get("actions", []):
+            env = s.call(action["tool"], **action.get("arguments", {}))
+            memory["action_results"].append(env)
             if env["status"] != "ok":
-                print("  order refused:", env["error"]["code"], env["error"]["message"], file=sys.stderr)
-        adv = s.ok("clock.advance", to_ms=min(s.clock_ms + STEP_MS, duration))
+                print("  action refused:", env["error"]["code"], env["error"]["message"], file=sys.stderr)
+        watchlist = plan.get("watchlist", watchlist)
+        since_ms = snapshot["as_of_ms"]
+        adv = s.ok("clock.wait", until_ms=min(s.clock_ms + max(1, int(plan.get("review_after_ms", REVIEW_AFTER_MS))), duration),
+                   conditions=plan.get("conditions", []))
+        notifications = adv["alerts"]
         if adv.get("episode_ended") or s.clock_ms >= duration:
             break
-    portfolio = s.ok("portfolio.get")
     result = s.ok("session.finish")
-    return {"clock_ms": result.get("clock_ms", s.clock_ms), "model_equity_raw": (portfolio.get("valuation") or {}).get("model_equity_raw"), "valuation_complete": (portfolio.get("valuation") or {}).get("complete")}
+    valuation = result["terminal_portfolio"]["valuation"]
+    return {"clock_ms": result.get("clock_ms", s.clock_ms), "model_equity_raw": valuation.get("model_equity_raw"),
+            "final_cash_raw": str(int(valuation["cash_available_raw"]) + int(valuation["cash_reserved_raw"])),
+            "valuation_complete": valuation.get("complete")}
 
 
 def main() -> int:
@@ -128,7 +143,7 @@ def main() -> int:
         print(f"- {r['pack_name']} ({r['run_id']}) ...", end=" ", flush=True)
         try:
             out = play(Session(cred["commands_url"], cred["token"]))
-            print(f"finished at {out['clock_ms']} ms; model equity {out['model_equity_raw']} (valuation complete: {out['valuation_complete']})")
+            print(f"finished at {out['clock_ms']} ms; settled cash {out['final_cash_raw']} raw; model equity {out['model_equity_raw']} (valuation complete: {out['valuation_complete']})")
         except Exception as e:  # keep going: one failed episode is still a result
             print(f"failed: {e}")
     print(f"done. read the reports at {enrolled['results_url']}")

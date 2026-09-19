@@ -4,10 +4,13 @@ import os
 
 import pytest
 
-PG_URL = os.environ.get("TEST_DATABASE_URL", "postgresql://memeval:memeval@127.0.0.1:5432/memeval_test")
+# Postgres tests reset their database. Never probe or select a user's local database implicitly.
+PG_URL = os.environ.get("TEST_DATABASE_URL")
 
 
 def pg_available() -> bool:
+    if not PG_URL:
+        return False
     try:
         import psycopg
 
@@ -23,7 +26,7 @@ def store_url(request, tmp_path):
     if request.param == "sqlite":
         return str(tmp_path / "cp.sqlite")
     if not pg_available():
-        pytest.skip("no test Postgres at TEST_DATABASE_URL")
+        pytest.skip("set TEST_DATABASE_URL to an available disposable Postgres test database")
     from market_replay.service.db import open_store
 
     s = open_store(PG_URL)

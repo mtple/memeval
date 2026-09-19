@@ -23,9 +23,11 @@ from .trusted import EXAMPLES_DIR, PY_EXAMPLES, REPO_ROOT
 
 
 class InProcessTransport(httpx.BaseTransport):
-    def __init__(self, handle_command, token: str) -> None:
+    def __init__(self, handle_command, token: str, measure_decisions: bool = False) -> None:
         self._handle = handle_command
         self._token = token
+        self._measure = measure_decisions
+        self._response_ns = time.monotonic_ns()
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         auth = request.headers.get("authorization", "")
@@ -34,12 +36,15 @@ class InProcessTransport(httpx.BaseTransport):
         if request.url.path != "/agent/v1/commands":
             return httpx.Response(404, json={"code": "NOT_FOUND", "message": request.url.path})
         body = json.loads(request.content or b"{}")
+        elapsed = max(0, (time.monotonic_ns() - self._response_ns + 999_999) // 1_000_000)
         try:
-            env = self._handle(self._token, body.get("request_id", "inproc"), body.get("tool", ""), body.get("arguments") or {}, body.get("session_id"))
+            env = self._handle(self._token, body.get("request_id", "inproc"), body.get("tool", ""), body.get("arguments") or {}, body.get("session_id"), **({"measured_elapsed_ms": elapsed} if self._measure else {}))
         except Exception as e:  # ApiError from the manager (e.g. run finished)
             status = getattr(e, "status", 500)
             return httpx.Response(status, json={"code": getattr(e, "code", "error"), "message": str(e)})
-        return httpx.Response(200, json=env.model_dump(mode="json"))
+        response = httpx.Response(200, json=env.model_dump(mode="json"))
+        self._response_ns = time.monotonic_ns()
+        return response
 
 
 def load_example(name: str):
@@ -56,12 +61,12 @@ def load_example(name: str):
     return mod
 
 
-def run_example_inprocess(handle_command, *, token: str, name: str, agent_seed: str | None) -> dict[str, Any]:
+def run_example_inprocess(handle_command, *, token: str, name: str, agent_seed: str | None, measure_decisions: bool = False) -> dict[str, Any]:
     """Execute a Python reference participant against the handler. Returns exit code, log and CPU seconds."""
     from market_replay_client import MarketReplayClient  # type: ignore[import-not-found]
 
-    client = MarketReplayClient("http://inprocess", token, transport=InProcessTransport(handle_command, token))
     mod = load_example(name)
+    client = MarketReplayClient("http://inprocess", token, transport=InProcessTransport(handle_command, token, measure_decisions))
     buf = io.StringIO()
     prev_seed = os.environ.get("MARKET_REPLAY_AGENT_SEED")
     if agent_seed is not None:
