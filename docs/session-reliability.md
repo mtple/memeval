@@ -132,3 +132,40 @@ order execution, a confirmed buy and sell after clock recovery, restart recovery
 uncertain database commits, and refusal of unconfirmed zero-trade finish. These local
 checks do not prove every production connection will remain intact. Billifer's original
 terminal run is preserved; these changes do not undo an already confirmed finish.
+
+
+## Completed report inspection
+
+On September 19, production logs for FreeTurtle's completed run
+`run_4b027b4d34007f84` showed the observed-price endpoint replaying 515 commands in
+82.004 seconds. A concurrent chart request and a decision-timeline request returned
+503 while waiting for the same run lock. The trade table already used a saved review
+and returned successfully without rebuilding the simulation.
+
+The decision timeline now reads original durable trace records and recorded order
+deliveries directly. It does not restore a session or acquire the trading lock. Final
+order snapshots are saved with completed inspection views; older runs use their latest
+recorded order deliveries until that snapshot is available. Missing legacy deliveries
+are explicitly unavailable, rather than synthesized by rerunning the current engine.
+The full response, including untrusted request arguments, retains pack-specific redaction.
+
+Completed observed-price views are stored in the existing database. Finalization warms
+the default run view and the full-episode charts for up to eight traded pools. This is
+a cache-warming bound, not a limit on available pools or market data. Other views remain
+available on demand. Durable cache variants are limited to the default one-minute
+interval and the full-episode interval used by the trade-review UI. Other requested
+intervals still return their exact result without creating additional durable variants.
+
+An older completed run needs one reconstruction to populate the cache. It holds a
+separate inspection lock with a 120-second acquisition deadline. A waiter rechecks the
+stored view after acquiring that lock, so it can reuse the first worker's result.
+PostgreSQL's statement timeout accommodates that explicit deadline; trading commands
+retain their existing five-second acquisition limit and acquired locks never expire.
+Active charts still share the trading lock because their simulation state can change.
+
+Regression checks cover cold-worker reads, concurrent legacy chart reconstruction,
+timeline access during contention, original delivery retention and redaction, pagination,
+final order states, active-run serialization, and cache failures during finalization.
+They also assert unchanged run records, command traces and usage after report inspection.
+The change does not migrate the database, advance or rescore existing runs, or alter
+collection jobs or execution rules.

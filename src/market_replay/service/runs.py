@@ -972,6 +972,7 @@ class RunManager:
             error = (error or "") + f" report failure: {e}"
         self.store.update_run(ctx.run_id, state=str(state), error=error, finished_at=now_iso(), clock_ms=ctx.session.now, report_json=json.dumps(report, sort_keys=True))
         self._store_trade_review(ctx)
+        self._store_inspection(ctx)
 
     def _store_trade_review(self, ctx: RunContext) -> dict[str, Any] | None:
         """Keep the trade review next to the report while the session is live: rebuilding a session of a
@@ -1220,41 +1221,91 @@ class RunManager:
                 raise ApiError(500, "trade review could not be built", "INTERNAL")
             return review
 
+    def decision_timeline(self, run_id: str, cursor: int = 0, limit: int = 100) -> dict[str, Any]:
+        """Recorded evidence needs neither a live simulation nor its command lock."""
+        from ..observations.masking import LeakScanner
+        from .inspection import recorded_timeline
+
+        row = self.store.run(run_id)
+        if row is None:
+            raise ApiError(404, "unknown run", "NOT_FOUND")
+        trace = self.store.trace(run_id)
+        orders = self.store.get_doc(run_id, "review_orders_v1")
+        _pack_row, pack = self.load_pack(row["pack_id"])
+        scanner = LeakScanner.for_pack(pack)
+        return redact_for_role(recorded_timeline(trace, cursor, limit, orders), "participant", scanner)
+
+    @staticmethod
+    def _observed_key(pool_id: str | None, interval_ms: int) -> str:
+        return "observed_v1:" + hashlib.sha256(json.dumps([pool_id, interval_ms]).encode()).hexdigest()
+
+    def _cached_observed(self, row: dict, pool_id: str | None, interval_ms: int) -> dict | None:
+        doc = self.store.get_doc(row["run_id"], self._observed_key(pool_id, interval_ms))
+        if isinstance(doc, dict) and doc.get("clock_ms") == row["clock_ms"]:
+            return doc
+        return None
+
+    def _save_observed(self, ctx: RunContext, pool_id: str | None, interval_ms: int) -> dict:
+        from .inspection import observed_view
+
+        view = redact_for_role(observed_view(ctx.session, pool_id, interval_ms), "participant", ctx.session.scanner)
+        # Bound durable cache variants to the two intervals used by the UI. Other
+        # intervals still return their exact view, without accumulating cache keys.
+        step = self._review_interval(ctx.session.now)
+        if interval_ms in (60_000, step) and (view["series"] is not None or pool_id is None):
+            self.store.put_doc(ctx.run_id, self._observed_key(pool_id, interval_ms), view)
+        return view
+
+    @staticmethod
+    def _review_interval(clock_ms: int) -> int:
+        return max(60_000, ((clock_ms + 300 * 60_000 - 1) // (300 * 60_000)) * 60_000)
+
+    def _store_inspection(self, ctx: RunContext) -> None:
+        """Save small completed-run views while state is warm. Failures never change the outcome."""
+        try:
+            s = ctx.session
+            orders = [o.to_public(s.alias) for o in s.sim.orders.values()]
+            self.store.put_doc(ctx.run_id, "review_orders_v1", redact_for_role(orders, "participant", s.scanner))
+            # Match the trade-review chart's full-episode interval. Warming is bounded;
+            # every other pool/interval remains available through the normal lazy path.
+            interval = self._review_interval(s.now)
+            views = [(None, 60_000)] + [(pid, interval) for pid in dict.fromkeys(o["pool_id"] for o in orders)][:8]
+            row = {"run_id": ctx.run_id, "clock_ms": s.now}
+            for pid, step in views:
+                if self._cached_observed(row, pid, step) is None:
+                    self._save_observed(ctx, pid, step)
+        except Exception:
+            LOG.exception("inspection_cache_failed run_id=%s", ctx.run_id)
+
     def observed(self, run_id: str, pool_id: str | None = None, interval_ms: int = 60_000) -> dict[str, Any]:
-        """Agent-visible view for the Run screen: only observations available at the current clock."""
+        """Finished charts are durable views; active views retain command serialization."""
+        from .inspection import observed_view
+
+        if interval_ms <= 0:
+            raise ApiError(400, "interval_ms must be positive", "INVALID_REQUEST")
+        row = self.store.run(run_id)
+        if row is None:
+            raise ApiError(404, "unknown run", "NOT_FOUND")
+        if row["state"] in TERMINAL:
+            cached = self._cached_observed(row, pool_id, interval_ms)
+            if cached is not None:
+                return cached
+            # Older runs need one reconstruction. It owns a separate inspection lock:
+            # recorded timelines and trading commands never wait for this work. Waiters
+            # recheck the durable cache instead of repeating the reconstruction.
+            with self.store.run_lock("inspection:" + run_id, timeout=120):
+                cached = self._cached_observed(row, pool_id, interval_ms)
+                if cached is not None:
+                    return cached
+                ctx = self._ctx(run_id)
+                self._catch_up(ctx)
+                view = self._save_observed(ctx, pool_id, interval_ms)
+                self._store_inspection(ctx)
+                return view
         with self.store.run_lock(run_id):
             ctx = self._ctx(run_id)
-            s = ctx.session
             self._catch_up(ctx)
-            discovered = s.sim.discovered_pools(s.now)
-            pools = [{"pool_id": s.alias.pool(k)} for k in discovered]
-            series: dict[str, Any] | None = None
-            if pool_id or pools:
-                pid = pool_id or pools[0]["pool_id"]
-                r = s.alias.resolve(pid)
-                if r and r[0] == "pool" and r[1] in discovered:
-                    from fractions import Fraction
-
-                    from ..domain.quantities import fraction_to_decimal_str
-                    from ..observations.store import aggregate_candles
-
-                    key = r[1]
-                    base, quote = s._base_quote(key)
-                    end = s.now
-                    start = max(end - interval_ms * 400, -(10**12))
-                    candles, gaps = aggregate_candles(s.sim.obs[key], base_asset=base, interval_ms=interval_ms, start_ms=start, end_ms=end, as_of=s.now, availability_delay_ms=s.params.availability_delay_ms, include_partial=False)
-                    scale = Fraction(10 ** s._decimals(base), 10 ** s._decimals(quote))
-                    items = []
-                    for c in candles:
-                        d = c.to_public()
-                        for f in ("open", "high", "low", "close"):
-                            v = getattr(c, f)
-                            d[f] = None if v is None else fraction_to_decimal_str(v * scale, 18)
-                        items.append(d)
-                    series = {"pool_id": pid, "interval_ms": interval_ms, "items": items, "gaps": gaps, "as_of_ms": s.now}
-            equity = [{"time_ms": p.time_ms, "equity_raw": None if p.equity is None else str(p.equity), "complete": p.complete, "source": p.source} for p in s.sim.equity_points]
-            orders = [o.to_public(s.alias) for o in list(s.sim.orders.values())[-50:]]
-        return {"clock_ms": s.now, "pools": pools, "series": series, "equity": equity, "orders": orders, "note": "Only observations with available_ms <= clock are shown; no future data."}
+            return observed_view(ctx.session, pool_id, interval_ms)
 
     def export(self, run_id: str, role: str = "admin", include_mappings: bool = False) -> dict[str, Any]:
         row = self.store.run(run_id)

@@ -36,6 +36,7 @@ export function DecisionTimeline({ runId }: { runId: string }) {
           {item.order?.intent?.reason && <p><strong>Recorded reason:</strong> {item.order.intent.reason}</p>}
           {item.order?.intent?.exit_condition && <p><strong>Intended exit:</strong> {item.order.intent.exit_condition}</p>}
           {item.delivered.evidence_basis === "reconstructed_under_current_engine" && <p className="notice small">Legacy trace: this observation was reconstructed under the current engine. It is not an original delivery record.</p>}
+          {item.delivered.evidence_basis === "not_recorded" && <p className="notice small">This older request has no recorded delivery. Its observation is unavailable.</p>}
           {item.delivered.payload_omitted && <p className="muted small">The delivery exceeded the recording limit. Its digest is retained.</p>}
           <details><summary>Inspect request and delivered observation</summary><JsonView value={{ request: item.request, delivered: item.delivered, execution: item.order }} open /></details>
         </li>)}

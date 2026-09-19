@@ -7,7 +7,8 @@ import pytest
 from market_replay.service.db import PgStore, RunBusy
 
 
-def test_postgres_lock_wait_is_bounded_and_failed_transaction_is_closed():
+@pytest.mark.parametrize("timeout", [0.025, 120])
+def test_postgres_lock_wait_is_bounded_and_failed_transaction_is_closed(timeout):
     class LockNotAvailable(Exception):
         pass
 
@@ -39,7 +40,10 @@ def test_postgres_lock_wait_is_bounded_and_failed_transaction_is_closed():
     store.url = "unused"
     store._psycopg = SimpleNamespace(connect=connect, errors=SimpleNamespace(LockNotAvailable=LockNotAvailable, QueryCanceled=QueryCanceled))
     with pytest.raises(RunBusy):
-        with store.run_lock("run_x", timeout=0.025):
+        with store.run_lock("run_x", timeout=timeout):
             pytest.fail("Must not enter without lock ownership")
-    assert calls[0] == ("SELECT set_config('lock_timeout', %s, true)", ("25ms",))
+    assert calls[0] == ("SELECT set_config('lock_timeout', %s, true)", (f"{int(timeout * 1000)}ms",))
+    if timeout == 120:
+        assert calls[1] == ("SELECT set_config('statement_timeout', %s, true)", ("121000ms",))
     assert calls[-2:] == ["rollback", "close"]
+

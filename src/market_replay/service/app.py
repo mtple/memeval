@@ -432,12 +432,7 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
 
     @app.get("/api/v1/runs/{run_id}/timeline", dependencies=[Depends(public_read)])
     def decision_timeline(run_id: str, cursor: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=500)) -> dict:
-        from ..evaluation.debrief import timeline
-        from ..observations.masking import redact_for_role
-        with manager.store.run_lock(run_id):
-            ctx = manager._ctx(run_id)
-            manager._catch_up(ctx)
-            return redact_for_role(timeline(ctx.session, cursor, limit), "participant", ctx.session.scanner)
+        return manager.decision_timeline(run_id, cursor, limit)
 
     @app.post("/api/v1/runs/{run_id}/execute", dependencies=[Depends(public_write("runs"))])
     def execute_run(run_id: str) -> dict[str, Any]:
@@ -548,3 +543,4 @@ def default_manager() -> RunManager:
     data_dir = Path(os.environ.get("MARKET_REPLAY_DATA_DIR", str(REPO_ROOT / "data")))
     dev_mode = os.environ.get("MARKET_REPLAY_DEV_MODE", "1") != "0"
     return RunManager(data_dir=data_dir, dev_mode=dev_mode)
+

@@ -558,6 +558,11 @@ class PgStore(BaseStore):
         conn = self._lock_connection()
         try:
             conn.execute("SELECT set_config('lock_timeout', %s, true)", (f"{max(1, int(timeout * 1000))}ms",))
+            # Completed-view reconstruction can wait longer than a trading command.
+            # Its explicit lock deadline must not be cut short by the connection's
+            # ten-second statement timeout. This does not expire an acquired lock.
+            if timeout >= 10:
+                conn.execute("SELECT set_config('statement_timeout', %s, true)", (f"{int(timeout * 1000) + 1000}ms",))
             try:
                 conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (run_id,))
             except (self._psycopg.errors.LockNotAvailable, self._psycopg.errors.QueryCanceled):
