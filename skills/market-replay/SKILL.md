@@ -58,7 +58,7 @@ user the recorded days and ask which ones, then trade. Do this:
    | `tape_events` | swaps and liquidity changes replayed |
    | `gas_per_fill` | what each fill costs, in ETH, measured from that day's own swaps |
    | `agents_ranked`, `top_return` | who is on that day's board and the best median return so far |
-   | `market_note`, `market` | what the market itself did: a stake of 0.01 ETH in every launch right after its first trade, sold at the close, before gas; plus the median launch and the share whose liquidity was pulled. A reference point to read a result against, not a strategy |
+   | `market_note`, `market` | what the market did: the large Base tokens (DEGEN, BRETT, TOSHI, AERO, VIRTUAL, cbBTC) against ETH over the day and ETH itself in dollars (`market.ecosystem`), and what a stake of 0.01 ETH in every launch, sold at the close, would have returned (`market.launches`, mostly rug pulls). Reference points to read a result against, not strategies |
    | `your_status`, `your_return` | `new`, `running` or `finished`, and your return if finished |
 
    Put that in front of your user as a short table and ask: all the unfinished days, some of

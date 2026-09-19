@@ -252,6 +252,9 @@ def write_market_baseline(pack_dir: Path | str) -> dict[str, Any]:
     p = Path(pack_dir)
     pack = Pack.load(p, verify_hashes=False)
     out = compute_market_baseline(pack)
+    previous = read_market_baseline(p) or {}
+    if previous.get("ecosystem"):
+        out["ecosystem"] = previous["ecosystem"]  # read through the RPC by the ecosystem collector; the tape cannot rebuild it
     (p / BASELINE_FILE).write_text(json.dumps(out, indent=1, sort_keys=True) + "\n")
     return out
 
@@ -266,16 +269,27 @@ def read_market_baseline(pack_dir: Path | str) -> dict[str, Any] | None:
 
 
 def baseline_sentence(b: dict[str, Any] | None) -> str | None:
-    """One plain sentence for a leaderboard or an episode list. Never a verdict."""
+    """One plain sentence for a leaderboard or an episode list: the large Base tokens against ETH when
+    the ecosystem section exists, then the launch basket. Never a verdict."""
     if not b:
         return None
-    L = b.get("launches") or {}
-    if not L.get("pools_priced"):
-        return None
-    ew, med, drained = L.get("equal_weight_return"), L.get("median_return"), L.get("share_drained")
-    pct = lambda s: f"{float(s) * 100:+.0f}%" if s is not None else "unknown"  # noqa: E731
+    pct = lambda s: f"{float(s) * 100:+.1f}%" if s is not None else "unknown"  # noqa: E731
     share = lambda s: f"{float(s) * 100:.0f}%" if s is not None else "unknown"  # noqa: E731
-    return (
-        f"Market that day: a stake of {b.get('stake', '0.01')} in every one of the {L['pools_priced']} launches right after its first trade, sold at the close, would have returned {pct(ew)} "
-        f"before gas; the median launch returned {pct(med)} and {share(drained)} of launches had their liquidity pulled. Holding ETH returned 0%."
-    )
+    parts: list[str] = []
+    eco = b.get("ecosystem") or {}
+    if eco.get("tokens"):
+        names = ", ".join(t["symbol"] for t in eco["tokens"])
+        parts.append(f"Market that day: the large Base tokens ({names}) moved {pct(eco.get('depth_weighted_return_vs_eth'))} against ETH, weighted by pool depth ({pct(eco.get('equal_weight_return_vs_eth'))} equal-weight)")
+        if eco.get("eth_usd_return") is not None:
+            parts[-1] += f"; ETH itself moved {pct(eco['eth_usd_return'])} in dollars"
+        parts[-1] += ". Holding ETH returned 0% in ETH terms."
+    L = b.get("launches") or {}
+    if L.get("pools_priced"):
+        lead = "New launches: " if parts else "Market that day: "
+        parts.append(
+            f"{lead}a stake of {b.get('stake', '0.01')} in every one of the {L['pools_priced']} pools launched that day right after its first trade, sold at the close, would have returned {pct(L.get('equal_weight_return'))} "
+            f"before gas; the median launch returned {pct(L.get('median_return'))} and {share(L.get('share_drained'))} had their liquidity pulled."
+        )
+        if len(parts) == 1:
+            parts[-1] += " Holding ETH returned 0%."
+    return " ".join(parts) or None

@@ -52,7 +52,8 @@ export default function Episodes() {
                     <th>Kind</th>
                     <th>Dates</th>
                     <th className="num">Pools</th>
-                    <th className="num" title="a stake of 0.01 ETH in every pool launched that day right after its first trade, sold at the close, before gas">Market that day</th>
+                    <th className="num" title="the large Base tokens (DEGEN, BRETT, TOSHI, AERO, VIRTUAL, cbBTC) against ETH from the day's first to its last block, weighted by pool depth">Base tokens vs ETH</th>
+                    <th className="num" title="a stake of 0.01 ETH in every pool launched that day right after its first trade, sold at the close, before gas; most launches are rug pulls">New launches</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -66,6 +67,15 @@ export default function Episodes() {
                         <td>{p.kind === "real" ? <Badge tone="ok">Real data</Badge> : <Badge tone="warn">Generated data</Badge>}</td>
                         <td className="small">{p.period ? `${p.period.start_utc.slice(0, 10)} to ${p.period.end_utc.slice(0, 10)}` : fmtDuration(p.duration_ms, p.is_full_week)}</td>
                         <td className="num">{p.summary?.pools_executable ?? "?"}</td>
+                        <td className="num">
+                          {p.market_baseline?.ecosystem?.tokens?.length ? (
+                            <button type="button" className="rowbtn" onClick={() => setSelected(selected === p.pack_id ? null : p.pack_id)} aria-expanded={selected === p.pack_id}>
+                              {marketPct(p.market_baseline.ecosystem.depth_weighted_return_vs_eth ?? undefined)}
+                            </button>
+                          ) : (
+                            <span className="muted" title="not read yet">n/a</span>
+                          )}
+                        </td>
                         <td className="num">
                           {p.market_baseline?.launches?.pools_priced ? (
                             <button type="button" className="rowbtn" onClick={() => setSelected(selected === p.pack_id ? null : p.pack_id)} aria-expanded={selected === p.pack_id}>
@@ -195,7 +205,7 @@ function Sel({ label, value, onChange, options }: { label: string; value: string
 function marketPct(v: string | undefined): string {
   if (v === undefined) return "n/a";
   const n = Number(v) * 100;
-  return `${n > 0 ? "+" : ""}${n.toFixed(0)}%`;
+  return `${n > 0 ? "+" : ""}${n.toFixed(Math.abs(n) < 10 ? 1 : 0)}%`;
 }
 
 function PackDetail({ pack: p, onClose }: { pack: Pack; onClose: () => void }) {

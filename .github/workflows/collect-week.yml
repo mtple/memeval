@@ -6,7 +6,7 @@ name: collect-week
 # Start it from the Actions tab (week_start and days inputs), or push any commit to the `record-week`
 # branch whose message names the mode and the date: `day 2026-09-08` records one day (the unit the site
 # ships), `record 2026-09-07` a whole week (millions of events; too big for the hosted site), `trial`,
-# `survey`, `stats`, `cancel <run id>`. E.g. `git commit --allow-empty -m "day 2026-09-08"` then
+# `survey`, `stats`, `cancel <run id>`, `baseline` (reads the Base ecosystem basket for every committed day that lacks it, about 120 requests each, and commits). E.g. `git commit --allow-empty -m "day 2026-09-08"` then
 # `git push -f origin HEAD:record-week` (Vercel never deploys that branch, see vercel.json).
 #
 # Secret: BASE_RPC_URL or RPC_URL (your read-only Base RPC endpoint). Nothing else; the finished week is committed
@@ -58,7 +58,7 @@ jobs:
           days="${DAYS:-1}"
           case "$msg" in
             *week*) days=7 ;;
-            day\ *|trial\ *|stats\ *) days=1 ;;
+            day\ *|trial\ *|stats\ *|baseline*) days=1 ;;
             record\ *|survey\ *) days=7 ;;
           esac
           start=$(python3 -c "
@@ -89,6 +89,26 @@ jobs:
           run_id=$(echo "$COMMIT_MESSAGE" | grep -oE '[0-9]{6,}' | head -1)
           gh run cancel "$run_id" && echo "cancelled run $run_id"
           echo "SURVEY_ONLY=1" >> "$GITHUB_ENV"
+      - name: "Baseline only (commit message starts with baseline): the ecosystem basket for every day that lacks it"
+        if: startsWith(github.event.head_commit.message, 'baseline')
+        env:
+          BASE_RPC_URL: ${{ secrets.BASE_RPC_URL || secrets.RPC_URL }}
+        run: |
+          set -eu
+          uv run market-replay packs ecosystem weeks
+          echo "SURVEY_ONLY=1" >> "$GITHUB_ENV"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add weeks/*/market_baseline.json
+          git commit -m "Base ecosystem baseline for the recorded days" || { echo "nothing new to commit"; exit 0; }
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git rebase origin/main || { git rebase --abort; echo "rebase failed"; exit 1; }
+            git push origin HEAD:main && exit 0
+            echo "push rejected (attempt $attempt); retrying"
+            sleep 5
+          done
+          exit 1
       - name: Survey only (commit message starts with "survey")
         if: startsWith(github.event.head_commit.message, 'survey')
         run: |

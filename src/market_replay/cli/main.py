@@ -124,6 +124,27 @@ def packs_baseline(path: Path) -> None:
     _echo({k: b[k] for k in ("launches", "established")})
 
 
+@packs_app.command("ecosystem")
+def packs_ecosystem(
+    path: Path,
+    rpc_url_env: str = typer.Option("BASE_RPC_URL", help="name of the environment variable holding the read-only RPC endpoint"),
+) -> None:
+    """Read the Base ecosystem basket (DEGEN, BRETT, TOSHI, AERO, VIRTUAL, cbBTC against ETH, and ETH in
+    dollars) at the pack's first and last block and merge it into market_baseline.json. About 120
+    read-only RPC requests. Pass a pack directory, or a weeks directory to do every day that lacks it."""
+    from ..collectors.ecosystem import write_ecosystem
+    from ..datasets.baseline import read_market_baseline
+
+    dirs = [path] if (path / "manifest.yaml").exists() else sorted(d for d in path.iterdir() if (d / "manifest.yaml").exists() and not (read_market_baseline(d) or {}).get("ecosystem"))
+    for d in dirs:
+        eco = write_ecosystem(d, rpc_url_env=rpc_url_env)
+        typer.echo(f"{d.name}: {len(eco['tokens'])} tokens, depth-weighted {eco['depth_weighted_return_vs_eth']} vs ETH, ETH/USD {eco['eth_usd_return']}, {eco['budget']['requests']} requests", err=True)
+        for n in eco["notes"]:
+            typer.echo(f"  | {n}", err=True)
+    if not dirs:
+        typer.echo("every day already carries the ecosystem section", err=True)
+
+
 @packs_app.command("import")
 def packs_import(path: Path, name: str | None = None, data_dir: Path = DEFAULT_DATA) -> None:
     """Import a pack into the local control plane."""
@@ -388,9 +409,14 @@ def week(
         raise typer.Exit(1)
     import shutil
 
+    from ..collectors.ecosystem import write_ecosystem
     from ..datasets.baseline import write_market_baseline
 
     write_market_baseline(out / name)
+    try:
+        write_ecosystem(out / name, rpc_url_env=rpc_url_env)
+    except Exception as e:  # the day is complete without it; `packs ecosystem` adds it later
+        typer.echo(f"ecosystem basket not read ({e}); run: market-replay packs ecosystem {out / name}", err=True)
     shutil.rmtree(work, ignore_errors=True)
     typer.echo(f"done: {out / name} qualifies as research. Commit it: git add {out / name} && git commit -m 'Base {unit} of {t0:%Y-%m-%d}' && git push", err=True)
 

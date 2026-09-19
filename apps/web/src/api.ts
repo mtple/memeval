@@ -523,7 +523,10 @@ export type MarketBasket = {
   worst_return?: string;
 };
 /** What the market itself did on a recorded day: a naive fixed stake in every pool, sold at the close. Never a verdict. */
-export type MarketBaseline = { basis: string; rule: string; stake?: string; numeraire_hold_return: string; launches: MarketBasket; established: MarketBasket; all_pools: MarketBasket; caveats: string[] };
+export type EcosystemToken = { symbol: string; pool_fee_pips: number; eth_depth_start_raw: string; return_vs_eth: string };
+/** The large Base tokens against ETH at the day's first and last block, plus ETH in dollars. Read through the RPC, not from the tape. */
+export type Ecosystem = { basis: string; tokens: EcosystemToken[]; tokens_expected: string[]; equal_weight_return_vs_eth: string | null; depth_weighted_return_vs_eth: string | null; eth_usd_return: string | null; numeraire_hold_return: string; notes: string[]; caveats: string[] };
+export type MarketBaseline = { basis: string; rule: string; stake?: string; numeraire_hold_return: string; launches: MarketBasket; established: MarketBasket; all_pools: MarketBasket; caveats: string[]; ecosystem?: Ecosystem | null };
 export type LeaderboardCategory = { kind: "suite" | "pack" | "all"; id: string; label: string; description?: string; episodes: string[]; market?: MarketBaseline | null; market_note?: string | null };
 export type LeaderboardRow = {
   comparison_group?: string;

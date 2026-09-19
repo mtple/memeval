@@ -123,8 +123,17 @@ position was burned pays nothing. The same rule is applied to the established po
 gas and buys at a moment nobody can act on, so an agent doing the same trades would do worse.
 The file carries the equal-weight return, the median pool, the share that ended up, the share
 whose liquidity was pulled and the best and worst pool, for launches and for established pools.
-`market-replay packs baseline weeks/<name>` regenerates it. On the site it appears under the
-day's leaderboard, on the Days page and on every result of that day, always with its caveats.
+`market-replay packs baseline weeks/<name>` regenerates it.
+
+On Base that launch basket is a rug-pull statistic (two thirds of launches have their liquidity
+pulled the same day), so the file also carries the ecosystem: DEGEN, BRETT, TOSHI, AERO, VIRTUAL
+and cbBTC against ETH from the day's first block to its last, equal-weight and weighted by the ETH
+in each token's deepest Uniswap v3 pool, plus ETH itself in dollars from the WETH/USDC pool. That
+part needs the RPC (about 120 read-only requests, symbols checked on chain); the day build reads it
+when the endpoint is set, and `market-replay packs ecosystem weeks` (or a `baseline` commit on the
+`record-week` branch) fills it in for every committed day that lacks it. On the site it appears
+under the day's leaderboard, on the Days page and on every result of that day, always with its
+caveats.
 
 ## Step 6. Checking
 
