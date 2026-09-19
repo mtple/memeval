@@ -8,6 +8,9 @@ durable truth from which a session can be rebuilt by deterministic replay), JSON
 
 from __future__ import annotations
 
+import base64
+import gzip
+import hashlib
 import json
 import sqlite3
 import threading
@@ -33,6 +36,9 @@ class RunBusy(RuntimeError):
 # Columns added after a table first shipped; each statement must be safe to re-run (SQLite raises on
 # a duplicate column and the error is swallowed; Postgres gets IF NOT EXISTS).
 MIGRATIONS = ["ALTER TABLE agents ADD COLUMN token_hash TEXT", "ALTER TABLE packs ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'"]
+MIGRATIONS += ["ALTER TABLE traces ADD COLUMN request_id TEXT", "ALTER TABLE traces ADD COLUMN request_hash TEXT",
+               "ALTER TABLE traces ADD COLUMN response_gzip TEXT",
+               "CREATE UNIQUE INDEX IF NOT EXISTS trace_requests ON traces(run_id, request_id)"]
 
 # Retain the retired bundle tables for existing data and the legacy run-privacy guard.
 # No application workflow creates or updates these records.
@@ -267,9 +273,25 @@ class BaseStore:
         return int(row["count"]) if row else 1
 
     # ------------------------------------------------------------------ traces & docs
-    def append_trace(self, run_id: str, records: list[dict[str, Any]]) -> None:
+    @staticmethod
+    def request_hash(tool: str, arguments: dict | None) -> str:
+        return hashlib.sha256(json.dumps([tool, arguments or {}], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+    def command_receipt(self, run_id: str, request_id: str) -> dict | None:
+        row = self.one("SELECT request_hash, response_gzip FROM traces WHERE run_id=? AND request_id=?", (run_id, request_id))
+        if row is None:
+            return None
+        return {"request_hash": row["request_hash"], "response": json.loads(gzip.decompress(base64.b64decode(row["response_gzip"])))}
+
+    def append_trace(self, run_id: str, records: list[dict[str, Any]], response: dict | None = None) -> None:
         for r in records:
-            self.execute("INSERT INTO traces (run_id, idx, record) VALUES (?, ?, ?) ON CONFLICT(run_id, idx) DO NOTHING", (run_id, int(r["index"]), json.dumps(r, sort_keys=True)))
+            receipt = response if r is records[-1] else None
+            # One insert commits both the command and its complete retry receipt. Replay reads
+            # only record, so large responses do not inflate the cold reconstruction working set.
+            self.execute("INSERT INTO traces (run_id, idx, record, request_id, request_hash, response_gzip) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(run_id, idx) DO NOTHING",
+                         (run_id, int(r["index"]), json.dumps(r, sort_keys=True), r["request_id"] if receipt else None,
+                          self.request_hash(r["tool"], r["arguments"]) if receipt else None,
+                          base64.b64encode(gzip.compress(json.dumps(receipt, separators=(",", ":")).encode(), mtime=0)).decode() if receipt else None))
 
     def trace(self, run_id: str, after: int = -1) -> list[dict[str, Any]]:
         rows = self.query("SELECT record FROM traces WHERE run_id=? AND idx>? ORDER BY idx", (run_id, after))

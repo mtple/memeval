@@ -19,7 +19,7 @@ def failed_run(tmp_path, dev_pack_dir, monkeypatch):
     def fail(*args, **kwargs):
         raise InvalidOperation("test report failure")
     monkeypatch.setattr("market_replay.service.runs.build_report", fail)
-    assert manager.handle_command(run["session_credential"]["token"], "finish", "session.finish", {}).status == "ok"
+    assert manager.handle_command(run["session_credential"]["token"], "finish", "session.finish", {"confirm": True}).status == "ok"
     monkeypatch.setattr("market_replay.service.runs.build_report", build_report)
     client = TestClient(create_app(manager, "adm_repair", public_runs=True))
     yield manager, client, run

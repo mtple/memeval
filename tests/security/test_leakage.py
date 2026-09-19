@@ -33,7 +33,7 @@ def exercise(s: Session) -> list[dict]:
     outs.append(s.handle("r", "markets.get", {"pool_id": "0x" + "a" * 40}))
     outs.append(s.handle("r", "broker.quote", {"pool_id": pid, "asset_in": "0:cash", "amount_in_raw": "1"}))
     outs.append(s.handle("r", "clock.advance", {"to_ms": 10**9}))
-    outs.append(s.handle("r", "session.finish", {}))
+    outs.append(s.handle("r", "session.finish", {"confirm": True}))
     return [e.model_dump(mode="json") for e in outs]
 
 

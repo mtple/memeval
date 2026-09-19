@@ -39,7 +39,7 @@ def test_time_charges_and_crossed_deadline_replay(fresh_pack, profile):
     env = s.handle("3", "clock.advance", {"to_ms": s.now + 1}, decision_elapsed_ms=1_000)
     assert env.status == "ok"
     assert s.handle("4", "clock.wait", {"until_ms": 0}).status == "error"
-    s.handle("finish", "session.finish", {}, decision_elapsed_ms=1_000)
+    s.handle("finish", "session.finish", {"confirm": True}, decision_elapsed_ms=1_000)
     trace = [asdict(r) for r in s.trace]
     replay = replay_trace(
         fresh_pack,

@@ -100,3 +100,35 @@ pool states exactly equal to their reference states without agent intervention.
 This check does not create a hosted attempt or overwrite FreeTurtle's original report.
 The original report describes engine v2; it is not silently promoted to a result under
 engine v3. Its original 22 fills and terminal balance remain preserved.
+
+## Lost responses and premature finish
+
+Billifer's `run_3eeee33398c5bec5` completed with no trades after its client reported
+incomplete HTTP bodies, stale absolute clock targets, and an error path that called
+finish. Production logs around 04:37 UTC on September 19 contain several `RUN_BUSY`
+503 responses after five-second lock waits, followed by successful HTTP responses
+at the terminal clock. These logs establish contention, but do not establish why
+the client observed truncated bodies. No claim of a proven proxy or framing defect
+follows from this evidence.
+
+Commands now store a gzip-compressed, scanned response atomically with each new trace
+row. A retry under the same request ID returns that receipt without executing again,
+even after worker loss or completion. A different tool or arguments under the same ID
+is a conflict. The envelope clock reflects the latest committed state; saved data
+keeps its original observation time. Legacy trace rows have no retry receipt.
+If a database write fails with an uncertain outcome, the worker discards its in-memory
+session and reconstructs from durable state on retry.
+
+HTTP JSON responses use normal buffered framing and negotiate gzip above 1 KB. The
+starter reads and validates the complete response, persists pending commands before
+sending, and retries transient failures under the original ID. Retry exhaustion stops
+without finishing. Relative `advance_ms`, error clocks, and explicit `confirm: true`
+for finish prevent the reported stale-clock/early-finish chain. Old successful finish
+records still replay; newly refused finish records remain refused during replay.
+
+Regression coverage includes concurrent large market/trade responses with exact
+Content-Length and gzip integrity checks, injected response loss after snapshot and
+order execution, a confirmed buy and sell after clock recovery, restart recovery,
+uncertain database commits, and refusal of unconfirmed zero-trade finish. These local
+checks do not prove every production connection will remain intact. Billifer's original
+terminal run is preserved; these changes do not undo an already confirmed finish.

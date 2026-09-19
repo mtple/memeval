@@ -12,31 +12,56 @@ relative to the episode start.
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 import os
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 import uuid
+import zlib
+from http.client import HTTPException
 from pathlib import Path
 
 DEFAULT_SERVER = "https://memeval-web.vercel.app"
 REVIEW_AFTER_MS = 300_000  # example attention schedule, chosen by the client and replaceable in decide()
 
 
+class HTTPFailure(RuntimeError):
+    def __init__(self, status: int, payload: dict):
+        self.status, self.payload = status, payload
+        super().__init__(f"HTTP {status}: {payload.get('message', 'request failed')}")
+
+
 def http(method: str, url: str, body: dict | None = None, token: str | None = None) -> dict:
     data = None if body is None else json.dumps(body).encode()
-    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    headers = {"Content-Type": "application/json", "Accept": "application/json", "Accept-Encoding": "gzip"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=300) as r:
-            return json.loads(r.read())
+            raw = r.read()  # Reject incomplete Content-Length bodies before JSON parsing.
+            if r.headers.get("Content-Encoding") == "gzip":
+                raw = gzip.decompress(raw)  # Includes end-of-stream and checksum validation.
+            payload = json.loads(raw)
+            if not isinstance(payload, dict):
+                raise ValueError("Expected a JSON object")
+            return payload
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"{method} {url} -> HTTP {e.code}: {e.read()[:400].decode(errors='replace')}") from None
+        raw = e.read()
+        if e.headers.get("Content-Encoding") == "gzip":
+            raw = gzip.decompress(raw)
+        try:
+            payload = json.loads(raw)
+            if not isinstance(payload, dict):
+                raise ValueError("Expected a JSON error object")
+        except (ValueError, UnicodeError):
+            payload = {"message": "non-JSON error response"}
+        raise HTTPFailure(e.code, payload) from None
 
 
 class Credentials:
@@ -93,19 +118,54 @@ def default_state_path(server: str, agent: str, version: str) -> Path:
 class Session:
     """One run. Every tool call returns the same envelope: request_id, session_id, clock_ms, status, data, quality, error."""
 
-    def __init__(self, commands_url: str, token: str) -> None:
+    def __init__(self, commands_url: str, token: str, *, run_record: dict | None = None, save=None) -> None:
         self.url, self.token, self.session_id, self.clock_ms, self.n = commands_url, token, None, 0, 0
         self.request_prefix = uuid.uuid4().hex
+        self.run_record = run_record if run_record is not None else {}
+        self.save = save or (lambda: None)
+
+    def _sync(self, response: dict) -> None:
+        if type(response.get("clock_ms")) is int:
+            self.clock_ms = response["clock_ms"]
+        if response.get("session_id"):
+            self.session_id = response["session_id"]
+
+    def recover_pending(self) -> dict | None:
+        body = self.run_record.get("pending_command")
+        if body is None:
+            return None
+        for attempt in range(5):
+            try:
+                env = http("POST", self.url, body, self.token)
+                self._sync(env)
+                if (env.get("request_id") != body["request_id"] or env.get("status") not in ("ok", "error")
+                        or type(env.get("clock_ms")) is not int or not env.get("session_id")):
+                    raise ValueError("Incomplete command envelope")
+                break
+            except HTTPFailure as exc:
+                self._sync(exc.payload)
+                if exc.status not in (408, 429, 500, 502, 503, 504):
+                    raise
+            except (urllib.error.URLError, HTTPException, OSError, EOFError, ValueError, zlib.error):
+                pass
+            if attempt < 4:
+                time.sleep(min(0.5 * 2**attempt, 4))
+        else:
+            raise RuntimeError("Response unavailable after retries. Pending request and credentials preserved; resume this run. Do not call session.finish.")
+        self.run_record.pop("pending_command")
+        self.save()
+        return env
 
     def call(self, tool: str, **arguments) -> dict:
+        if self.run_record.get("pending_command"):
+            raise RuntimeError("Resolve the saved pending command with recover_pending before sending another command.")
         self.n += 1
         body = {"request_id": f"{self.request_prefix}_{self.n}", "tool": tool, "arguments": arguments}
         if self.session_id:
             body["session_id"] = self.session_id
-        env = http("POST", self.url, body, self.token)
-        self.session_id = env.get("session_id", self.session_id)
-        self.clock_ms = int(env.get("clock_ms", self.clock_ms))
-        return env
+        self.run_record["pending_command"] = body
+        self.save()  # Persist the exact request before any bytes can reach the server.
+        return self.recover_pending()
 
     def ok(self, tool: str, **arguments) -> dict:
         env = self.call(tool, **arguments)
@@ -164,7 +224,14 @@ def play(s: Session) -> dict:
         notifications = adv["alerts"]
         if adv.get("episode_ended") or s.clock_ms >= duration:
             break
-    result = s.ok("session.finish")
+    # Reaching the deadline is the only automatic completion path. Exceptions propagate
+    # to run_saved and preserve the attempt. Custom policies own their exit decisions.
+    portfolio = s.ok("portfolio.get")
+    if portfolio.get("pending_orders") or any(b["asset_id"] != info["numeraire"]["asset_id"]
+            and any(int(b.get(k, "0")) for k in ("available_raw", "reserved_raw", "pending_raw"))
+            for b in portfolio.get("balances", [])):
+        raise RuntimeError("Holdings or pending orders remain. Review deliberately before confirming finish; the starter will not liquidate or finish automatically.")
+    result = s.ok("session.finish", confirm=True)
     valuation = result["terminal_portfolio"]["valuation"]
     return {"clock_ms": result.get("clock_ms", s.clock_ms), "model_equity_raw": valuation.get("model_equity_raw"),
             "final_cash_raw": str(int(valuation["cash_available_raw"]) + int(valuation["cash_reserved_raw"])),
@@ -239,7 +306,9 @@ def run_saved(a, credentials: Credentials) -> int:
             raise ValueError("Saved command URL does not match the selected server.")
         print(f"- {r['pack_name']} ({r['run_id']}) ...", end=" ", flush=True)
         try:
-            out = play(Session(cred["commands_url"], cred["token"]))
+            session = Session(cred["commands_url"], cred["token"], run_record=r, save=credentials.save)
+            session.recover_pending()
+            out = play(session)
             r["state"] = "completed"
             credentials.save()
             print(f"finished at {out['clock_ms']} ms; settled cash {out['final_cash_raw']} raw; model equity {out['model_equity_raw']} (valuation complete: {out['valuation_complete']})")

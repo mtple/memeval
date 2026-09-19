@@ -60,7 +60,7 @@ def test_endpoint_is_opt_in_terminal_only_and_supports_stored_runs(tmp_path, dev
         rid = run["run_id"]
         assert client.get(f"/api/v1/runs/{rid}/trade-review").status_code == 409
         token = run["session_credential"]["token"]
-        mgr.handle_command(token, "done", "session.finish", {})
+        mgr.handle_command(token, "done", "session.finish", {"confirm": True})
         before = dict(mgr.store.run(rid))
         stored = mgr.store.get_doc(rid, "trade_review")
         assert isinstance(stored, dict) and stored["events"] == []  # kept at the end of the run, while the session was live

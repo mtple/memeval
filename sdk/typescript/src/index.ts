@@ -58,7 +58,12 @@ export class MarketReplayClient {
       body: JSON.stringify(body),
     });
     if (res.status >= 400) {
-      throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      const text = await res.text();
+      try {
+        const error = JSON.parse(text);
+        if (typeof error.clock_ms === "number") this.clockMs = error.clock_ms;
+      } catch { /* The network/proxy can return non-JSON errors. */ }
+      throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
     }
     const env = (await res.json()) as Envelope;
     this.sessionId = env.session_id ?? this.sessionId;
@@ -141,11 +146,14 @@ export class MarketReplayClient {
   advance(toMs: number) {
     return this.ok<{ clock_ms: number; episode_ended: boolean }>("clock.advance", { to_ms: toMs });
   }
+  advanceBy(advanceMs: number) {
+    return this.ok("clock.advance", { advance_ms: advanceMs });
+  }
   advanceNext(maxMs: number) {
     return this.ok<{ clock_ms: number; episode_ended: boolean }>("clock.advance", { next_event: true, max_ms: maxMs });
   }
   finish() {
-    return this.ok<Record<string, any>>("session.finish");
+    return this.ok<Record<string, any>>("session.finish", {confirm: true});
   }
 }
 

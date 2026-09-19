@@ -168,9 +168,9 @@ def test_pause_resume_and_comparison(server):
     r = httpx.post(srv.url + "/agent/v1/commands", headers=h, json={"request_id": "p", "tool": "markets.list", "arguments": {}}).json()
     assert r["error"]["code"] == "RUN_PAUSED"
     admin.post(f"/api/v1/runs/{run['run_id']}/resume").raise_for_status()
-    r = httpx.post(srv.url + "/agent/v1/commands", headers=h, json={"request_id": "p", "tool": "markets.list", "arguments": {}}).json()
+    r = httpx.post(srv.url + "/agent/v1/commands", headers=h, json={"request_id": "p2", "tool": "markets.list", "arguments": {}}).json()
     assert r["status"] == "ok"
-    httpx.post(srv.url + "/agent/v1/commands", headers=h, json={"request_id": "f", "tool": "session.finish", "arguments": {}})
+    httpx.post(srv.url + "/agent/v1/commands", headers=h, json={"request_id": "f", "tool": "session.finish", "arguments": {"confirm": True}})
     a = next(a["agent_id"] for a in admin.get("/api/v1/agents").json()["items"] if a["name"] == "scheduled_basket_python")
     b = next(a["agent_id"] for a in admin.get("/api/v1/agents").json()["items"] if a["name"] == "cash_only_python")
     cmp = admin.post("/api/v1/comparisons", json={"agent_a": a, "agent_b": b}).json()

@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import os
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.middleware.gzip import GZipMiddleware
 
 from ..domain.envelope import Envelope
 from ..domain.profiles import PROFILES
@@ -169,6 +173,7 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     app.state.manager = manager
     app.state.admin_token = token
     app.state.public_runs = public_runs
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
     if cors_origins:
         # Explicit allowlist only; never "*". Credentials are bearer headers, so allow the Authorization header.
         app.add_middleware(CORSMiddleware, allow_origins=list(cors_origins), allow_methods=["GET", "POST", "OPTIONS"], allow_headers=["Authorization", "Content-Type"], max_age=600)
@@ -232,11 +237,21 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
 
     @app.exception_handler(ApiError)
     async def _api_error(_: Request, exc: ApiError) -> JSONResponse:
-        return JSONResponse(status_code=exc.status, content={"code": exc.code, "message": exc.message})
+        return JSONResponse(status_code=exc.status, content={"code": exc.code, "message": exc.message, "clock_ms": getattr(exc, "clock_ms", None)})
+
+    @app.exception_handler(HTTPException)
+    async def _http_error(_: Request, exc: HTTPException) -> JSONResponse:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail, "clock_ms": None}, headers=exc.headers)
+
+    @app.exception_handler(RequestValidationError)
+    async def _invalid_request(request: Request, exc: RequestValidationError):
+        response = await request_validation_exception_handler(request, exc)
+        import json
+        return JSONResponse(status_code=response.status_code, content={**json.loads(response.body), "clock_ms": None})
 
     @app.exception_handler(RunBusy)
     async def _run_busy(_: Request, exc: RunBusy) -> JSONResponse:
-        return JSONResponse(status_code=exc.status, content={"code": exc.code, "message": exc.message}, headers={"Retry-After": "1"})
+        return JSONResponse(status_code=exc.status, content={"code": exc.code, "message": exc.message, "clock_ms": getattr(exc, "clock_ms", None)}, headers={"Retry-After": "1"})
 
     # ------------------------------------------------------------------ health / meta
     @app.get("/api/v1/health")
@@ -499,7 +514,7 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     # ------------------------------------------------------------------ agent plane
     @app.get("/agent/v1/capabilities")
     def capabilities(tok: str = Depends(agent_token)) -> dict[str, Any]:
-        env = manager.handle_command(tok, "capabilities", "session.describe", {})
+        env = manager.handle_command(tok, uuid.uuid4().hex, "session.describe", {})
         return env.model_dump(mode="json")
 
     @app.post("/agent/v1/commands", response_model=Envelope)

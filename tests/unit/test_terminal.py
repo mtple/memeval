@@ -234,7 +234,7 @@ def test_wait_deadline_never_delivers_early_and_clamps_to_episode(fresh_pack):
     assert wake.clock_ms == 2050 and wake.data["reason"] == "deadline" and not wake.data["alerts"]
     end = s.handle("e", "clock.wait", {"until_ms": s.sim.end_ms + 100000})
     assert end.clock_ms == s.sim.end_ms and end.data["episode_ended"]
-    s.handle("f", "session.finish", {})
+    s.handle("f", "session.finish", {"confirm": True})
     assert s.handle("x", "clock.wait", {"until_ms": s.now + 1}).error.code == "SESSION_FINISHED"
 
 
@@ -282,7 +282,7 @@ def test_terminal_budget_and_rate_limits_apply(fresh_pack):
     s.budget.max_requests = 1
     assert s.handle("s", "session.snapshot", {}).status == "ok"
     assert s.handle("w", "clock.wait", {"until_ms": 6000}).error.code == "BUDGET_EXHAUSTED"
-    assert s.handle("f", "session.finish", {}).status == "ok"
+    assert s.handle("f", "session.finish", {"confirm": True}).status == "ok"
     fresh_pack.params.rate_limit.simulated_requests_per_minute = 1
     s = make(fresh_pack)
     assert s.handle("w", "clock.wait", {"until_ms": 10}).status == "ok"

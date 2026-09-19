@@ -10,7 +10,7 @@ from market_replay.service.runs import ApiError, RunManager
 
 
 def finish(manager, run):
-    result = manager.handle_command(run["session_credential"]["token"], "finish", "session.finish", {})
+    result = manager.handle_command(run["session_credential"]["token"], "finish", "session.finish", {"confirm": True})
     assert result.status == "ok", result
 
 

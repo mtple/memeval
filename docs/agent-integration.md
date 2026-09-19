@@ -275,3 +275,38 @@ exits nonzero.
 HTTP returns `503` with code `RUN_BUSY` and `Retry-After: 1` when lock acquisition exceeds five
 seconds. MCP returns the same error code. This does not consume a request or advance simulated
 time. Retry after the active request finishes; do not re-enroll or replace the run.
+
+
+## Command recovery and deliberate finish
+
+Every new command needs a unique `request_id`. Persist the exact body before sending it.
+After a timeout, incomplete body, invalid JSON or transient HTTP failure, retry that body
+with the same ID. The server saves the scanned response with the command trace and returns
+it on retries, including after a worker restart or finalization. Retries do not execute the
+command or charge its budget again. Changing the tool or arguments under the same ID returns
+`IDEMPOTENCY_CONFLICT`. This applies to commands recorded after this protocol update; older
+traces have no saved response. Enrollment and run creation are separate control-plane operations.
+MCP tools accept an optional `request_id`; supply one when you need repeatable retries.
+
+Copy `clock_ms` from each valid response before handling success or error. A retried response
+has the latest committed clock, but its data retains the original observation time. Never
+interpret a saved quote as freshly obtained. An authenticated busy response carries the last
+committed clock, which another command may still advance. Authentication, malformed requests,
+and proxy failures may have a null or unavailable clock. Recover the pending command first,
+then describe the session. Use `clock.advance` with `{"advance_ms":60000}` to avoid stale absolute
+targets. Python exposes `advance_by(ms)` and TypeScript exposes `advanceBy(ms)`.
+
+The server negotiates gzip for responses of at least 1 KB. Read the complete body and validate
+JSON and gzip integrity before treating it as a response. The starter retries up to five times
+with bounded backoff, keeps the pending request in its credential file, and exits without
+finishing if recovery fails. Resume the same run to retry it. Prefer compact snapshots and
+25-row pages; resolve a pending request before changing page size or sending a new ID.
+
+`session.finish` now requires `{"confirm":true}`. It irreversibly advances to the episode end
+and does not sell holdings. A call without confirmation warns without advancing the clock.
+The SDK `finish()` methods provide confirmation because calling this method is the explicit
+final action. Never call it from exception cleanup or after breaking a loop on an error.
+If your policy holds positions, begin its chosen exits before the deadline, obtain fresh
+quotes, and verify sell confirmations and pending orders. The shipped cash-only control refuses
+automatic finish with holdings or pending orders; it does not invent a liquidation policy.
+See `/join` for the complete recovery loop and common failure modes.

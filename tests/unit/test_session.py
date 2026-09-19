@@ -90,7 +90,7 @@ def test_replay_reproduces_result_hash(fresh_pack: Pack):
     s.handle("r3", "clock.advance", {"to_ms": 600_000})
     s.handle("r4", "broker.submit", {"pool_id": pid, "asset_in": "CASH", "asset_out": base, "amount_in_raw": "20000", "min_amount_out_raw": "0", "deadline_ms": 700_000, "idempotency_key": "x"})
     s.handle("r5", "clock.advance", {"to_ms": 2_000_000})
-    s.handle("r6", "session.finish", {})
+    s.handle("r6", "session.finish", {"confirm": True})
     trace = [{"request_id": r.request_id, "tool": r.tool, "arguments": r.arguments} for r in s.trace]
     again = replay_trace(fresh_pack, trace, bankroll_raw=1_000_000, mask_seed="m", engine_seed="e", session_id="ses_t")
     assert again.sim.ledger.content_hash() == s.sim.ledger.content_hash()
@@ -125,7 +125,7 @@ def test_budget_exhaustion_visible_not_free(fresh_pack: Pack):
     assert env.status == "error" and env.error.code == "BUDGET_EXHAUSTED"
     assert s.budget.exhausted
     assert s.handle("r", "portfolio.get", {}).status == "ok"
-    assert s.handle("r", "session.finish", {}).status == "ok"
+    assert s.handle("r", "session.finish", {"confirm": True}).status == "ok"
 
 
 def test_rate_limit_in_virtual_time(fresh_pack: Pack):
@@ -143,7 +143,7 @@ def test_episode_end_blocks_new_actions(fresh_pack: Pack):
     assert s.now == s.sim.end_ms
     env = s.handle("r", "markets.list", {})
     assert env.status == "error" and env.error.code == "EPISODE_ENDED"
-    fin = s.handle("r", "session.finish", {})
+    fin = s.handle("r", "session.finish", {"confirm": True})
     assert fin.status == "ok" and fin.data["finished"]
 
 

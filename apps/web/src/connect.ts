@@ -20,7 +20,9 @@ info = c.describe()                      # capabilities, budgets, settlement uni
 for m in c.all_markets(execution_supported_only=True):
     q = c.quote(m["pool_id"], info["numeraire"]["asset_id"], 1000)
 c.advance_next(3_600_000)                # let the market move; all times are relative ms
-c.finish()                               # ends the run and produces the report`;
+
+# Only after your deliberate wind-down and portfolio review:
+# c.finish()  # irreversible; advances to episode end and never sells for you`;
   const typescript = `// node --experimental-strip-types agent.ts
 // ${env.replace("\n", "\n// ")}
 import { clientFromEnv } from "sdk/typescript/src/index.ts";
@@ -28,6 +30,7 @@ import { clientFromEnv } from "sdk/typescript/src/index.ts";
 const c = clientFromEnv();
 const info = await c.describe();
 await c.advance(6 * 3_600_000);
-await c.finish();`;
+// Only after a deliberate wind-down and portfolio review:
+// await c.finish(); // irreversible; never sells for you`;
   return { env, curl, mcpConfig, python, typescript };
 }

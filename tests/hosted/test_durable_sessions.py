@@ -16,7 +16,7 @@ SCRIPT = [
     ("clock.wait", {"until_ms": 1_800_000, "conditions": [{"kind": "new_pool"}]}),
     ("portfolio.get", {}),
     ("clock.advance", {"to_ms": 10**9}),
-    ("session.finish", {}),
+    ("session.finish", {"confirm": True}),
 ]
 
 
@@ -34,12 +34,15 @@ def register_and_run(mgr: RunManager, dev_pack_dir: Path):
 def test_session_continues_in_a_fresh_process(store_url, tmp_path, dev_pack_dir):
     a = make_manager(store_url, tmp_path, "a")
     run_id, tok = register_and_run(a, dev_pack_dir)
-    for tool, args in SCRIPT[:3]:
-        assert a.handle_command(tok, "r", tool, args).status == "ok"
+    for i, (tool, args) in enumerate(SCRIPT[:3]):
+        assert a.handle_command(tok, f"r{i}", tool, args).status == "ok"
     a.close()  # the first instance disappears
     b = make_manager(store_url, tmp_path, "b")  # a new instance, empty memory
-    for tool, args in SCRIPT[3:]:
-        env = b.handle_command(tok, "r", tool, args)
+    receipt = b.handle_command(tok, "r2", "clock.advance", {"to_ms": 600_000})
+    assert receipt.status == "ok" and receipt.clock_ms == 600_000
+    assert b.store.trace_len(run_id) == 3 and not b._contexts
+    for i, (tool, args) in enumerate(SCRIPT[3:], start=3):
+        env = b.handle_command(tok, f"r{i}", tool, args)
         assert env.status == "ok", env.error
     assert b.run_view(run_id)["state"] == "completed"
     report_b = b.report(run_id)
@@ -47,8 +50,8 @@ def test_session_continues_in_a_fresh_process(store_url, tmp_path, dev_pack_dir)
     c = make_manager(store_url, tmp_path, "c")
     aid = c.store.agent_by_name_version("ext", "1")["agent_id"]
     run2 = c.create_run(agent_id=aid, pack_ref="gen_dev_short", mask_seed="m", engine_seed="e")
-    for tool, args in SCRIPT:
-        c.handle_command(run2["session_credential"]["token"], "r", tool, args)
+    for i, (tool, args) in enumerate(SCRIPT):
+        c.handle_command(run2["session_credential"]["token"], f"r{i}", tool, args)
     report_c = c.report(run2["run_id"])
     assert report_b["reproducibility"]["ledger_hash"] == report_c["reproducibility"]["ledger_hash"]
     assert report_b["reproducibility"]["state_hash"] == report_c["reproducibility"]["state_hash"]

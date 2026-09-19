@@ -11,6 +11,7 @@ Run: ``market-replay mcp`` with MARKET_REPLAY_URL and MARKET_REPLAY_TOKEN set.
 from __future__ import annotations
 
 import os
+import uuid
 from typing import Any
 
 import httpx
@@ -26,15 +27,14 @@ class Forwarder:
         self.base_url = (base_url or os.environ.get("MARKET_REPLAY_URL", "")).rstrip("/")
         self.token = token or os.environ.get("MARKET_REPLAY_TOKEN", "")
         self._client = httpx.Client(base_url=self.base_url, headers={"Authorization": f"Bearer {self.token}"}, timeout=120, transport=transport)
-        self._n = 0
 
-    def call(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    def call(self, tool: str, arguments: dict[str, Any], request_id: str | None = None) -> dict[str, Any]:
         if not self.base_url or not self.token:
             return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "MARKET_REPLAY_URL / MARKET_REPLAY_TOKEN not configured"}}
-        self._n += 1
-        r = self._client.post("/agent/v1/commands", json={"request_id": f"mcp_{self._n}", "tool": tool, "arguments": arguments})
+        r = self._client.post("/agent/v1/commands", json={"request_id": request_id or uuid.uuid4().hex, "tool": tool, "arguments": arguments})
         if r.status_code >= 400:
-            return {"status": "error", "error": {"code": f"HTTP_{r.status_code}", "message": r.text[:300]}}
+            payload = r.json()
+            return {"status": "error", "clock_ms": payload.get("clock_ms"), "error": {"code": payload.get("code", f"HTTP_{r.status_code}"), "message": payload.get("message", "Request failed")}}
         return r.json()
 
 
@@ -43,8 +43,8 @@ def build_mcp(forwarder: Forwarder | None = None) -> FastMCP:
     mcp = FastMCP("market-replay", instructions="Blinded market simulation tools. All quantities are decimal strings in raw units; times are relative milliseconds.")
 
     def register(mcp_name: str, canonical: str, description: str) -> None:
-        def tool(arguments: dict[str, Any] | None = None) -> dict[str, Any]:
-            return fwd.call(canonical, arguments or {})
+        def tool(arguments: dict[str, Any] | None = None, request_id: str | None = None) -> dict[str, Any]:
+            return fwd.call(canonical, arguments or {}, request_id=request_id)
 
         tool.__name__ = mcp_name
         tool.__doc__ = f"{description} Canonical tool: {canonical}. Pass tool arguments as the `arguments` object."
@@ -103,14 +103,14 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
         return None
 
     def register(mcp_name: str, canonical: str, description: str) -> None:
-        def tool(ctx: Context, arguments: dict[str, Any] | None = None, token: str | None = None) -> dict[str, Any]:
+        def tool(ctx: Context, arguments: dict[str, Any] | None = None, token: str | None = None, request_id: str | None = None) -> dict[str, Any]:
             tok = resolve_token(ctx, token)
             if tok is None:
                 return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "session token required: call `enroll` then `play` first, then pass a run's session token as the `token` argument or Authorization: Bearer header"}}
             try:
-                env = manager.handle_command(tok, f"mcp_{canonical}", canonical, arguments or {}, None)
+                env = manager.handle_command(tok, request_id or uuid.uuid4().hex, canonical, arguments or {}, None)
             except Exception as e:
-                return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
+                return {"status": "error", "clock_ms": getattr(e, "clock_ms", None), "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
             return env.model_dump(mode="json")
 
         tool.__name__ = mcp_name

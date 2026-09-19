@@ -54,7 +54,7 @@ def test_leaderboard_accepts_cash_score_without_token_valuation_and_excludes_leg
         mgr.import_pack(dev_pack_dir, "test")
         agent = mgr.register_agent(name="cash", version="1", runtime="external", capabilities=[], config={})
         run = mgr.create_run(agent_id=agent["agent_id"], pack_ref="test")
-        mgr.handle_command(run["session_credential"]["token"], "finish", "session.finish", {})
+        mgr.handle_command(run["session_credential"]["token"], "finish", "session.finish", {"confirm": True})
         row = dict(mgr.store.run(run["run_id"]))
         rep = json.loads(row["report_json"])
         rep["outcome"]["valuation_complete"] = False

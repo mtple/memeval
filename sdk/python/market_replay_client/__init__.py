@@ -40,7 +40,13 @@ class MarketReplayClient:
             body["session_id"] = self.session_id
         r = self._http.post("/agent/v1/commands", json=body)
         if r.status_code >= 400:
-            raise CommandError({"error": {"code": f"HTTP_{r.status_code}", "message": r.text[:300]}})
+            try:
+                failure = r.json()
+            except ValueError:
+                failure = {}
+            if type(failure.get("clock_ms")) is int:
+                self.clock_ms = failure["clock_ms"]
+            raise CommandError({"clock_ms": failure.get("clock_ms"), "error": {"code": failure.get("code", f"HTTP_{r.status_code}"), "message": failure.get("message", r.text[:300])}})
         env = r.json()
         self.session_id = env.get("session_id", self.session_id)
         self.clock_ms = int(env.get("clock_ms", self.clock_ms))
@@ -135,11 +141,14 @@ class MarketReplayClient:
     def advance(self, to_ms: int) -> dict[str, Any]:
         return self.ok("clock.advance", {"to_ms": to_ms})
 
+    def advance_by(self, advance_ms: int) -> dict[str, Any]:
+        return self.ok("clock.advance", {"advance_ms": advance_ms})
+
     def advance_next(self, max_ms: int) -> dict[str, Any]:
         return self.ok("clock.advance", {"next_event": True, "max_ms": max_ms})
 
     def finish(self) -> dict[str, Any]:
-        return self.ok("session.finish")
+        return self.ok("session.finish", {"confirm": True})
 
     def close(self) -> None:
         self._http.close()

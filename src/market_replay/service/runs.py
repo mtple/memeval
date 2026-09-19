@@ -78,11 +78,12 @@ def now_iso() -> str:
 
 
 class ApiError(Exception):
-    def __init__(self, status: int, message: str, code: str = "error") -> None:
+    def __init__(self, status: int, message: str, code: str = "error", *, clock_ms: int | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.message = message
         self.code = code
+        self.clock_ms = clock_ms
 
 
 @dataclass
@@ -830,7 +831,7 @@ class RunManager:
         if missing:
             LOG.info("session_catch_up run_id=%s commands=%d", ctx.run_id, len(missing))
         for r in missing:
-            ctx.session.handle(r["request_id"], r["tool"], r.get("arguments") or {}, decision_elapsed_ms=r.get("decision_elapsed_ms", 0))
+            ctx.session.handle(r["request_id"], r["tool"], r.get("arguments") or {}, decision_elapsed_ms=r.get("decision_elapsed_ms", 0), replaying=r.get("status") == "ok")
             if r.get("delivered"):
                 ctx.session.trace[-1].delivered = r["delivered"]
             else:
@@ -846,11 +847,13 @@ class RunManager:
             raise ApiError(401, "invalid credential", "UNAUTHORIZED")
         run_id = row["run_id"]
         if session_id is not None and session_id != "ses_" + run_id[4:]:
-            raise ApiError(403, "session_id does not match the credential", "FORBIDDEN")
+            raise ApiError(403, "session_id does not match the credential", "FORBIDDEN", clock_ms=row["clock_ms"])
         LOG.info("session_command phase=lock_wait run_id=%s tool=%s", run_id, safe_tool)
         try:
             return self._locked_command(run_id, token, request_id, tool, arguments, measured_elapsed_ms, started)
-        except RunBusy:
+        except (RunBusy, ApiError) as exc:
+            latest = self.store.run(run_id)
+            exc.clock_ms = latest["clock_ms"] if latest else None
             LOG.warning("session_command phase=busy run_id=%s tool=%s elapsed_s=%.3f", run_id, safe_tool, time.monotonic() - started)
             raise
 
@@ -863,6 +866,19 @@ class RunManager:
             if row["token_hash"] != token_hash(token):
                 raise ApiError(401, "invalid credential", "UNAUTHORIZED")
             state = row["state"]
+            receipt = self.store.command_receipt(run_id, request_id)
+            if receipt:
+                clock = max(row["clock_ms"], receipt["response"]["clock_ms"])
+                if receipt["request_hash"] != self.store.request_hash(tool, arguments):
+                    return Envelope.fail(request_id=request_id, session_id="ses_" + run_id[4:], clock_ms=clock,
+                                         code=ErrorCode.IDEMPOTENCY_CONFLICT, message="request_id was already used with different arguments; use a new id for a new command")
+                if clock > row["clock_ms"]:
+                    self.store.update_run(run_id, clock_ms=clock)
+                if tool == "session.finish" and receipt["response"]["status"] == "ok" and state not in TERMINAL:
+                    ctx = self._ctx(run_id)
+                    self._catch_up(ctx)
+                    self._finalize(ctx, RunState.BUDGET_EXHAUSTED if ctx.session.budget.exhausted else RunState.COMPLETED)
+                return Envelope.model_validate({**receipt["response"], "clock_ms": clock})
             if state in TERMINAL:
                 return Envelope.fail(request_id=request_id, session_id="ses_" + run_id[4:], clock_ms=row["clock_ms"], code=ErrorCode.SESSION_FINISHED, message=f"run is {state}")
             ctx = self._ctx(run_id)
@@ -880,7 +896,13 @@ class RunManager:
                 self._finalize(ctx, RunState.ENVIRONMENT_FAILED, error=f"{type(e).__name__}: {e}\n{tb}")
                 return Envelope.fail(request_id=request_id, session_id=ctx.session.session_id, clock_ms=ctx.session.now, code=ErrorCode.ENVIRONMENT_FIDELITY_LIMIT, message="environment failure; run marked environment_failed")
             LOG.info("session_command phase=persist run_id=%s clock_ms=%d", run_id, ctx.session.now)
-            self._persist_trace(ctx)
+            try:
+                self._persist_trace(ctx, env.model_dump(mode="json"))
+            except Exception:
+                # Rebuild from durable commands after an uncertain database write. The
+                # in-memory session may already have executed an uncommitted command.
+                self._contexts.pop(run_id, None)
+                raise
             updates: dict[str, Any] = {"clock_ms": ctx.session.now}
             if ctx.session.budget.exhausted and state != str(RunState.BUDGET_EXHAUSTED):
                 updates["state"] = str(RunState.BUDGET_EXHAUSTED)
@@ -890,13 +912,13 @@ class RunManager:
             LOG.info("session_command phase=complete run_id=%s status=%s clock_ms=%d elapsed_s=%.3f", run_id, env.status, ctx.session.now, time.monotonic() - started)
             return env
 
-    def _persist_trace(self, ctx: RunContext) -> None:
+    def _persist_trace(self, ctx: RunContext, response: dict | None = None) -> None:
         recs = ctx.session.trace[ctx.trace_written :]
         if not recs:
             return
         from dataclasses import asdict
 
-        self.store.append_trace(ctx.run_id, [asdict(r) for r in recs])
+        self.store.append_trace(ctx.run_id, [asdict(r) for r in recs], response=response)
         ctx.trace_written = len(ctx.session.trace)
 
     def _run_meta(self, ctx: RunContext, row: dict[str, Any]) -> dict[str, Any]:

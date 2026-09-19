@@ -45,9 +45,9 @@ TOOLS: dict[str, str] = {
     "broker.order": "Own order lifecycle and confirmed simulated fill records.",
     "portfolio.get": "Available/reserved/pending balances, holdings and valuation status.",
     "portfolio.history": "Own immutable ledger history, paginated.",
-    "clock.advance": "Advance virtual time to a relative time or the next observable event (bounded).",
+    "clock.advance": "Advance by advance_ms (relative), to_ms (absolute), or next_event: true with max_ms. Choose one. Errors include clock_ms for resynchronization.",
     "clock.wait": "Wait until until_ms or a delayed one-shot notification. Up to 32 conditions: new_pool (since_ms, min_visible_trades, min_numeraire_depth_raw), price_cross (pool_id, direction above/below, price), liquidity_below (pool_id, depth_raw), order_terminal (order_id). Never submits orders.",
-    "session.finish": "Stop agent decisions and apply the fixed terminal reporting procedure.",
+    "session.finish": "Requires confirm: true. Irreversible: advances to episode end and ends the run. Does not sell holdings. Never call from a transient-error handler; review portfolio and pending orders first.",
 }
 
 UNSUPPORTED_CAPABILITIES = [
@@ -326,10 +326,15 @@ class Session:
         )
 
     # ------------------------------------------------------------------ dispatcher
-    def handle(self, request_id: str, tool: str, arguments: dict[str, Any] | None, *, decision_elapsed_ms: int = 0) -> Envelope:
+    def handle(self, request_id: str, tool: str, arguments: dict[str, Any] | None, *, decision_elapsed_ms: int = 0, replaying: bool = False) -> Envelope:
         args = arguments or {}
         before = self.now
         try:
+            if tool == "session.finish" and isinstance(args, dict) and args.get("confirm") is not True and not replaying:
+                raise SessionError(ErrorCode.INVALID_REQUEST,
+                                   "Finish is irreversible, advances to episode end, and does not sell holdings. Review portfolio and pending orders, then send confirm: true deliberately. Never finish to recover from an error.",
+                                   {"confirmation_required": True, "clock_ms": self.now, "orders_total": len(self.sim.orders),
+                                    "pending_orders": len(self.sim.unresolved_orders()), "remaining_ms": max(0, self.sim.end_ms - self.now)})
             if tool not in TOOLS:
                 # A malformed name inside a known namespace is an invalid request; anything else the
                 # environment does not provide is a typed capability error, never a fabricated answer.
@@ -1207,7 +1212,12 @@ class Session:
             raise SessionError(ErrorCode.SESSION_FINISHED, "session already finished")
         before = self.now
         states_before = {o.order_id: o.state for o in self.sim.orders.values()}
-        if args.get("next_event"):
+        choices = sum(k in args for k in ("advance_ms", "to_ms", "next_event"))
+        if choices != 1:
+            raise SessionError(ErrorCode.INVALID_REQUEST, "Choose exactly one of advance_ms, to_ms or next_event")
+        if "advance_ms" in args:
+            target = self.now + self._int_arg(args, "advance_ms", required=True, minimum=1)
+        elif args.get("next_event"):
             max_ms = self._int_arg(args, "max_ms", default=3_600_000, minimum=1) or 3_600_000
             nxt = self.sim.next_observable_event_ms(self.now, max_ms)
             target = nxt if nxt is not None else min(self.now + max_ms, self.sim.end_ms)
@@ -1215,7 +1225,7 @@ class Session:
             to_ms = self._int_arg(args, "to_ms", required=True)
             assert to_ms is not None
             if to_ms < self.now:
-                raise SessionError(ErrorCode.INVALID_REQUEST, "to_ms is in the past", {"clock_ms": self.now})
+                raise SessionError(ErrorCode.INVALID_REQUEST, "to_ms is in the past; re-sync from clock_ms or use advance_ms", {"clock_ms": self.now})
             target = to_ms
         target = min(target, self.sim.end_ms)
         self.sim.process_until(target)
@@ -1259,7 +1269,7 @@ def replay_trace(pack: Pack, trace: list[dict[str, Any]], *, bankroll_raw: int, 
     """Re-execute recorded agent commands against a fresh session; used for action-replay reproducibility."""
     s = Session.create(session_id=session_id, pack=pack, bankroll_raw=bankroll_raw, mask_seed=mask_seed, engine_seed=engine_seed, mode=mode, resource_profile=resource_profile)
     for r in trace:
-        s.handle(r["request_id"], r["tool"], r.get("arguments") or {}, decision_elapsed_ms=r.get("decision_elapsed_ms", 0))
+        s.handle(r["request_id"], r["tool"], r.get("arguments") or {}, decision_elapsed_ms=r.get("decision_elapsed_ms", 0), replaying=r.get("status") == "ok")
         if r.get("delivered"):
             s.trace[-1].delivered = r["delivered"]
         else:

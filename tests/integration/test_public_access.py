@@ -270,7 +270,7 @@ def test_enrolling_again_adds_only_unfinished_episodes(tmp_path: Path, dev_pack_
     mgr.handle_command(token, "r1", "session.describe", {})
     duration = mgr.handle_command(token, "r2", "session.describe", {}).data["episode"]["duration_ms"]
     mgr.handle_command(token, "r3", "clock.advance", {"to_ms": duration})
-    assert mgr.handle_command(token, "r4", "session.finish", {}).status == "ok"
+    assert mgr.handle_command(token, "r4", "session.finish", {"confirm": True}).status == "ok"
     again = mgr.play(agent_token=joined["agent_token"])
     assert again["runs"] == [] and [s["pack_name"] for s in again["skipped"]] == ["base_day_2026-09-08"]
     ep = mgr.episodes_for(joined["agent_id"])[0]
@@ -315,7 +315,7 @@ def test_agent_history_reads_in_plain_words(tmp_path: Path, monkeypatch):
     token = played["runs"][0]["session_credential"]["token"]
     duration = mgr.handle_command(token, "r1", "session.describe", {}).data["episode"]["duration_ms"]
     mgr.handle_command(token, "r2", "clock.advance", {"to_ms": duration})
-    assert mgr.handle_command(token, "r3", "session.finish", {}).status == "ok"
+    assert mgr.handle_command(token, "r3", "session.finish", {"confirm": True}).status == "ok"
     c = TestClient(create_app(mgr, "adm_public_test"))
     h = mgr.agent_history(joined["agent_id"])
     day = h["days"][0]
@@ -353,7 +353,7 @@ def test_smoke_agents_are_hidden_from_the_public_and_never_rank(tmp_path: Path, 
         token = run["session_credential"]["token"]
         duration = mgr.handle_command(token, "r1", "session.describe", {}).data["episode"]["duration_ms"]
         mgr.handle_command(token, "r2", "clock.advance", {"to_ms": duration})
-        assert mgr.handle_command(token, "r3", "session.finish", {}).status == "ok"
+        assert mgr.handle_command(token, "r3", "session.finish", {"confirm": True}).status == "ok"
     assert [r["agent_name"] for r in c.get("/api/v1/runs").json()["items"]] == ["FreeTurtle"]
     assert [a["name"] for a in c.get("/api/v1/agents").json()["items"]] == ["FreeTurtle"]
     assert sorted(r["agent_name"] for r in c.get("/api/v1/runs", headers=admin).json()["items"]) == ["FreeTurtle", "smoke-skill-bot", "smoke_random_actions"]
