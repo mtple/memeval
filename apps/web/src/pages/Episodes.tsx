@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { list, post, get, type Pack, type Validation } from "../api";
 import { fmtDuration, fmtMs, fmtDate, humanize } from "../format";
-import { MarketCard } from "../MarketCard";
+import { MarketCard, marketLines, marketPct } from "../MarketCard";
 import { useRole } from "../role";
 import { Badge, Card, EmptyState, ErrorState, GateList, GateSummary, JsonView, KV, Loading, StrList, toneForStatus, useLoad } from "../ui";
 
@@ -52,8 +52,9 @@ export default function Episodes() {
                     <th>Kind</th>
                     <th>Dates</th>
                     <th className="num">Pools</th>
-                    <th className="num" title="the large Base tokens (DEGEN, BRETT, TOSHI, AERO, VIRTUAL, cbBTC) against ETH from the day's first to its last block, weighted by pool depth">Base tokens vs ETH</th>
-                    <th className="num" title="a stake of 0.01 ETH in every pool launched that day right after its first trade, sold at the close, before gas; most launches are rug pulls">New launches</th>
+                    <th className="num" title="every Base-native token with an ETH pool on Uniswap v2 or v3 that traded at both ends of the day, weighted by pool depth, in dollars">Base ecosystem</th>
+                    <th className="num" title="ETH in dollars over the day, from the deepest WETH/USDC pool">ETH</th>
+                    <th className="num" title="the combined market value of the ten largest coins over the day, from CoinGecko">Crypto market</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -67,24 +68,24 @@ export default function Episodes() {
                         <td>{p.kind === "real" ? <Badge tone="ok">Real data</Badge> : <Badge tone="warn">Generated data</Badge>}</td>
                         <td className="small">{p.period ? `${p.period.start_utc.slice(0, 10)} to ${p.period.end_utc.slice(0, 10)}` : fmtDuration(p.duration_ms, p.is_full_week)}</td>
                         <td className="num">{p.summary?.pools_executable ?? "?"}</td>
-                        <td className="num">
-                          {p.market_baseline?.ecosystem?.tokens?.length ? (
-                            <button type="button" className="rowbtn" onClick={() => setSelected(selected === p.pack_id ? null : p.pack_id)} aria-expanded={selected === p.pack_id}>
-                              {marketPct(p.market_baseline.ecosystem.depth_weighted_return_vs_eth ?? undefined)}
-                            </button>
-                          ) : (
-                            <span className="muted" title="not read yet">n/a</span>
-                          )}
-                        </td>
-                        <td className="num">
-                          {p.market_baseline?.launches?.pools_priced ? (
-                            <button type="button" className="rowbtn" onClick={() => setSelected(selected === p.pack_id ? null : p.pack_id)} aria-expanded={selected === p.pack_id}>
-                              {marketPct(p.market_baseline.launches.equal_weight_return)}
-                            </button>
-                          ) : (
-                            <span className="muted">n/a</span>
-                          )}
-                        </td>
+                        {(() => {
+                          const L = marketLines(p.market_baseline);
+                          const cell = (v: string | null) =>
+                            v === null ? (
+                              <span className="muted" title="not read yet">n/a</span>
+                            ) : (
+                              <button type="button" className="rowbtn" onClick={() => setSelected(selected === p.pack_id ? null : p.pack_id)} aria-expanded={selected === p.pack_id}>
+                                {marketPct(v)}
+                              </button>
+                            );
+                          return (
+                            <>
+                              <td className="num">{cell(L.baseUsd)}</td>
+                              <td className="num">{cell(L.ethUsd)}</td>
+                              <td className="num">{cell(L.crypto)}</td>
+                            </>
+                          );
+                        })()}
                         <td className="small">
                           <Link to={`/?pack=${p.pack_id}`}>Leaderboard</Link>
                         </td>
@@ -200,12 +201,6 @@ function Sel({ label, value, onChange, options }: { label: string; value: string
       </select>
     </label>
   );
-}
-
-function marketPct(v: string | undefined): string {
-  if (v === undefined) return "n/a";
-  const n = Number(v) * 100;
-  return `${n > 0 ? "+" : ""}${n.toFixed(Math.abs(n) < 10 ? 1 : 0)}%`;
 }
 
 function PackDetail({ pack: p, onClose }: { pack: Pack; onClose: () => void }) {

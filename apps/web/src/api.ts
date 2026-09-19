@@ -523,10 +523,12 @@ export type MarketBasket = {
   worst_return?: string;
 };
 /** What the market itself did on a recorded day: a naive fixed stake in every pool, sold at the close. Never a verdict. */
-export type EcosystemToken = { symbol: string; pool_fee_pips: number; eth_depth_start_raw: string; return_vs_eth: string };
-/** The large Base tokens against ETH at the day's first and last block, plus ETH in dollars. Read through the RPC, not from the tape. */
-export type Ecosystem = { basis: string; tokens: EcosystemToken[]; tokens_expected: string[]; equal_weight_return_vs_eth: string | null; depth_weighted_return_vs_eth: string | null; eth_usd_return: string | null; numeraire_hold_return: string; notes: string[]; caveats: string[] };
-export type MarketBaseline = { basis: string; rule: string; stake?: string; numeraire_hold_return: string; launches: MarketBasket; established: MarketBasket; all_pools: MarketBasket; caveats: string[]; ecosystem?: Ecosystem | null };
+export type BaseTokens = { tokens: number; pools?: number; depth_weighted_return_vs_eth?: string | null; equal_weight_return_vs_eth?: string | null; median_return_vs_eth?: string | null; share_up?: string | null; share_down?: string | null; p10_return_vs_eth?: string | null; p90_return_vs_eth?: string | null; excluded_not_native?: string[] };
+/** Read through the RPC: every Base-native token with an ETH pool, and ETH and BTC in dollars. */
+export type Ecosystem = { basis: string; pools_observed: number; base_tokens: BaseTokens; eth_usd_return: string | null; btc_usd_return: string | null; numeraire_hold_return: string; notes: string[]; caveats: string[] };
+/** The ten largest coins' market value at the day's start and end, from CoinGecko. */
+export type CryptoMarket = { basis: string; coins: { id: string; market_cap_start_usd: string; market_cap_end_usd: string; return: string }[]; coins_expected: string[]; market_cap_start_usd: string; market_cap_end_usd: string; return: string; notes: string[]; caveats: string[] };
+export type MarketBaseline = { basis: string; rule: string; stake?: string; numeraire_hold_return: string; launches: MarketBasket; established: MarketBasket; all_pools: MarketBasket; caveats: string[]; ecosystem?: Ecosystem | null; crypto_market?: CryptoMarket | null };
 export type LeaderboardCategory = { kind: "suite" | "pack" | "all"; id: string; label: string; description?: string; episodes: string[]; market?: MarketBaseline | null; market_note?: string | null };
 export type LeaderboardRow = {
   comparison_group?: string;

@@ -74,6 +74,8 @@ def test_sidecar_round_trip_does_not_touch_the_pack(tmp_path: Path):
     read = read_market_baseline(d)
     assert read == json.loads((d / BASELINE_FILE).read_text()) == written
     assert read_market_baseline(tmp_path / "nowhere") is None
-    sentence = baseline_sentence(read)
-    assert sentence and "Market that day" in sentence and "0%" in sentence
+    assert baseline_sentence(read) is None  # the sentence needs the network-read lines, which a fixture day lacks
+    with_lines = {**read, "ecosystem": {"base_tokens": {"tokens": 3, "depth_weighted_return_vs_eth": "0.010000"}, "eth_usd_return": "0.020000"}, "crypto_market": {"return": "-0.015000", "coins": [{}] * 10}}
+    sentence = baseline_sentence(with_lines)
+    assert sentence.startswith("Market that day: the Base ecosystem +3.0% in dollars (+1.0% against ETH, 3 tokens") and "ETH +2.0%" in sentence and "the crypto market -1.5%" in sentence
     assert baseline_sentence(None) is None and baseline_sentence({"launches": {"pools_priced": 0}}) is None

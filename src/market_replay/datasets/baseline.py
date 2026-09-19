@@ -253,8 +253,9 @@ def write_market_baseline(pack_dir: Path | str) -> dict[str, Any]:
     pack = Pack.load(p, verify_hashes=False)
     out = compute_market_baseline(pack)
     previous = read_market_baseline(p) or {}
-    if previous.get("ecosystem"):
-        out["ecosystem"] = previous["ecosystem"]  # read through the RPC by the ecosystem collector; the tape cannot rebuild it
+    for key in ("ecosystem", "crypto_market"):  # read by the collectors through the network; the tape cannot rebuild them
+        if previous.get(key):
+            out[key] = previous[key]
     (p / BASELINE_FILE).write_text(json.dumps(out, indent=1, sort_keys=True) + "\n")
     return out
 
@@ -268,28 +269,43 @@ def read_market_baseline(pack_dir: Path | str) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def baseline_sentence(b: dict[str, Any] | None) -> str | None:
-    """One plain sentence for a leaderboard or an episode list: the large Base tokens against ETH when
-    the ecosystem section exists, then the launch basket. Never a verdict."""
+def market_lines(b: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The three numbers shown for a day: Base ecosystem, ETH and the crypto market, each as a
+    fractional change in dollars over the day, with the ecosystem also against ETH. None where a
+    line has not been read."""
     if not b:
         return None
-    pct = lambda s: f"{float(s) * 100:+.1f}%" if s is not None else "unknown"  # noqa: E731
-    share = lambda s: f"{float(s) * 100:.0f}%" if s is not None else "unknown"  # noqa: E731
-    parts: list[str] = []
     eco = b.get("ecosystem") or {}
-    if eco.get("tokens"):
-        names = ", ".join(t["symbol"] for t in eco["tokens"])
-        parts.append(f"Market that day: the large Base tokens ({names}) moved {pct(eco.get('depth_weighted_return_vs_eth'))} against ETH, weighted by pool depth ({pct(eco.get('equal_weight_return_vs_eth'))} equal-weight)")
-        if eco.get("eth_usd_return") is not None:
-            parts[-1] += f"; ETH itself moved {pct(eco['eth_usd_return'])} in dollars"
-        parts[-1] += ". Holding ETH returned 0% in ETH terms."
-    L = b.get("launches") or {}
-    if L.get("pools_priced"):
-        lead = "New launches: " if parts else "Market that day: "
-        parts.append(
-            f"{lead}a stake of {b.get('stake', '0.01')} in every one of the {L['pools_priced']} pools launched that day right after its first trade, sold at the close, would have returned {pct(L.get('equal_weight_return'))} "
-            f"before gas; the median launch returned {pct(L.get('median_return'))} and {share(L.get('share_drained'))} had their liquidity pulled."
-        )
-        if len(parts) == 1:
-            parts[-1] += " Holding ETH returned 0%."
-    return " ".join(parts) or None
+    tokens = eco.get("base_tokens") or {}
+    vs_eth = tokens.get("depth_weighted_return_vs_eth")
+    eth_usd = eco.get("eth_usd_return")
+    base_usd = None
+    if vs_eth is not None and eth_usd is not None:
+        base_usd = f"{(1 + float(vs_eth)) * (1 + float(eth_usd)) - 1:.6f}"
+    crypto = b.get("crypto_market") or {}
+    return {
+        "base_ecosystem_usd": base_usd,
+        "base_ecosystem_vs_eth": vs_eth,
+        "base_ecosystem_tokens": tokens.get("tokens"),
+        "base_ecosystem_median_vs_eth": tokens.get("median_return_vs_eth"),
+        "base_ecosystem_share_up": tokens.get("share_up"),
+        "eth_usd": eth_usd,
+        "btc_usd": eco.get("btc_usd_return"),
+        "crypto_market_usd": crypto.get("return"),
+        "crypto_market_coins": len(crypto.get("coins") or []) or None,
+    }
+
+
+def baseline_sentence(b: dict[str, Any] | None) -> str | None:
+    """One plain sentence for a leaderboard or an episode list: what Base, ETH and the crypto market
+    did that day. Never a verdict."""
+    lines = market_lines(b)
+    if not lines:
+        return None
+    pct = lambda s: f"{float(s) * 100:+.1f}%" if s is not None else "not read"  # noqa: E731
+    if lines["base_ecosystem_usd"] is None and lines["eth_usd"] is None and lines["crypto_market_usd"] is None:
+        return None
+    parts = [f"Market that day: the Base ecosystem {pct(lines['base_ecosystem_usd'])} in dollars ({pct(lines['base_ecosystem_vs_eth'])} against ETH, {lines['base_ecosystem_tokens'] or 0} tokens weighted by pool depth)"]
+    parts.append(f"ETH {pct(lines['eth_usd'])}")
+    parts.append(f"the crypto market {pct(lines['crypto_market_usd'])}")
+    return ", ".join(parts) + ". Holding ETH returned 0% in ETH terms, which is what results are scored in."

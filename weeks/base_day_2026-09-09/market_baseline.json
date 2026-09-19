@@ -22,77 +22,59 @@
   "Not a prediction and not a benchmark strategy: it says what a fixed small stake in everything would have seen that day."
  ],
  "ecosystem": {
-  "basis": "base_large_token_basket_vs_eth_v1",
+  "base_tokens": {
+   "depth_weighted_return_vs_eth": "-0.030218",
+   "equal_weight_return_vs_eth": "0.045048",
+   "eth_depth_total_raw": "230094256977815693441412",
+   "excluded_not_native": [
+    "DAI",
+    "EURC",
+    "USDC",
+    "USDT",
+    "USDbC",
+    "cbBTC",
+    "cbETH",
+    "rETH",
+    "weETH",
+    "wstETH"
+   ],
+   "largest_weight": "0.100000",
+   "median_return_vs_eth": "-0.015687",
+   "p10_return_vs_eth": "-0.118306",
+   "p90_return_vs_eth": "0.088621",
+   "pools": 176,
+   "share_down": "0.648438",
+   "share_up": "0.351562",
+   "tokens": 128,
+   "weight_cap": "0.1"
+  },
+  "basis": "base_native_tokens_vs_eth_all_eth_pools_v2",
+  "btc_usd_return": "-0.004542",
   "budget": {
-   "failures": 0,
-   "max_requests": 600,
-   "requests": 123,
-   "response_bytes": 5548448,
-   "retries": 0
+   "failures": 1,
+   "max_requests": 1500,
+   "requests": 61,
+   "response_bytes": 29129747,
+   "retries": 1
   },
   "caveats": [
-   "A fixed basket of six large Base tokens against ETH, not a published index and not weighted by market value; the depth-weighted line weights each token by the ETH its deepest v3 pool held at the start of the day.",
-   "Prices are the pool price after the first swap of the day and after the last swap of the day in one Uniswap v3 pool, so they include no fees or slippage.",
-   "ETH in dollars comes from the deepest WETH/USDC v3 pool on Base, not from an exchange.",
-   "Returns against ETH are what an agent's final ETH return can be compared with; the dollar line only says what ETH itself did."
+   "Base tokens: every token with an ETH pool on Uniswap v2 or v3 that traded in both the first and the last 20 minutes of the day; a token that went quiet at either end is not counted. Weighted by the ETH its pools held at the start, with no token above a tenth of the total, so the line follows the big tokens without one of them deciding it; the equal-weight and median lines give the small ones their say.",
+   "Prices are pool prices after a swap, with no fees or slippage; the ETH depth of a concentrated pool is an upper bound from its active liquidity.",
+   "ETH and BTC in dollars come from the deepest WETH/USDC and cbBTC/USDC or cbBTC/WETH pools on Base, not from an exchange.",
+   "Returns against ETH are what an agent's final ETH return can be compared with; the dollar lines say what the majors did, which an ETH-denominated result does not see."
   ],
-  "depth_weighted_return_vs_eth": "0.003791",
+  "edge_blocks": 600,
   "end_block": 51104526,
   "end_utc_ms": 1788998401000,
-  "equal_weight_return_vs_eth": "-0.038442",
   "eth_usd_return": "-0.009401",
   "notes": [
-   "ETH/USD read from the 0.3% WETH/USDC v3 pool: 2484.46 at the start, 2461.10 at the end"
+   "ETH in dollars from the deepest WETH/USDC pool: 2484.46 at the start, 2461.10 at the end",
+   "BTC in dollars from the deepest cbBTC/WETH pool times ETH in dollars: 78421 at the start, 78064 at the end"
   ],
   "numeraire_hold_return": "0.000000",
+  "pools_observed": 543,
   "start_block": 51061327,
-  "start_utc_ms": 1788912001000,
-  "tokens": [
-   {
-    "eth_depth_start_raw": "301339280024782708744",
-    "pool_fee_pips": 10000,
-    "return_vs_eth": "0.037534",
-    "symbol": "DEGEN"
-   },
-   {
-    "eth_depth_start_raw": "164971332633610006171",
-    "pool_fee_pips": 3000,
-    "return_vs_eth": "-0.053544",
-    "symbol": "BRETT"
-   },
-   {
-    "eth_depth_start_raw": "309982468800092337282",
-    "pool_fee_pips": 10000,
-    "return_vs_eth": "-0.058623",
-    "symbol": "TOSHI"
-   },
-   {
-    "eth_depth_start_raw": "1042871067424945672710",
-    "pool_fee_pips": 3000,
-    "return_vs_eth": "-0.092260",
-    "symbol": "AERO"
-   },
-   {
-    "eth_depth_start_raw": "688790564151380129518",
-    "pool_fee_pips": 500,
-    "return_vs_eth": "-0.068528",
-    "symbol": "VIRTUAL"
-   },
-   {
-    "eth_depth_start_raw": "172148014340234846277596",
-    "pool_fee_pips": 500,
-    "return_vs_eth": "0.004770",
-    "symbol": "cbBTC"
-   }
-  ],
-  "tokens_expected": [
-   "DEGEN",
-   "BRETT",
-   "TOSHI",
-   "AERO",
-   "VIRTUAL",
-   "cbBTC"
-  ]
+  "start_utc_ms": 1788912001000
  },
  "established": {
   "best_return": "4.582359",

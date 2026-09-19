@@ -125,15 +125,18 @@ The file carries the equal-weight return, the median pool, the share that ended 
 whose liquidity was pulled and the best and worst pool, for launches and for established pools.
 `market-replay packs baseline weeks/<name>` regenerates it.
 
-On Base that launch basket is a rug-pull statistic (two thirds of launches have their liquidity
-pulled the same day), so the file also carries the ecosystem: DEGEN, BRETT, TOSHI, AERO, VIRTUAL
-and cbBTC against ETH from the day's first block to its last, equal-weight and weighted by the ETH
-in each token's deepest Uniswap v3 pool, plus ETH itself in dollars from the WETH/USDC pool. That
-part needs the RPC (about 120 read-only requests, symbols checked on chain); the day build reads it
-when the endpoint is set, and `market-replay packs ecosystem weeks` (or a `baseline` commit on the
-`record-week` branch) fills it in for every committed day that lacks it. On the site it appears
-under the day's leaderboard, on the Days page and on every result of that day, always with its
-caveats.
+That launch basket is a rug-pull statistic on Base (two thirds of launches lose their liquidity
+the same day), so the site shows three market lines instead, each read after the day is built and
+kept in the same file: the Base ecosystem (every Base-native token with an ETH pool on Uniswap v2
+or v3 that traded in both the first and the last twenty minutes of the day, against ETH and in
+dollars, weighted by the ETH its pools hold; stablecoins and wrapped majors excluded, nothing
+chosen by hand), ETH in dollars from the deepest WETH/USDC pool, and the crypto market as the
+combined market value of the ten largest coins from CoinGecko's public API, the one off-chain
+source in the project. The chain part costs about 100 read-only requests from Swap and Sync logs
+(public endpoints prune old state but keep logs) plus Multicall3 for the pools' token pairs; the
+day build reads it when the endpoint is set, and `market-replay packs ecosystem weeks` (or a
+`baseline` commit on the `record-week` branch) fills it in for every committed day whose lines
+are missing or from an older rule. Every line carries its own caveats.
 
 ## Step 6. Checking
 

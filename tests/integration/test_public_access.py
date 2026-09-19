@@ -256,7 +256,7 @@ def test_enrolling_again_adds_only_unfinished_episodes(tmp_path: Path, dev_pack_
     ep = joined["episodes"][0]
     assert ep["your_status"] == "new" and ep["agents_ranked"] == 0 and ep["top_return"] is None
     assert ep["pools_tradable"] >= 1 and ep["tape_events"] >= 1 and ep["gas_per_fill_raw"] == "0" and ep["date"]  # a fixture-built pack measured no gas
-    assert ep["market"]["launches"]["pools_priced"] == 1 and "pack_id" not in ep["market"] and ep["market_note"].startswith("Market that day")
+    assert ep["market"]["launches"]["pools_priced"] == 1 and "pack_id" not in ep["market"] and ep["market_note"] is None  # no network line was read for a fixture day
     cat = mgr.leaderboard(pack_id=ep["pack_id"])["category"]
     assert cat["market_note"] == ep["market_note"] and cat["market"]["basis"] == ep["market"]["basis"]
     assert mgr.pack_row(ep["pack_id"])["market_baseline"]["launches"] == ep["market"]["launches"]
@@ -308,7 +308,7 @@ def test_agent_history_reads_in_plain_words(tmp_path: Path, monkeypatch):
     h = mgr.agent_history(joined["agent_id"])
     assert len(h["days"]) == 1 and h["totals"]["runs_in_progress"] == 1
     day = h["days"][0]
-    assert day["kind"] == "real" and day["available"] and day["market_note"].startswith("Market that day") and day["counted_run_id"] is None
+    assert day["kind"] == "real" and day["available"] and day["market_note"] is None and day["counted_run_id"] is None
     assert "in progress" in day["summary"] and day["runs"][0]["run_id"] == run_id
     assert day["runs"][0]["outcome"].startswith("Waiting for the agent") and day["runs"][0]["counts_for_ranking"] is False
     # the session finishes the day holding ETH: a ranked result of exactly 0

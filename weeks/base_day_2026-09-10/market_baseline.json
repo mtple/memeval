@@ -21,6 +21,61 @@
   "Pools with no recorded swap in the day are left out, so the basket is the pools that traded at least once.",
   "Not a prediction and not a benchmark strategy: it says what a fixed small stake in everything would have seen that day."
  ],
+ "ecosystem": {
+  "base_tokens": {
+   "depth_weighted_return_vs_eth": "-0.011017",
+   "equal_weight_return_vs_eth": "0.012156",
+   "eth_depth_total_raw": "201183061395651467607533",
+   "excluded_not_native": [
+    "DAI",
+    "EURC",
+    "USDC",
+    "USDT",
+    "USDbC",
+    "cbBTC",
+    "cbETH",
+    "rETH",
+    "weETH",
+    "wstETH"
+   ],
+   "largest_weight": "0.100000",
+   "median_return_vs_eth": "-0.004187",
+   "p10_return_vs_eth": "-0.062527",
+   "p90_return_vs_eth": "0.086616",
+   "pools": 180,
+   "share_down": "0.604651",
+   "share_up": "0.395349",
+   "tokens": 129,
+   "weight_cap": "0.1"
+  },
+  "basis": "base_native_tokens_vs_eth_all_eth_pools_v2",
+  "btc_usd_return": "-0.017298",
+  "budget": {
+   "failures": 4,
+   "max_requests": 1500,
+   "requests": 64,
+   "response_bytes": 41418825,
+   "retries": 4
+  },
+  "caveats": [
+   "Base tokens: every token with an ETH pool on Uniswap v2 or v3 that traded in both the first and the last 20 minutes of the day; a token that went quiet at either end is not counted. Weighted by the ETH its pools held at the start, with no token above a tenth of the total, so the line follows the big tokens without one of them deciding it; the equal-weight and median lines give the small ones their say.",
+   "Prices are pool prices after a swap, with no fees or slippage; the ETH depth of a concentrated pool is an upper bound from its active liquidity.",
+   "ETH and BTC in dollars come from the deepest WETH/USDC and cbBTC/USDC or cbBTC/WETH pools on Base, not from an exchange.",
+   "Returns against ETH are what an agent's final ETH return can be compared with; the dollar lines say what the majors did, which an ETH-denominated result does not see."
+  ],
+  "edge_blocks": 600,
+  "end_block": 51147726,
+  "end_utc_ms": 1789084801000,
+  "eth_usd_return": "-0.007869",
+  "notes": [
+   "ETH in dollars from the deepest WETH/USDC pool: 2461.10 at the start, 2441.73 at the end",
+   "BTC in dollars from the deepest cbBTC/WETH pool times ETH in dollars: 78068 at the start, 76718 at the end"
+  ],
+  "numeraire_hold_return": "0.000000",
+  "pools_observed": 553,
+  "start_block": 51104527,
+  "start_utc_ms": 1788998401000
+ },
  "established": {
   "best_return": "0.007338",
   "equal_weight_return": "-0.710122",

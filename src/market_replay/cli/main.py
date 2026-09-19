@@ -129,26 +129,43 @@ def packs_ecosystem(
     path: Path,
     rpc_url_env: str = typer.Option("BASE_RPC_URL", help="name of the environment variable holding the read-only RPC endpoint"),
 ) -> None:
-    """Read the Base ecosystem basket (DEGEN, BRETT, TOSHI, AERO, VIRTUAL, cbBTC against ETH, and ETH in
-    dollars) at the pack's first and last block and merge it into market_baseline.json. About 120
-    read-only RPC requests. Pass a pack directory, or a weeks directory to do every day that lacks it."""
-    from ..collectors.ecosystem import write_ecosystem
+    """Read the market lines for a day and merge them into market_baseline.json: the Base ecosystem
+    (every Base-native token with an ETH pool, weighted by depth) and ETH and BTC in dollars through
+    the RPC, and the crypto market (the ten largest coins' market value) from CoinGecko. Pass a pack
+    directory, or a weeks directory to do every day whose lines are missing or from an older rule."""
+    from ..collectors.crypto import CRYPTO_BASIS, write_crypto_market
+    from ..collectors.ecosystem import ECOSYSTEM_BASIS, write_ecosystem
     from ..datasets.baseline import read_market_baseline
 
-    dirs = [path] if (path / "manifest.yaml").exists() else sorted(d for d in path.iterdir() if (d / "manifest.yaml").exists() and not (read_market_baseline(d) or {}).get("ecosystem"))
+    def stale(d: Path) -> tuple[bool, bool]:
+        b = read_market_baseline(d) or {}
+        return (b.get("ecosystem") or {}).get("basis") != ECOSYSTEM_BASIS, (b.get("crypto_market") or {}).get("basis") != CRYPTO_BASIS
+
+    dirs = [path] if (path / "manifest.yaml").exists() else sorted(d for d in path.iterdir() if (d / "manifest.yaml").exists() and any(stale(d)))
     failed = 0
     for d in dirs:
-        try:
-            eco = write_ecosystem(d, rpc_url_env=rpc_url_env)
-        except Exception as e:  # the next day still gets its turn; the message names no endpoint
-            failed += 1
-            typer.echo(f"{d.name}: not read ({type(e).__name__}: {e})", err=True)
-            continue
-        typer.echo(f"{d.name}: {len(eco['tokens'])} tokens, depth-weighted {eco['depth_weighted_return_vs_eth']} vs ETH, ETH/USD {eco['eth_usd_return']}, {eco['budget']['requests']} requests", err=True)
-        for n in eco["notes"]:
-            typer.echo(f"  | {n}", err=True)
+        need_eco, need_crypto = stale(d) if path != d else (True, True)
+        if need_eco:
+            try:
+                eco = write_ecosystem(d, rpc_url_env=rpc_url_env)
+                t = eco["base_tokens"]
+                typer.echo(f"{d.name}: Base ecosystem {t.get('depth_weighted_return_vs_eth')} vs ETH over {t.get('tokens')} tokens, ETH/USD {eco['eth_usd_return']}, BTC/USD {eco['btc_usd_return']}, {eco['budget']['requests']} requests", err=True)
+                for n in eco["notes"]:
+                    typer.echo(f"  | {n}", err=True)
+            except Exception as e:  # the next day still gets its turn; the message names no endpoint
+                failed += 1
+                typer.echo(f"{d.name}: ecosystem not read ({type(e).__name__}: {e})", err=True)
+        if need_crypto:
+            try:
+                c = write_crypto_market(d)
+                typer.echo(f"{d.name}: crypto market {c['return']} over {len(c['coins'])} coins, {c['budget']['requests']} requests", err=True)
+                for n in c["notes"]:
+                    typer.echo(f"  | {n}", err=True)
+            except Exception as e:
+                failed += 1
+                typer.echo(f"{d.name}: crypto market not read ({type(e).__name__}: {e})", err=True)
     if not dirs:
-        typer.echo("every day already carries the ecosystem section", err=True)
+        typer.echo("every day already carries the market lines", err=True)
     if failed:
         raise typer.Exit(1)
 
@@ -417,14 +434,16 @@ def week(
         raise typer.Exit(1)
     import shutil
 
+    from ..collectors.crypto import write_crypto_market
     from ..collectors.ecosystem import write_ecosystem
     from ..datasets.baseline import write_market_baseline
 
     write_market_baseline(out / name)
-    try:
-        write_ecosystem(out / name, rpc_url_env=rpc_url_env)
-    except Exception as e:  # the day is complete without it; `packs ecosystem` adds it later
-        typer.echo(f"ecosystem basket not read ({e}); run: market-replay packs ecosystem {out / name}", err=True)
+    for label, fn in (("Base ecosystem", lambda: write_ecosystem(out / name, rpc_url_env=rpc_url_env)), ("crypto market", lambda: write_crypto_market(out / name))):
+        try:
+            fn()
+        except Exception as e:  # the day is complete without it; `packs ecosystem` adds it later
+            typer.echo(f"{label} line not read ({type(e).__name__}: {e}); run: market-replay packs ecosystem {out / name}", err=True)
     shutil.rmtree(work, ignore_errors=True)
     typer.echo(f"done: {out / name} qualifies as research. Commit it: git add {out / name} && git commit -m 'Base {unit} of {t0:%Y-%m-%d}' && git push", err=True)
 
