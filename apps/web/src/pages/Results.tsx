@@ -2,7 +2,7 @@ import { DecisionTimeline } from "../DecisionTimeline";
 import { TradeReview } from "../TradeReview";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { MarketCard } from "../MarketCard";
+import { marketLines, marketPct } from "../MarketCard";
 import { get, post, type Pack, type Report, type ReplayResult, type Run } from "../api";
 import { DIMENSION_ORDER, dimensionLabel, explainDimension, summarySentence } from "../explain";
 import { fmtAmount, fmtDuration, fmtMs, fmtPct, fmtRaw, fmtReturn, humanize, shortHash } from "../format";
@@ -58,16 +58,44 @@ export default function Results() {
       {rep.loading && !R && <Loading what="report" />}
       {R && (
         <>
-          <Card title="Run validity">
-            {R.execution_validity ? <>
-              <p className={R.provisional ? "notice warn" : "muted"}>{R.provisional ? "Provisional outcome. This run is excluded from ranking under the execution eligibility rule." : "This run passes the execution eligibility gates for its declared model and resource profile."}</p>
-              <KV rows={R.execution_validity.gates.map(g => [humanize(g.gate), g.passed ? "Pass" : "Excluded"])} />
-              <p className="small muted">Rule: {R.execution_validity.rule_version}. {R.execution_validity.capacity_policy} Rejections: {R.execution_validity.capacity_rejections}.</p>
-            </> : <p className="notice">This report predates execution eligibility gates. A fresh run is needed for the current protocol.</p>}
-            <KV rows={[["Isolation", humanize(R.status_dimensions.isolation)], ["Token behavior", humanize(R.status_dimensions.token_behavior)], ["Data completeness at delivery", Object.entries(R.activity.quality_exposure?.delivered_completeness ?? {}).map(([k, v]) => `${humanize(k)}: ${v}`).join(", ") || "Not recorded"], ["Stale deliveries", R.activity.quality_exposure?.stale_deliveries ?? "Not recorded"], ["Prior attempts", Math.max(0, Number(R.run.attempt_number ?? 1) - 1)], ["Predictive validity", "Not established"]]} />
-            {R.resource_profile && <KV rows={[["Resource profile", humanize(R.resource_profile.profile_id)], ["Computation treatment", R.resource_profile.decision_latency_basis], ["Assumed decision time", `${R.resource_profile.decision_latency_ms} ms`], ["Execution stress", R.resource_profile.stress_basis]]} />}
-          </Card>
-          <Card title="Trading outcome">
+          {(() => {
+            const ranked = R.outcome.primary_metric === "final_cash_return_v1" && R.outcome.headline_return !== null && !R.provisional;
+            const ret = R.outcome.headline_return === null ? null : Number(R.outcome.headline_return);
+            const tone = ret === null ? "na" : ret > 0 ? "up" : ret < 0 ? "down" : "";
+            const L = marketLines(pack.data?.market_baseline);
+            const cmp = (v: string | null) => (v === null ? "not read" : marketPct(v));
+            return (
+              <section className="card hero-result">
+                <div className="hero-main">
+                  <span className="lbl">{R.outcome.primary_metric === "final_cash_return_v1" ? "Final ETH return after gas and fees" : "Legacy portfolio return, not ranked"}</span>
+                  <span className={`hero-number ${tone}`}>{ret === null ? "not stated" : fmtReturn(R.outcome.headline_return)}</span>
+                  <span className="hero-sub">
+                    Started with {fmtRaw(R.outcome.initial_equity_raw, dec)} {unit}, ended with {fmtRaw(R.outcome.final_cash_raw ?? null, dec)} {unit} in settled {unit}.
+                    {R.provisional ? " Provisional: excluded from ranking under the execution eligibility rule." : ranked ? " This is the number that ranks on the leaderboard." : R.outcome.primary_metric !== "final_cash_return_v1" ? " Scored under the old rule, so it does not rank; play the day again for a ranked result." : " Not ranked."}
+                  </span>
+                </div>
+                <div className="hero-side">
+                  <span className="lbl">The market that day, in dollars</span>
+                  <div className="hero-lines">
+                    <div>
+                      <span className="k">Base ecosystem</span>
+                      <span className="v">{cmp(L.baseUsd)}</span>
+                    </div>
+                    <div>
+                      <span className="k">ETH</span>
+                      <span className="v">{cmp(L.ethUsd)}</span>
+                    </div>
+                    <div>
+                      <span className="k">Crypto market</span>
+                      <span className="v">{cmp(L.crypto)}</span>
+                    </div>
+                  </div>
+                  <span className="lbl">Results are in ETH, so holding ETH is 0%. Base ecosystem {L.vsEth === null ? "not read" : `${marketPct(L.vsEth)} against ETH`}.</span>
+                </div>
+              </section>
+            );
+          })()}
+          <Card title="What happened">
             <p style={{ fontSize: 15, margin: 0 }}>
               {summarySentence({
                 agent: run.data?.agent_name ?? "The agent",
@@ -86,14 +114,11 @@ export default function Results() {
                 unpriced: (R.unresolved.unpriced_inventory?.length ?? 0) + (R.unresolved.no_route_inventory?.length ?? 0),
               })}
             </p>
-            <div className="metrics" style={{ marginTop: 12 }}>
-              <M label="Final settled ETH/cash" value={fmtRaw(R.outcome.final_cash_raw ?? null, dec)} sub={unit} />
-              <M label="Started with" value={fmtRaw(R.outcome.initial_equity_raw, dec)} sub={unit} />
-              <M label={R.outcome.primary_metric === "final_cash_return_v1" ? "Liquidatable portfolio value (secondary)" : "Legacy final portfolio value"} value={R.outcome.terminal_model_equity_raw === null ? "could not be valued" : fmtRaw(R.outcome.terminal_model_equity_raw, dec)} sub={R.outcome.terminal_model_equity_raw === null ? undefined : unit} warn={R.outcome.terminal_model_equity_raw === null} />
-              <M label={R.outcome.primary_metric === "final_cash_return_v1" ? "Final ETH/cash return" : "Legacy portfolio return (unranked)"} value={R.outcome.headline_return === null ? "not stated" : fmtReturn(R.outcome.headline_return)} warn={R.outcome.headline_return === null} />
-              <M label="Worst drop from a peak" value={R.risk.max_drawdown === null ? "not supportable" : fmtPct(R.risk.max_drawdown)} warn={R.risk.max_drawdown === null} />
+            <div className="metrics secondary" style={{ marginTop: 12 }}>
               <M label="Orders filled" value={`${R.activity.confirmed_fills} of ${R.activity.orders_total}`} sub={R.activity.reverted || R.activity.expired ? `${R.activity.reverted} reverted, ${R.activity.expired} expired` : undefined} />
               <M label="Gas paid" value={fmtRaw(R.costs.gas_total_raw, dec)} sub={unit} />
+              <M label="Worst drop from a peak" value={R.risk.max_drawdown === null ? "not supportable" : fmtPct(R.risk.max_drawdown)} warn={R.risk.max_drawdown === null} />
+              <M label="Unsold holdings, if sold through the model" value={R.outcome.terminal_model_equity_raw === null ? "could not be valued" : fmtRaw(R.outcome.terminal_model_equity_raw, dec)} sub={R.outcome.terminal_model_equity_raw === null ? "does not affect the ranked number" : `${unit} total; not part of the ranked number`} warn={R.outcome.terminal_model_equity_raw === null} />
             </div>
             {R.outcome.valuation_warnings?.length > 0 && (
               <div className="notice" style={{ marginTop: 10 }}>
@@ -108,11 +133,8 @@ export default function Results() {
             )}
           </Card>
 
-          {R.attribution && <Card title="Concentration and trade dependence"><KV rows={[["Largest asset share of buy notional", fmtPct(R.attribution.largest_asset_share_of_buy_notional)], ["Best sale's share of positive realized contributions", fmtPct(R.attribution.best_trade_share_of_positive_realized_contributions)], ["Cash reference return", fmtReturn(R.attribution.cash_reference_return)]]} /><p className="muted small">{R.attribution.note}</p></Card>}
-          <DecisionTimeline key={`timeline-${id}`} runId={id} />
-          {R.execution_evidence && <Card title="Execution evidence"><KV rows={Object.entries(R.execution_evidence.mechanics).map(([key, value]) => [humanize(key), humanize(value)])} /><p className="muted small">{humanize(R.execution_evidence.flow_basis)}. {R.execution_evidence.calibration}</p></Card>}
-          {pack.data?.market_baseline && <MarketCard market={pack.data.market_baseline} compact />}
           <TradeReview key={id} runId={id} />
+          <DecisionTimeline key={`timeline-${id}`} runId={id} />
           <Card title="How much to trust this">
             <ul className="plain" style={{ paddingLeft: 18 }}>
               {DIMENSION_ORDER.map((k) => (
@@ -135,12 +157,22 @@ export default function Results() {
                 </ul>
               </>
             )}
+            <h3>Run validity</h3>
+            {R.execution_validity ? <>
+              <p className={R.provisional ? "notice warn" : "muted"}>{R.provisional ? "Provisional outcome. This run is excluded from ranking under the execution eligibility rule." : "This run passes the execution eligibility gates for its declared model and resource profile."}</p>
+              <KV rows={R.execution_validity.gates.map(g => [humanize(g.gate), g.passed ? "Pass" : "Excluded"])} />
+              <p className="small muted">Rule: {R.execution_validity.rule_version}. {R.execution_validity.capacity_policy} Rejections: {R.execution_validity.capacity_rejections}.</p>
+            </> : <p className="notice">This report predates execution eligibility gates. A fresh run is needed for the current protocol.</p>}
+            <KV rows={[["Isolation", humanize(R.status_dimensions.isolation)], ["Token behavior", humanize(R.status_dimensions.token_behavior)], ["Data completeness at delivery", Object.entries(R.activity.quality_exposure?.delivered_completeness ?? {}).map(([k, v]) => `${humanize(k)}: ${v}`).join(", ") || "Not recorded"], ["Stale deliveries", R.activity.quality_exposure?.stale_deliveries ?? "Not recorded"], ["Prior attempts", Math.max(0, Number(R.run.attempt_number ?? 1) - 1)], ["Predictive validity", "Not established"]]} />
+            {R.resource_profile && <KV rows={[["Resource profile", humanize(R.resource_profile.profile_id)], ["Computation treatment", R.resource_profile.decision_latency_basis], ["Assumed decision time", `${R.resource_profile.decision_latency_ms} ms`], ["Execution stress", R.resource_profile.stress_basis]]} />}
             <p className="statement">{R.statement}</p>
           </Card>
 
           <details className="more">
             <summary>All the details (risk, costs, activity, unresolved items, assumptions, versions, reproducibility, exports)</summary>
             <div className="stack" style={{ marginTop: 8 }}>
+          {R.attribution && <Card title="Concentration and trade dependence"><KV rows={[["Largest asset share of buy notional", fmtPct(R.attribution.largest_asset_share_of_buy_notional)], ["Best sale's share of positive realized contributions", fmtPct(R.attribution.best_trade_share_of_positive_realized_contributions)], ["Cash reference return", fmtReturn(R.attribution.cash_reference_return)]]} /><p className="muted small">{R.attribution.note}</p></Card>}
+          {R.execution_evidence && <Card title="Execution evidence"><KV rows={Object.entries(R.execution_evidence.mechanics).map(([key, value]) => [humanize(key), humanize(value)])} /><p className="muted small">{humanize(R.execution_evidence.flow_basis)}. {R.execution_evidence.calibration}</p></Card>}
           <div className="grid-2">
             <Card title="Risk">
               <div className="metrics">

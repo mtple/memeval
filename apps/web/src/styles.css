@@ -227,3 +227,16 @@ details.more summary { cursor: pointer; color: var(--muted); font-size: 12.5px; 
 .decision-timeline > li { padding: 1rem 0; border-bottom: 1px solid var(--line); }
 .decision-timeline summary { cursor: pointer; }
 .decision-timeline p { margin: .5rem 0; }
+
+/* the one number of a result, with the market that day beside it */
+.hero-result { display: grid; grid-template-columns: minmax(0, 3fr) minmax(220px, 2fr); gap: var(--s-5); align-items: start; }
+.hero-result .lbl { font-size: 11.5px; color: var(--muted); }
+.hero-main, .hero-side { display: flex; flex-direction: column; gap: var(--s-2); }
+.hero-number { font-family: var(--mono); font-size: 44px; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.hero-number.up { color: var(--up); } .hero-number.down { color: var(--down); } .hero-number.na { color: var(--muted); font-size: 22px; font-family: var(--sans); }
+.hero-sub { font-size: 13px; max-width: 52ch; }
+.hero-lines { display: flex; flex-direction: column; gap: 4px; border-left: 2px solid var(--line); padding-left: var(--s-3); }
+.hero-lines div { display: flex; justify-content: space-between; gap: var(--s-3); font-size: 13px; }
+.hero-lines .v { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.metrics.secondary .val { font-size: 15px; }
+@media (max-width: 640px) { .hero-result { grid-template-columns: 1fr; } .hero-number { font-size: 36px; } }
