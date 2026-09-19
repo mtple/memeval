@@ -34,6 +34,14 @@ seconds after 890 commands. The full run completed in 29.2 seconds; a subsequent
 took 22.6 seconds and matched both state and ledger hashes. Compact pages used at most
 9,808 bytes. These checks did not advance, trade, finish or reset FreeTurtle's production run.
 
+After commit `7f58842` reached production, a read-only request to the affected run's
+`observed` endpoint returned HTTP 200 in 23.5 seconds. Phase logs recorded a cold rebuild
+of all 99 commands in 22.9 seconds, including 1.1 seconds before replay. The response
+contained 467 discovered pools and all five confirmed orders at the original 22,247,000 ms
+clock. A subsequent metadata read confirmed the run was still running with no final report.
+This verifies recovery of the original state; the agent must still resume with its existing
+credentials and complete the remaining episode to establish a final result.
+
 The test suite covers scanner equivalence, columnar timestamp scanning, snapshot values and
 pagination, lock contention and subsequent recovery, PostgreSQL timeout/cleanup calls, and
 starter interruption, token retention, file permissions and resumption. Live PostgreSQL tests
