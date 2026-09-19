@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { EXAMPLES, RUNTIMES, get, list, post, type Agent, type Meta, type Pack, type Run, type Suite, type Usage } from "../api";
-import { fmtDate, fmtRel, fmtRaw, shortHash } from "../format";
+import { exportPolicy, fmtDate, fmtRel, fmtRaw, shortHash } from "../format";
 import { useRole } from "../role";
 import { Badge, Card, EmptyState, ErrorState, Loading, RunStateBadge, useLoad } from "../ui";
 
@@ -76,7 +76,7 @@ export default function Runs() {
                   <th>State</th>
                   <th>Pack</th>
                   <th>Agent</th>
-                  <th>Mode</th>
+                  <th>Export policy / isolation</th>
                   <th>Clock</th>
                   <th className="num">Bankroll</th>
                   <th>Created</th>
@@ -92,7 +92,7 @@ export default function Runs() {
                         <Link to={`/runs/${r.run_id}`} className="mono">
                           {shortHash(r.run_id, 14)}
                         </Link>
-                        {r.suite_id && <div className="muted small">suite {r.suite_id}</div>}
+                        {r.suite_id && <div className="muted small">{suites.data?.find(s => s.suite_id === r.suite_id)?.label ?? r.suite_id}</div>}
                       </td>
                       <td>
                         <RunStateBadge state={r.state} />
@@ -101,7 +101,7 @@ export default function Runs() {
                       <td>{r.pack_name || <span className="mono">{shortHash(r.pack_id)}</span>}</td>
                       <td className="small">{r.agent_name ?? agents.data?.find((a) => a.agent_id === r.agent_id)?.name ?? <span className="mono">{shortHash(r.agent_id)}</span>}</td>
                       <td>
-                        {r.mode} <span className="muted small">{r.isolation}</span>
+                        {exportPolicy(r.mode)} <span className="muted small">{r.isolation}</span>
                       </td>
                       <td className="mono">{fmtRel(r.live?.clock_ms ?? r.clock_ms)}</td>
                       <td className="num">{p ? fmtRaw(r.bankroll_raw, p.summary?.numeraire_decimals) : r.bankroll_raw}</td>
@@ -163,7 +163,7 @@ function RunSuite({ agents, suites, onCreated, runtimes, hosted }: { agents: Age
             <option value="">select…</option>
             {suites.map((s) => (
               <option key={s.suite_id} value={s.suite_id}>
-                {s.suite_id} ({s.pack_count} packs, {s.mode}){s.all_packs_imported ? "" : " . packs missing"}
+                {s.label} ({s.pack_count} episodes, {exportPolicy(s.mode)}){s.all_packs_imported ? "" : " . packs missing"}
               </option>
             ))}
           </select>

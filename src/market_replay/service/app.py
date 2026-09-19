@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..domain.envelope import Envelope
 from ..domain.profiles import PROFILES
@@ -34,27 +34,10 @@ def skill_text(gateway_url: str, name: str = "SKILL.md") -> str:
 
 
 class ImportPackBody(BaseModel):
+    # Reject retired visibility options instead of silently publishing a private import.
+    model_config = ConfigDict(extra="forbid")
     path: str
     name: str | None = None
-    visibility: str = "public"
-
-
-class AssessmentBundleBody(BaseModel):
-    label: str
-    pack_ids: list[str] = Field(min_length=1, max_length=32)
-    resource_profile_id: str = "controlled_v1"
-    bankroll_raw: str | None = None
-
-
-class AssessmentEntryBody(BaseModel):
-    agent_token: str | None = None
-    bundle_id: str
-    code_sha256: str
-    config: dict[str, Any] = Field(default_factory=dict)
-
-
-class RecoveryBody(BaseModel):
-    agent_token: str | None = None
 
 
 class AgentBody(BaseModel):
@@ -98,7 +81,6 @@ class RunBody(BaseModel):
 
 
 class EnrollBody(BaseModel):
-    agent_token: str | None = None
     agent: InlineAgentBody
 
 
@@ -279,7 +261,7 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     # ------------------------------------------------------------------ packs
     @app.post("/api/v1/packs/import", dependencies=[Depends(require_admin)])
     def import_pack(body: ImportPackBody) -> dict[str, Any]:
-        return manager.import_pack(body.path, body.name, body.visibility)
+        return manager.import_pack(body.path, body.name)
 
     @app.get("/api/v1/packs")
     def list_packs(role: str = Depends(public_read)) -> dict[str, Any]:
@@ -305,9 +287,9 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
 
     # ------------------------------------------------------------------ agents
     @app.post("/api/v1/enroll", dependencies=[Depends(public_write("runs"))], status_code=201)
-    def enroll(body: EnrollBody, request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    def enroll(body: EnrollBody, request: Request) -> dict[str, Any]:
         """Join: register by name (once) and receive the agent's identity token. Playing is a separate call."""
-        return manager.enroll(agent=body.agent.model_dump(), client_key=client_ip(request), agent_token=authorization[7:] if authorization and authorization.startswith("Bearer agn_") else body.agent_token)
+        return manager.enroll(agent=body.agent.model_dump(), client_key=client_ip(request))
 
     def identity_token(body_token: str | None, authorization: str | None) -> str:
         supplied = authorization[7:] if authorization and authorization.startswith("Bearer ") else (body_token or "")
@@ -318,42 +300,6 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     @app.get("/api/v1/resource-profiles", dependencies=[Depends(public_read)])
     def resource_profiles() -> dict:
         return {"items": [p.public() for p in PROFILES.values()]}
-
-    @app.post("/api/v1/assessment-bundles", dependencies=[Depends(require_admin)], status_code=201)
-    def create_assessment_bundle(body: AssessmentBundleBody) -> dict:
-        from .assessments import create_bundle
-        return create_bundle(manager, **body.model_dump())
-
-    @app.get("/api/v1/assessment-bundles", dependencies=[Depends(public_read)])
-    def assessment_bundles() -> dict:
-        from .assessments import catalog
-        return {"items": catalog(manager)}
-
-    @app.post("/api/v1/assessments", dependencies=[Depends(public_write("runs"))], status_code=201)
-    def enter_assessment(body: AssessmentEntryBody, authorization: str | None = Header(default=None)) -> dict:
-        from .assessments import enter
-        return enter(manager, agent_token=identity_token(body.agent_token, authorization), bundle_id=body.bundle_id,
-                     code_sha256=body.code_sha256, config=body.config)
-
-    @app.get("/api/v1/assessments/{assessment_id}", dependencies=[Depends(public_read)])
-    def assessment_result(assessment_id: str) -> dict:
-        from .assessments import result
-        return result(manager, assessment_id)
-
-    @app.post("/api/v1/assessments/{assessment_id}/credentials", dependencies=[Depends(public_write("runs"))])
-    def recover_assessment(assessment_id: str, body: RecoveryBody, authorization: str | None = Header(default=None)) -> dict:
-        from .assessments import recover
-        return recover(manager, assessment_id, identity_token(body.agent_token, authorization))
-
-    @app.post("/api/v1/assessments/{assessment_id}/abort", dependencies=[Depends(public_write("runs"))])
-    def abort_assessment(assessment_id: str, body: RecoveryBody, authorization: str | None = Header(default=None)) -> dict:
-        from .assessments import abort
-        return abort(manager, assessment_id, identity_token(body.agent_token, authorization))
-
-    @app.get("/api/v1/assessment-bundles/{bundle_id}/leaderboard", dependencies=[Depends(public_read)])
-    def assessment_board(bundle_id: str) -> dict:
-        from .assessments import leaderboard
-        return leaderboard(manager, bundle_id)
 
     @app.post("/api/v1/play", dependencies=[Depends(public_write("runs"))], status_code=201)
     def play(body: PlayBody, request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
@@ -373,7 +319,7 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
 
     @app.get("/api/v1/leaderboard", dependencies=[Depends(public_read)])
     def leaderboard(suite_id: str | None = None, pack_id: str | None = None, all: bool = False, include_artificial: bool = True) -> dict[str, Any]:
-        """Default: the first category with results, real weeks (newest first) before practice material."""
+        """Default: the first category with results, real weeks (newest first) before generated data."""
         if suite_id or pack_id or all:
             board = manager.leaderboard(suite_id=suite_id, pack_id=pack_id)
         else:

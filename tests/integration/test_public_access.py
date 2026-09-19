@@ -129,7 +129,7 @@ def test_leaderboard_ranks_agents_per_category_and_join_serves_the_skill(tmp_pat
         assert r.status_code == 201 and r.json()["state"] == "completed", r.text
     lb = c.get("/api/v1/leaderboard?pack_id=gen_dev_short").json()
     assert lb["category"]["kind"] == "pack" and [x["kind"] for x in lb["categories"]][:1] == ["suite"]
-    assert lb["category"]["label"] == "Practice: short warm-up, 2 hours (artificial)"
+    assert lb["category"]["label"] == "Generated: short warm-up, 2 hours (artificial)"
     assert c.get("/api/v1/leaderboard?pack_id=gen_dev_short&include_artificial=0").json()["categories"] == []
     names = [r["agent_name"] for r in lb["rows"]]
     assert set(names) == {"holder", "basket"} and [r["rank"] for r in lb["rows"]] == [1, 2]
@@ -193,8 +193,8 @@ def test_category_labels_and_descriptions_for_real_and_artificial_weeks():
     from market_replay.service.runs import _episode_description, _episode_label
 
     fixture = {"name": "gen_week_trending", "is_full_week": 1, "duration_ms": 604_800_000, "origin": "generated_fixture", "chain": "generated", "summary_json": '{"scenario": "Sustained directional flow."}'}
-    assert _episode_label(fixture) == "Practice week: trending market (artificial)"
-    assert _episode_description(fixture).startswith("Practice material, not real data: an artificial market with known rules, made for testing agents. Sustained")
+    assert _episode_label(fixture) == "Generated week: trending market (artificial)"
+    assert _episode_description(fixture).startswith("Generated data: an artificial market with known rules, made for testing agents. Sustained")
     real = {"name": "base_week_03", "is_full_week": 1, "duration_ms": 604_800_000, "origin": "historical_reconstruction", "chain": "base", "start_utc": "2026-09-08T00:00:00Z", "end_utc": "2026-09-15T00:00:00Z", "summary_json": '{"pools_executable": 16}'}
     assert _episode_label(real) == "Base week of 2026-09-08"
     day = {**real, "name": "base_day_2026-09-08", "is_full_week": 0, "duration_ms": 86_400_000, "end_utc": "2026-09-09T00:00:00Z"}

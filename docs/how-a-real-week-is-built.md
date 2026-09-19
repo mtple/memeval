@@ -168,7 +168,7 @@ When the site starts on a new deployment it registers every pack directory under
 its committed validation report, verifying the file hashes and replaying nothing. The database
 row for a week holds its name, dates, qualification and summary; the files stay in the checkout.
 Runs on a week are scored on the same pack forever; the id in every run report says which one.
-Artificial practice weeks are labelled as such and listed after the real ones.
+Generated weeks are labelled as such and listed after the real ones.
 
 ## What a real week does not model
 

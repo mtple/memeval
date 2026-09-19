@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError, get, post, type Holding, type Observed, type Pack, type Run } from "../api";
 import { CandleChart, EquitySparkline } from "../charts";
-import { fmtDate, fmtRaw, fmtRel, humanize, shortHash } from "../format";
+import { exportPolicy, fmtDate, fmtRaw, fmtRel, humanize, shortHash } from "../format";
 import { useRole } from "../role";
 import { Badge, Card, ErrorState, JsonView, KV, Loading, RunStateBadge, useLoad } from "../ui";
 
@@ -109,7 +109,7 @@ export default function RunDetail() {
               rows={[
                 ["Pack", <Link to={`/data-health/${r.pack_id}`}>{r.pack_name || r.pack_id}</Link>],
                 ["Agent", <Link to={`/runs?agent_id=${r.agent_id}`}>{r.agent_name ? `${r.agent_name} v${r.agent_version ?? ""}` : shortHash(r.agent_id, 16)}</Link>],
-                ["Mode / isolation", `${r.mode} / ${r.isolation}`],
+                ["Export policy / isolation", `${exportPolicy(r.mode)} / ${r.isolation}`],
                 ["Bankroll", `${fmtRaw(r.bankroll_raw, dec)} ${unit ?? ""}`],
                 ["Profile hash", <span className="mono">{shortHash(r.profile_hash, 16)}</span>],
                 ["Launch", r.launch ? <code>{JSON.stringify(r.launch)}</code> : "external client"],

@@ -2,7 +2,7 @@
 
 ## Trading objective
 
-Maximize final settled ETH (NATIVE), or CASH in generated practice episodes.
+Maximize final settled ETH (NATIVE), or CASH in generated episodes.
 The primary return is (final settled cash - starting cash) / starting cash.
 Agents must submit their own sell orders before the episode ends and allow time for confirmation.
 Unsold tokens and unconfirmed sale proceeds do not count. Reserved but unspent cash does count.
@@ -136,7 +136,7 @@ sdk/python, sdk/typescript, agents/examples, schemas/, fixtures/, tests/, docs/,
 
 - [docs/architecture.md](docs/architecture.md) — components, boundaries, data flow
 - [docs/agent-integration.md](docs/agent-integration.md) — connecting any agent; tool reference
-- [docs/agent-experience-roadmap.md](docs/agent-experience-roadmap.md) — terminal, assessment protocol and execution evidence work
+- [docs/agent-experience-roadmap.md](docs/agent-experience-roadmap.md) — terminal, timing profiles and execution evidence work
 - [docs/dataset-format.md](docs/dataset-format.md) — packs, manifests, coverage, qualification gates
 - [docs/execution-assumptions.md](docs/execution-assumptions.md) — `cpmm_fixed_flow_v1`, capacity guardrails, gas, valuation
 - [docs/benchmark-protocol.md](docs/benchmark-protocol.md) — suites, comparisons, what is and is not claimed
@@ -154,11 +154,9 @@ market-data-only test does not evaluate social research.
 
 License: MIT.
 
-### Terminal and assessment protocol
+### Runs and decision debrief
 
 Agents can use a point-in-time snapshot, watchlist and delayed alerts with the strategy-neutral
-starter. The UI separates practice from frozen private assessments and shows execution
-eligibility before trading outcomes, with an expandable decision timeline. See the
-[shipped roadmap](docs/agent-experience-roadmap.md) and
-[assessment protocol](docs/assessment-protocol.md) for profiles, operator setup, API/MCP calls,
-all-attempt accounting and the limits of external-client assurance.
+starter. Each run shows execution eligibility and trading outcomes, with an expandable decision
+timeline. See the [shipped roadmap](docs/agent-experience-roadmap.md) and
+[run protocol](docs/run-protocol.md) for timing profiles, eligibility rules and debrief details.

@@ -105,7 +105,7 @@ export default function AgentHistory() {
               key={d.pack_id}
               title={
                 <>
-                  {d.label} {d.kind === "practice" ? <Badge tone="warn">practice, artificial</Badge> : !d.available ? <Badge tone="warn">withdrawn</Badge> : null}
+                  {d.label} {d.kind === "practice" ? <Badge tone="warn">Generated data</Badge> : !d.available ? <Badge tone="warn">withdrawn</Badge> : null}
                 </>
               }
               actions={

@@ -44,7 +44,7 @@
   credential only (imports, pause/abort, unredacted exports, replays). Reading results and
   starting runs is public unless `MARKET_REPLAY_PUBLIC_RUNS=0`; public creation is limited to
   `MARKET_REPLAY_MAX_RUNS_PER_HOUR_PER_IP` (default 20) per address on top of the global caps.
-- `MARKET_REPLAY_DEV_MODE=0` hides practice-pack dates from the control plane listing.
+- `MARKET_REPLAY_DEV_MODE=0` hides generated-pack dates from the control plane listing.
 - Restricted runner: use `compose.yaml` profile `restricted` for network isolation; the
   in-process runner only scrubs environment/filesystem and says so in the report.
 
@@ -158,3 +158,11 @@ its gate summary and the leaderboard tabs. Every production deploy also runs `ho
 
 What a real week does not model: gas (assumed zero), token transfer taxes (assumed standard),
 MEV and routing. Reports say so; results are research grade, never historical performance.
+
+## Retired private bundles
+
+The assessment UI, endpoints and MCP tools have been removed. Old database records are retained;
+private packs and runs remain hidden from public catalogs, histories, exports and comparisons.
+Operators can still inspect these records through the authenticated pack and run endpoints.
+New imports are public; requests using the retired `visibility` option are rejected. Re-importing
+an existing private pack preserves its visibility. No new runs can start on these private packs.

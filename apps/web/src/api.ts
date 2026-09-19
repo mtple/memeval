@@ -245,6 +245,7 @@ export type Agent = {
 
 export type Suite = {
   suite_id: string;
+  label: string;
   description: string;
   packs: string[];
   pack_count: number;

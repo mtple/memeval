@@ -58,9 +58,9 @@ export default function Results() {
       {rep.loading && !R && <Loading what="report" />}
       {R && (
         <>
-          <Card title="Evaluation validity">
+          <Card title="Run validity">
             {R.execution_validity ? <>
-              <p className={R.provisional ? "notice warn" : "muted"}>{R.provisional ? "Provisional outcome. This run is excluded from ranking under the execution eligibility rule." : "This run passes the execution eligibility gates. Assessment eligibility also requires the complete frozen assignment and compatible profiles."}</p>
+              <p className={R.provisional ? "notice warn" : "muted"}>{R.provisional ? "Provisional outcome. This run is excluded from ranking under the execution eligibility rule." : "This run passes the execution eligibility gates for its declared model and resource profile."}</p>
               <KV rows={R.execution_validity.gates.map(g => [humanize(g.gate), g.passed ? "Pass" : "Excluded"])} />
               <p className="small muted">Rule: {R.execution_validity.rule_version}. {R.execution_validity.capacity_policy} Rejections: {R.execution_validity.capacity_rejections}.</p>
             </> : <p className="notice">This report predates execution eligibility gates. A fresh run is needed for the current protocol.</p>}

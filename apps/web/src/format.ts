@@ -87,3 +87,8 @@ export function humanize(s: string | null | undefined): string {
   if (!s) return "—";
   return s.replace(/_/g, " ");
 }
+
+/** Legacy API modes describe whether the operator can reveal dates and mappings. */
+export function exportPolicy(mode: string): string {
+  return mode === "practice" ? "Revealable" : mode === "sealed" ? "Sealed" : mode;
+}

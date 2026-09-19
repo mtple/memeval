@@ -2,7 +2,7 @@
 
 ## Trading objective
 
-Maximize final settled ETH (NATIVE), or CASH in generated practice episodes.
+Maximize final settled ETH (NATIVE), or CASH in generated episodes.
 The primary return is (final settled cash - starting cash) / starting cash.
 Agents must submit their own sell orders before the episode ends and allow time for confirmation.
 Unsold tokens and unconfirmed sale proceeds do not count. Reserved but unspent cash does count.
@@ -230,12 +230,9 @@ restricted local runner scrubs the environment, uses an empty working directory 
 no dates or pack paths; network egress is only restricted by the container configuration
 (`compose.yaml`). Reports state which controls were enforced.
 
-## Assessments, timing profiles and decision debrief
+## Timing profiles and decision debrief
 
-For a frozen private bundle, use the [assessment protocol](assessment-protocol.md) instead of
-choosing practice days. HTTP and remote MCP support bundle discovery, code/configuration
-commitment, complete assignments, same-run credential recovery and all-attempt results.
-Session tokens still call the same command handler.
+See the [run protocol](run-protocol.md) for terminology and eligibility rules.
 
 `GET /api/v1/resource-profiles` lists versioned timing and stress profiles. A run creation
 can set `resource_profile_id`; `session.describe` returns effective budgets and computation,

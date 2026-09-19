@@ -140,7 +140,7 @@ class RunManager:
         self.store.close()
 
     # ------------------------------------------------------------------ packs
-    def import_pack(self, path: str | Path, name: str | None = None, visibility: str = "public") -> dict[str, Any]:
+    def import_pack(self, path: str | Path, name: str | None = None) -> dict[str, Any]:
         p = Path(path)
         try:
             pack = Pack.load(p)
@@ -149,18 +149,14 @@ class RunManager:
         report = validate_pack(pack)
         (p / "validation.json").write_text(json.dumps(report, indent=2, sort_keys=True))
         pack = Pack.load(p)
-        return self._register(pack, report, name or p.name, visibility)
+        return self._register(pack, report, name or p.name)
 
-    def _register(self, pack: Pack, report: dict[str, Any], pack_name: str, visibility: str = "public") -> dict[str, Any]:
+    def _register(self, pack: Pack, report: dict[str, Any], pack_name: str) -> dict[str, Any]:
         p = pack.path
         m = pack.manifest
         existing = self.store.pack(m.pack_id)
-        if visibility not in ("public", "holdout"):
-            raise ApiError(400, "visibility must be public or holdout", "INVALID")
-        if existing and existing["visibility"] != visibility:
-            raise ApiError(409, "pack visibility is immutable; public packs cannot become hidden holdouts", "EXPOSURE_CONFLICT")
-        if visibility == "holdout" and (pack.path.resolve().is_relative_to(WEEKS_DIR.resolve()) or pack_name in FIXTURE_CONFIGS or (m.generator or {}).get("config", {}).get("seed") in {cfg.seed for cfg in FIXTURE_CONFIGS.values()}):
-            raise ApiError(400, "shipped material cannot be a private holdout", "EXPOSURE_CONFLICT")
+        # Re-imports must preserve the privacy of data imported before private bundles were retired.
+        visibility = existing["visibility"] if existing else "public"
         episode_id = existing["episode_id"] if existing else "ep_" + secrets.token_hex(6)
         row = {
             "pack_id": m.pack_id,
@@ -353,6 +349,7 @@ class RunManager:
         return [self._pack_view(r, reveal_dates) for r in self.store.packs() if reveal_dates or r["visibility"] == "public"]
 
     def is_private_run(self, run_id: str) -> bool:
+        """Keep archived private runs hidden even when their pack record is missing."""
         row = self.store.run(run_id)
         pack = self.store.pack(row["pack_id"]) if row else None
         return bool((pack and pack["visibility"] == "holdout") or self.store.one("SELECT run_id FROM assessment_episodes WHERE run_id=?", (run_id,)))
@@ -616,14 +613,11 @@ class RunManager:
         agent_seed: str | None = None,
         execute: str | None = None,
         resource_profile_id: str = "pack_defaults_v1",
-        allow_holdout: bool = False,
-        assigned_run_id: str | None = None,
     ) -> dict[str, Any]:
         agent = self.agent_view(agent_id)
         if not agent["compatibility"]["compatible"]:
             raise ApiError(400, f"agent requests unsupported capabilities: {agent['compatibility']['unsupported_requested']}", "INCOMPATIBLE")
-        if not allow_holdout:
-            self.require_public("packs", pack_ref)
+        self.require_public("packs", pack_ref)
         row, pack = self.load_pack(pack_ref)
         profile = PROFILES.get(resource_profile_id)
         if profile is None:
@@ -639,7 +633,7 @@ class RunManager:
         if isolation == "restricted_local_runner" and (not launch_spec or (execute or ("inprocess" if self.hosted else "subprocess")) != "subprocess"):
             raise ApiError(400, "restricted isolation requires the restricted subprocess runner", "INVALID")
         if bankroll_raw is None:
-            # One whole unit of the cash asset: 1.0 CASH on a practice pack, 1 ETH on a real Base day.
+            # One whole unit of the cash asset: 1.0 CASH on a generated pack, 1 ETH on a real Base day.
             bankroll_raw = 10 ** int(pack.manifest.numeraire_decimals)
         try:
             bankroll = int(str(bankroll_raw))
@@ -655,7 +649,7 @@ class RunManager:
             if launch_spec.get("name") not in known:
                 raise ApiError(400, f"unknown reference participant {launch_spec.get('name')}", "INVALID")
         self._check_caps()
-        run_id = assigned_run_id or "run_" + secrets.token_hex(8)
+        run_id = "run_" + secrets.token_hex(8)
         mask_seed = mask_seed or ("mask-" + secrets.token_hex(8))
         engine_seed = engine_seed or ("engine-" + secrets.token_hex(8))
         session = Session.create(session_id="ses_" + run_id[4:], pack=pack, bankroll_raw=bankroll, mask_seed=mask_seed, engine_seed=engine_seed, mode=mode, resource_profile=profile.model_dump())
@@ -714,8 +708,8 @@ class RunManager:
                 self.execute_run(run_id, token=token)
             else:
                 self._launch(ctx, token, launch_spec, isolation, agent_seed)
-            return self.run_view(run_id, allow_private=allow_holdout)
-        result = self.run_view(run_id, allow_private=allow_holdout)
+            return self.run_view(run_id)
+        result = self.run_view(run_id)
         # The credential is returned only to the caller who created the run (the participant or its runner).
         result["session_credential"] = {"token": token, "gateway_url": self.gateway_url, "commands_url": self.gateway_url + "/agent/v1/commands", "mcp_url": self.gateway_url + "/agent/mcp"}
         return result
@@ -1191,7 +1185,7 @@ class RunManager:
             for name in s.packs:
                 r = self.store.pack(name)
                 ids.append(r["pack_id"] if r else None)
-            out.append(suite_public(s, [i for i in ids if i]) | {"all_packs_imported": all(ids)})
+            out.append(suite_public(s, [i for i in ids if i]) | {"label": _suite_label(s) if all(name in FIXTURE_CONFIGS for name in s.packs) else s.suite_id, "all_packs_imported": all(ids)})
         return out
 
     def run_suite(self, suite_id: str, *, agent_id: str, launch_spec: dict[str, Any], isolation: str | None = None, wait: bool = True, agent_seed: str | None = None) -> dict[str, Any]:
@@ -1230,7 +1224,7 @@ class RunManager:
 
     ONE_NAME_WINDOW_S = 2 * 3600.0
 
-    def enroll(self, *, agent: dict[str, Any], client_key: str | None = None, agent_token: str | None = None) -> dict[str, Any]:
+    def enroll(self, *, agent: dict[str, Any], client_key: str | None = None) -> dict[str, Any]:
         """Join: register (or reuse) the agent and hand it its identity token. Creates no runs; that is
         ``play``, which an agent calls whenever it wants to trade what it has not finished yet.
 
@@ -1250,10 +1244,6 @@ class RunManager:
         view = self.register_or_reuse_agent(name=name, version=str(agent.get("version", "1")), runtime=str(agent.get("runtime", "external")), capabilities=list(agent.get("capabilities") or []), config=dict(agent.get("config") or {}))
         agent_id = view["agent_id"]
         with self.store.run_lock("identity:" + agent_id):
-            protected = self.store.one("SELECT assessment_id FROM assessments WHERE agent_id=?", (agent_id,))
-            current = self.store.agent(agent_id)
-            if protected and (not agent_token or not current or current["token_hash"] != token_hash(agent_token)):
-                raise ApiError(403, "this identity has committed assessments; its current identity token is required to rotate credentials", "IDENTITY_LOCKED")
             token = new_identity_token()
             self.store.set_agent_token_hash(agent_id, token_hash(token))
         return {
@@ -1278,8 +1268,6 @@ class RunManager:
         """Change the name an agent shows under, keeping its id, token, runs and board rows. For an agent
         that joined with a suffix its user never asked for."""
         row = self.agent_by_token(agent_token)
-        if self.store.one("SELECT assessment_id FROM assessments WHERE agent_id=?", (row["agent_id"],)):
-            raise ApiError(409, "an identity with committed assessments cannot be renamed", "IDENTITY_LOCKED")
         name = name.strip()
         if not name or len(name) > 64 or not name.isprintable():
             raise ApiError(400, "agent name must be 1-64 printable characters", "INVALID")
@@ -1344,7 +1332,7 @@ class RunManager:
             open_ = [x for x in mine if x["state"] not in TERMINAL]
             status = "finished" if done else "running" if open_ else "new"
             board = self.leaderboard(pack_id=r["pack_id"])["rows"]
-            # Episode selection gives context for the default practice lane only.
+            # Episode selection gives context for the default timing profile only.
             decimals = int(json.loads(r["summary_json"]).get("numeraire_decimals") or 18)
             board = [x for x in board if x["group"]["resource_profile"] == "pack_defaults_v1"
                      and x["group"]["isolation"] == "trusted_external_client"
@@ -1352,7 +1340,7 @@ class RunManager:
                      and x["group"]["engine"] == ENGINE_VERSION]
             item = {"pack_id": r["pack_id"], "pack_name": r["name"], "label": _episode_label(r), **self._episode_context(r)}
             item.update({
-                "ranking_basis": "default practice profile, one whole cash unit, trusted external client, current evaluator",
+                "ranking_basis": "default timing profile, one whole cash unit, trusted external client, current evaluator",
                 "agents_ranked": len(board),
                 "top_return": board[0].get("median_return") if board else None,
                 "your_status": status,
@@ -1394,7 +1382,7 @@ class RunManager:
                 runs.append(self.create_run(agent_id=agent_id, pack_ref=ref))
         else:
             # No choice made: every real episode on the server this agent has not finished; on a server
-            # without one yet, the practice suite.
+            # without one yet, the generated suite.
             weeks = self.real_weeks()
             if not weeks:
                 if "generated-practice-v1" in self.suites:
@@ -1425,7 +1413,7 @@ class RunManager:
         return sorted(rows, key=lambda r: str(r.get("start_utc") or ""), reverse=True)
 
     def leaderboard_categories(self, include_artificial: bool = True) -> list[dict[str, Any]]:
-        """What can be ranked: every real week first, newest first, then the practice material (artificial
+        """What can be ranked: every real week first, newest first, then the generated data (artificial
         weeks made for testing agents), each labelled in plain words."""
         cats: list[dict[str, Any]] = []
         for r in self.real_weeks():
@@ -1466,7 +1454,7 @@ class RunManager:
         else:
             public_packs = [r for r in self.store.packs() if r["visibility"] == "public"]
             wanted_packs = {r["pack_id"] for r in public_packs}
-            category = {"kind": "all", "id": "all", "label": "Every practice episode", "description": "Public practice episodes; use a frozen assessment bundle for assessment rankings.", "episodes": [r["name"] for r in public_packs]}
+            category = {"kind": "all", "id": "all", "label": "Every episode", "description": "All recorded and generated episodes, with separate rankings for comparable runs.", "episodes": [r["name"] for r in public_packs]}
         # latest valued run per (agent, pack)
         best: dict[tuple[str, str, str], dict[str, Any]] = {}
         groups: dict[str, dict[str, Any]] = {}
@@ -1536,10 +1524,9 @@ class RunManager:
             r["rank"] = ranks[gid]
         return {
             "category": category,
-            "evaluation_mode": "practice",
             "categories": self.leaderboard_categories(),
             "rows": rows,
-            "note": "Practice only. Ranks restart within each resource profile, data origin, execution model, bankroll, numeraire, engine version and isolation group. Material fidelity failures and budget exhaustion are excluded. Ranked by median final ETH/cash return after modeled costs over each agent's latest completed final-cash-scored run per episode. Agents that covered every episode rank above partial coverage. Unsold tokens do not count. Legacy portfolio-scored runs require a new run and are excluded. Generated episodes are artificial; a high rank is not an edge and predicts nothing.",
+            "note": "Ranks restart within each resource profile, data origin, execution model, bankroll, numeraire, engine version and isolation group. Material fidelity failures and budget exhaustion are excluded. Ranked by median final ETH/cash return after modeled costs over each agent's latest completed final-cash-scored run per episode. Agents that covered every episode rank above partial coverage. Unsold tokens do not count. Legacy portfolio-scored runs require a new run and are excluded. Generated episodes are artificial; a high rank is not an edge and predicts nothing.",
         }
 
     # ------------------------------------------------------------------ comparisons / studies
@@ -1705,9 +1692,9 @@ def _episode_label(row: dict[str, Any]) -> str:
     base = name.replace("gen_week_", "").replace("gen_", "").replace("_", " ")
     scenario = FIXTURE_SCENARIO_NAMES.get(name, base)
     if is_full_week:
-        return f"Practice week: {scenario} (artificial)"
+        return f"Generated week: {scenario} (artificial)"
     hours = float(duration_ms or 0) / 3_600_000
-    return f"Practice: {scenario}, {hours:g} hours (artificial)" if hours else f"Practice: {scenario} (artificial)"
+    return f"Generated: {scenario}, {hours:g} hours (artificial)" if hours else f"Generated: {scenario} (artificial)"
 
 
 def _episode_description(row: dict[str, Any]) -> str:
@@ -1718,7 +1705,7 @@ def _episode_description(row: dict[str, Any]) -> str:
         summary = {}
     if str(row.get("origin", "")) == "generated_fixture":
         scenario = summary.get("scenario") or ""
-        return f"Practice material, not real data: an artificial market with known rules, made for testing agents. {scenario}".strip()
+        return f"Generated data: an artificial market with known rules, made for testing agents. {scenario}".strip()
     hours = float(row.get("duration_ms") or 0) / 3_600_000
     span = "7 days" if row.get("is_full_week") else f"{hours / 24:g} day{'s' if hours != 24 else ''}" if hours >= 24 and hours % 24 == 0 else f"{hours:g} hours"
     pools = summary.get("pools_executable")
@@ -1730,4 +1717,4 @@ def _episode_description(row: dict[str, Any]) -> str:
 def _suite_label(s: SuiteDef) -> str:
     n = len(s.packs)
     weeks = all(name.startswith("gen_week_") for name in s.packs)
-    return f"Practice: all {n} artificial weeks" if weeks else f"Practice: all {n} episodes ({s.suite_id})"
+    return f"Generated: all {n} artificial weeks" if weeks else f"Generated: all {n} episodes ({s.suite_id})"

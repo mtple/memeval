@@ -21,6 +21,8 @@ from typing import Any
 # a duplicate column and the error is swallowed; Postgres gets IF NOT EXISTS).
 MIGRATIONS = ["ALTER TABLE agents ADD COLUMN token_hash TEXT", "ALTER TABLE packs ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'"]
 
+# Retain the retired bundle tables for existing data and the legacy run-privacy guard.
+# No application workflow creates or updates these records.
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS assessment_bundles (
   bundle_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, manifest_json TEXT NOT NULL

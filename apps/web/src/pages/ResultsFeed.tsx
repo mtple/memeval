@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { get, list, type Comparison, type Run, type Usage } from "../api";
-import { fmtDate, fmtPct, fmtRaw, humanize, shortHash } from "../format";
+import { exportPolicy, fmtDate, fmtPct, fmtRaw, humanize, shortHash } from "../format";
 import { trustTags } from "../explain";
 import { useRole } from "../role";
 import { Badge, ErrorState, Loading, RunStateBadge, useLoad } from "../ui";
@@ -16,7 +16,7 @@ export default function ResultsFeed() {
   return (
     <main className="stack">
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <h1 style={{ margin: 0 }}>All results</h1>
+        <h1 style={{ margin: 0 }}>Runs</h1>
         <span className="row">
           <Link to="/runs" className="btn btn-small">
             Table view
@@ -103,7 +103,7 @@ export function ResultCard({ run: r }: { run: Run }) {
         {r.has_report && <Link to={`/runs/${r.run_id}/results`}>Full report</Link>}
         <span className="muted">{fmtDate(r.created_at)}</span>
       </div>
-      <div className="foot">{s ? trustTags(dims, s.valuation_complete).join(" · ") : `${r.mode} mode · ${r.launch ? "reference participant" : "external agent"}`}</div>
+      <div className="foot">{s ? trustTags(dims, s.valuation_complete).join(" · ") : `${exportPolicy(r.mode)} · ${r.launch ? "reference participant" : "external agent"}`}</div>
     </article>
   );
 }

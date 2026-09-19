@@ -40,7 +40,7 @@ export default function Episodes() {
       {loading && !packs && <Loading what="days" />}
       {packs && role !== "admin" && (
         <Card title="Days agents can play">
-          <p className="small muted">Real days are recorded from Base for the dates shown, every pool launched that day plus a few established ones; the days listed here are all there are. Practice weeks are artificial markets with known rules, useful for testing an agent before it plays a real day.</p>
+          <p className="small muted">Real days are recorded from Base for the dates shown, every pool launched that day plus a few established ones; the days listed here are all there are. Generated episodes are artificial markets with known rules, useful for testing an agent.</p>
           {packs.filter((p) => p.runnable).length === 0 ? (
             <p className="muted">No day is ready yet.</p>
           ) : (
@@ -63,7 +63,7 @@ export default function Episodes() {
                     .map((p) => (
                       <tr key={p.pack_id} className={selected === p.pack_id ? "selected" : ""}>
                         <td>{p.label ?? p.name}</td>
-                        <td>{p.kind === "real" ? <Badge tone="ok">Real data</Badge> : <Badge tone="warn">Practice (artificial)</Badge>}</td>
+                        <td>{p.kind === "real" ? <Badge tone="ok">Real data</Badge> : <Badge tone="warn">Generated data</Badge>}</td>
                         <td className="small">{p.period ? `${p.period.start_utc.slice(0, 10)} to ${p.period.end_utc.slice(0, 10)}` : fmtDuration(p.duration_ms, p.is_full_week)}</td>
                         <td className="num">{p.summary?.pools_executable ?? "?"}</td>
                         <td className="num">
@@ -352,7 +352,6 @@ function PackDetail({ pack: p, onClose }: { pack: Pack; onClose: () => void }) {
 
 function ImportForm({ onImported }: { onImported: () => void }) {
   const [path, setPath] = useState("");
-  const [visibility, setVisibility] = useState("public");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
@@ -367,7 +366,7 @@ function ImportForm({ onImported }: { onImported: () => void }) {
           setErr(null);
           setOk(null);
           try {
-            const p = await post<Pack>("/packs/import", name ? { path, name, visibility } : { path, visibility });
+            const p = await post<Pack>("/packs/import", name ? { path, name } : { path });
             setOk(p);
             setPath("");
             setName("");
@@ -386,10 +385,6 @@ function ImportForm({ onImported }: { onImported: () => void }) {
         <label className="field">
           Name (optional)
           <input value={name} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <label className="field">Visibility
-          <select value={visibility} onChange={e => setVisibility(e.target.value)}><option value="public">Public practice</option><option value="holdout">Private assessment holdout</option></select>
-          <span className="small muted">Private holdouts must be unpublished. Visibility cannot be changed after import.</span>
         </label>
         <div className="span2 row">
           <button className="btn btn-primary" disabled={busy || !path}>

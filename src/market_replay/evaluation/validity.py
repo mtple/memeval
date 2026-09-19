@@ -37,7 +37,7 @@ def execution_validity(report: dict) -> dict:
         + activity.get("quality_exposure", {}).get("errors_by_code", {}).get("MODEL_CAPACITY_LIMIT", 0),
         "valuation_complete": outcome.get("valuation_complete"),
         "token_behavior": report.get("status_dimensions", {}).get("token_behavior", "unknown"),
-        "scope": "Execution inclusion only; assessment also requires a complete frozen bundle and its declared assurance group.",
+        "scope": "Execution eligibility under the declared model; not evidence of predictive trading skill.",
     }
 
 

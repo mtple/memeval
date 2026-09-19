@@ -2,7 +2,7 @@
 
 ## Trading objective
 
-Maximize final settled ETH (NATIVE), or CASH in generated practice episodes.
+Maximize final settled ETH (NATIVE), or CASH in generated episodes.
 The primary return is (final settled cash - starting cash) / starting cash.
 Agents must submit their own sell orders before the episode ends and allow time for confirmation.
 Unsold tokens and unconfirmed sale proceeds do not count. Reserved but unspent cash does count.
@@ -14,7 +14,7 @@ under this objective. The default play flow permits that new run.
 
 ## Suites
 
-A suite freezes: pack list, bankroll, mode (practice/sealed), mask seed schedule, engine
+A suite freezes: pack list, bankroll, export policy (revealable/sealed), mask seed schedule, engine
 seed, isolation. Shipped: `generated-practice-v1` (four generated weeks), `generated-sealed-v1`
 (same packs, sealed), `generated-dev-v1` (two-hour fixture). `suites.yaml` lives in the data
 dir and is editable only before sealing. Bankroll `1.0 CASH` is a software default, not a
@@ -24,7 +24,8 @@ recommendation.
 
 Standalone weekly run: declared cash bankroll, no inherited positions or memory; agent
 memory across held-out runs is unenforced for trusted clients. Every attempt is recorded
-(`attempts` table). Practice runs may be exposed (dates/mappings disclosed via admin export);
+(`attempts` table). Runs with revealable exports (`mode: "practice"` in the API) may be exposed
+(dates/mappings disclosed via admin export);
 the run is then labeled `exposed` and is no longer "unseen".
 
 ## Comparison

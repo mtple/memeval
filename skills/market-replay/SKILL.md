@@ -7,7 +7,7 @@ description: Test a trading agent against replayed market episodes with no real 
 
 Market Replay is a strategy-agnostic evaluator for trading agents. It replays recorded days of
 real Base memecoin trading (every token launched that day, plus clearly labelled artificial
-practice weeks) with virtual time,
+generated weeks) with virtual time,
 blinded asset names, exact integer accounting and explicit execution models for Uniswap v2 pairs
 and v3/v4 pools. You supply every trading decision. It never touches a wallet, a chain or real
 funds. Results are public; nothing predicts live performance and there is no score.
@@ -17,7 +17,7 @@ served at `<server>/skill.md` and `<server>/join`).
 
 ## Your trading objective
 
-Finish with as much settled ETH (NATIVE) as possible, or CASH in practice episodes.
+Finish with as much settled ETH (NATIVE) as possible, or CASH in generated episodes.
 Your primary result is final cash return against your starting balance. You must choose
 and submit your own sells before the episode deadline and allow time for confirmation.
 Unsold tokens and unconfirmed sale proceeds earn no primary credit. session.finish does
@@ -223,39 +223,7 @@ daily and monthly caps; a `429` with `RATE_LIMITED` or `USAGE_CAP` means wait. A
 model of a past day, not the market: gas is one median figure per day taken from the recorded
 swaps, token taxes and MEV are not modelled, and every report says so. A profitable simulation is not an edge.
 
-## Assessment participation
-
-When your user selects an assessment bundle, use this workflow instead of choosing practice
-calendar days. `GET /api/v1/assessment-bundles` or MCP `assessment_bundles` lists the frozen
-bundles. Commit the exact policy source SHA-256 and configuration before receiving the
-assignment. Use your saved identity token:
-
-```http
-POST https://memeval-web.vercel.app/api/v1/assessments
-Authorization: Bearer agn_<identity>
-Content-Type: application/json
-
-{"bundle_id":"bundle_<chosen>","code_sha256":"<64 lowercase hex characters>","config":{}}
-```
-
-Remote MCP: `assessment_enter {agent_token, bundle_id, code_sha256, config}`. Keep the returned
-`assessment_id`, commitment and every assigned run credential. Play all assigned slots with
-the normal tools and finish each one. Episodes and attempts cannot be replaced. Do not select
-successful episodes or change the committed policy after seeing results. Code/configuration
-and outside-memory controls are self-attested for external clients; do not describe this as
-an isolated assessment.
-
-Use `assessment_result {assessment_id}` or `GET /api/v1/assessments/{assessment_id}` to see
-coverage and gates. Returns are withheld until every attempt ends; balances remain visible
-during play. Return the UI link `https://memeval-web.vercel.app/assessments/<assessment_id>`.
-Failures and incomplete attempts stay recorded. Prior service exposure across versions of
-the same name excludes those episodes from assessment ranking.
-
-If credentials are lost, call `assessment_recover {agent_token, assessment_id}` or
-`POST /api/v1/assessments/{assessment_id}/credentials` with the identity token. This rotates
-credentials for the same unfinished runs, preserving clocks, orders and budgets. Use
-`assessment_abort` or `POST .../abort` only when the user wants to stop; it keeps aborted
-attempts as ineligible. Do not enroll a fresh identity to evade exposure records.
+## Timing and decision records
 
 Read `session.describe.resource_profile` before play. Controlled profiles charge declared
 virtual decision time; deployment timing requires the server's measured runner. Stress
@@ -263,8 +231,3 @@ profiles are assumptions, never historical reconstructions. Unknown token sellab
 unknown. Approvals, cancellation/replacement and hook callbacks are excluded. You may attach
 optional `reason` and `exit_condition` to `broker.submit`, up to 512 characters each. They are
 scanned pre-submission metadata, included in idempotency, and are never scored.
-
-After committing an assessment, keep your identity token securely. Re-enrollment requires
-the current token in `agent_token` or the bearer header; knowing the name/version is no longer
-enough to reset it. The committed identity also cannot be renamed. If both identity and run
-credentials are lost, contact the operator rather than claiming a new identity or assignment.

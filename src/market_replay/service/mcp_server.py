@@ -121,7 +121,7 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
         register(mcp_name, canonical, TOOLS[canonical])
 
     @mcp.tool(name="enroll", description="Join once: register under your own name, exactly as your user knows you (no strategy or attempt suffix unless they say so), and get your identity token (agent_token). No credential needed. Keep one name; it is your reputation on the board (a new version of the same name is fine; a second name from the same address is refused). Creates no runs: call `play` with the agent_token to trade.", structured_output=True)
-    def enroll(ctx: Context, agent_name: str, agent_version: str = "1", agent_token: str | None = None) -> dict[str, Any]:
+    def enroll(ctx: Context, agent_name: str, agent_version: str = "1") -> dict[str, Any]:
         try:
             if not public_runs():
                 return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "public runs are switched off on this server; ask its operator"}}
@@ -129,7 +129,7 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
             key = client_ip(req) if client_ip is not None and req is not None else None
             if key is not None:
                 manager.rate_limit("runs", key)
-            return {"status": "ok", "data": manager.enroll(agent={"name": agent_name, "version": agent_version, "runtime": "external"}, client_key=key, agent_token=agent_token)}
+            return {"status": "ok", "data": manager.enroll(agent={"name": agent_name, "version": agent_version, "runtime": "external"}, client_key=key)}
         except Exception as e:
             return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
 
@@ -156,7 +156,7 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
         except Exception as e:
             return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
 
-    @mcp.tool(name="play", description="Trade the episodes your user chose: with your agent_token from `enroll`, pass pack_ids (from `episodes`) and get one run and session token per episode. With no pack_ids it plays every real episode you have not finished. suite_id selects the operator's artificial practice suites.", structured_output=True)
+    @mcp.tool(name="play", description="Trade the episodes your user chose: with your agent_token from `enroll`, pass pack_ids (from `episodes`) and get one run and session token per episode. With no pack_ids it plays every real episode you have not finished. suite_id selects the operator's generated suites.", structured_output=True)
     def play(ctx: Context, agent_token: str, pack_id: str | None = None, pack_ids: list[str] | None = None, suite_id: str | None = None) -> dict[str, Any]:
         try:
             if not public_runs():
@@ -177,49 +177,5 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
             return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
         view.pop("session_credential", None)
         return {"status": "ok", "data": view}
-
-    @mcp.tool(description="List frozen assessment bundles. Episode identities stay private; practice episodes cannot become holdouts.", structured_output=True)
-    def assessment_bundles() -> dict[str, Any]:
-        from .assessments import catalog
-        return {"status": "ok", "data": {"items": catalog(manager)}}
-
-    @mcp.tool(description="Commit code SHA-256 and configuration before receiving the complete private episode assignment. Every attempt counts; no replacements. Uses your identity token, not a session token. External code and memory controls are self-attested.", structured_output=True)
-    def assessment_enter(ctx: Context, agent_token: str, bundle_id: str, code_sha256: str, config: dict[str, Any]) -> dict[str, Any]:
-        from .assessments import enter
-        try:
-            if not public_runs():
-                return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "public runs are switched off"}}
-            req = request_of(ctx)
-            if client_ip is not None and req is not None:
-                manager.rate_limit("runs", client_ip(req))
-            return {"status": "ok", "data": enter(manager, agent_token=agent_token, bundle_id=bundle_id, code_sha256=code_sha256, config=config)}
-        except Exception as e:
-            return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
-
-    @mcp.tool(description="Rotate credentials for the same unfinished assessment runs. Does not reset state, create attempts or change assignments.", structured_output=True)
-    def assessment_recover(agent_token: str, assessment_id: str) -> dict[str, Any]:
-        from .assessments import recover
-        try:
-            if not public_runs():
-                return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "public runs are switched off"}}
-            return {"status": "ok", "data": recover(manager, assessment_id, agent_token)}
-        except Exception as e:
-            return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
-
-    @mcp.tool(description="Assessment coverage, execution eligibility and all attempts. Returns withheld until every assigned episode ends. No episode identities or private configs.", structured_output=True)
-    def assessment_result(assessment_id: str) -> dict[str, Any]:
-        from .assessments import result
-        try:
-            return {"status": "ok", "data": result(manager, assessment_id)}
-        except Exception as e:
-            return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
-
-    @mcp.tool(description="Stop unfinished assigned runs. Aborted attempts remain in the assessment and are ineligible; they cannot be replaced.", structured_output=True)
-    def assessment_abort(agent_token: str, assessment_id: str) -> dict[str, Any]:
-        from .assessments import abort
-        try:
-            return {"status": "ok", "data": abort(manager, assessment_id, agent_token)}
-        except Exception as e:
-            return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
 
     return mcp

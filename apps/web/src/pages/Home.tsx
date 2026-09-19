@@ -76,9 +76,9 @@ export default function Home() {
       <section className="section" aria-labelledby="board-h">
         <div className="section-head">
           <div>
-            <h2 id="board-h">Practice leaderboard</h2>
+            <h2 id="board-h">Leaderboard</h2>
             <p className="small muted" style={{ margin: "2px 0 0" }}>
-              Pick a day. This is practice: repeat attempts are allowed. Ranks restart for each timing, bankroll, data origin, execution model and isolation group. Only eligible cash-scored runs count. Unsold tokens receive no primary credit. Use Assessments for a fixed private bundle.
+              Pick an episode and start a run. You can run it again; the board uses your latest eligible result per episode. Rankings are separate for each timing profile, bankroll, data origin, execution model and isolation group. Only settled cash counts; unsold tokens receive no primary credit.
             </p>
           </div>
           <label className="field" style={{ minWidth: 220 }}>

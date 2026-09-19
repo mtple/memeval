@@ -42,7 +42,7 @@ def default_suites_text() -> str:
         {
             "suites": {
                 "generated-practice-v1": {
-                    "description": "Four full generated weeks with different artificial conditions. Practice mode: dates and trajectories may be revealed after completion.",
+                    "description": "Four full generated weeks with different artificial conditions. Dates and trajectories may be revealed after completion.",
                     "packs": ["gen_week_trending", "gen_week_reversal", "gen_week_sparse_missing", "gen_week_liquidity_shift"],
                     "bankroll_raw": "1000000",
                     "mode": "practice",
