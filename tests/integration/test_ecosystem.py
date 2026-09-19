@@ -17,6 +17,7 @@ from market_replay.collectors.ecosystem import (
     collect_ecosystem,
     write_ecosystem,
 )
+from market_replay.collectors.evm_rpc import TOPIC_V3_SWAP
 from market_replay.datasets.baseline import (
     BASELINE_FILE,
     baseline_sentence,
@@ -73,7 +74,8 @@ class FakeBase:
             n = int(params[0], 16)
             result = {"number": hex(n), "timestamp": hex((T0 + (n - BLOCK0) * 2000) // 1000)}
         elif m == "eth_call":
-            to, data, blk = params[0]["to"].lower(), params[0]["data"], int(params[1], 16)
+            to, data = params[0]["to"].lower(), params[0]["data"]
+            assert params[1] == "latest"  # old state is pruned on public endpoints
             sel = data[:10]
             if sel == "0x95d89b41":
                 sym = next((s for s, a in BASKET if a.lower() == to), "USDC" if to == USDC else "?")
@@ -86,14 +88,21 @@ class FakeBase:
                 token = a if b == WETH else b
                 pool = self.pools.get((token, fee))
                 result = "0x" + (pool[2:] if pool else "").rjust(64, "0")
-            elif sel == "0x1a686502":
-                result = "0x" + hex(self.liq.get(to, 0))[2:].rjust(64, "0")
-            elif sel == "0x3850c7bd":
-                start, end = self.price[to]
-                p = start if blk < BLOCK0 + 200 + 43_000 else end
-                result = "0x" + hex(_sqrt(p))[2:].rjust(64, "0") + "0" * 64 * 6
             else:
                 result = "0x"
+        elif m == "eth_getLogs":
+            q = params[0]
+            pool, lo, hi = q["address"].lower(), int(q["fromBlock"], 16), int(q["toBlock"], 16)
+            assert q["topics"] == [TOPIC_V3_SWAP] and hi - lo <= 12_000
+            # one swap in the first 100 blocks of the day and one in its last 100 blocks; AERO's pool never trades
+            start, end = self.price[pool]
+            day0, day1 = BLOCK0 + 200, BLOCK0 + 200 + 43_200 - 1
+            result = []
+            liq = self.liq.get(pool, 0)
+            for blk, p in ((day0 + 50, start), (day1 - 50, end)):
+                if lo <= blk <= hi and liq > 0:
+                    data = "0x" + "0" * 128 + hex(_sqrt(p))[2:].rjust(64, "0") + hex(liq)[2:].rjust(64, "0") + "0" * 64
+                    result.append({"address": pool, "blockNumber": hex(blk), "logIndex": "0x1", "topics": [TOPIC_V3_SWAP], "data": data})
         else:
             return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "error": {"code": -32601, "message": "no"}})
         return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": result})
@@ -118,7 +127,7 @@ def test_basket_is_read_at_the_first_and_last_block(tmp_path: Path):
     assert eco["basis"] == ECOSYSTEM_BASIS
     assert eco["start_block"] == BLOCK0 + 200 and eco["end_block"] == BLOCK0 + 200 + 43_200 - 1
     got = {t["symbol"]: t for t in eco["tokens"]}
-    assert set(got) == {"BRETT", "TOSHI", "VIRTUAL", "cbBTC"}  # DEGEN wrong symbol, AERO no liquidity
+    assert set(got) == {"BRETT", "TOSHI", "VIRTUAL", "cbBTC"}  # DEGEN wrong symbol, AERO never traded
     assert all(t["pool_fee_pips"] == 10000 for t in got.values())  # the deeper pool wins
     assert abs(float(got["BRETT"]["return_vs_eth"]) - 0.10) < 1e-6 and abs(float(got["TOSHI"]["return_vs_eth"]) + 0.5) < 1e-6
     assert abs(float(eco["equal_weight_return_vs_eth"]) - (0.1 * 3 - 0.5) / 4) < 1e-6

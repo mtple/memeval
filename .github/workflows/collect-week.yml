@@ -95,7 +95,7 @@ jobs:
           BASE_RPC_URL: ${{ secrets.BASE_RPC_URL || secrets.RPC_URL }}
         run: |
           set -eu
-          uv run market-replay packs ecosystem weeks
+          uv run market-replay packs ecosystem weeks || echo "some days were not read; committing the ones that were"
           echo "SURVEY_ONLY=1" >> "$GITHUB_ENV"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

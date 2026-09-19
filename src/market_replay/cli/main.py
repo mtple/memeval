@@ -19,7 +19,7 @@ from ..service.auth import resolve_admin_token
 from ..service.embedded import EmbeddedServer
 from ..service.runs import RunManager
 
-app = typer.Typer(add_completion=False, no_args_is_help=True, help="Market Replay: strategy-agnostic trading-agent evaluator.")
+app = typer.Typer(add_completion=False, no_args_is_help=True, help="Market Replay: strategy-agnostic trading-agent evaluator.", pretty_exceptions_enable=False)  # a traceback with locals would print an endpoint URL
 packs_app = typer.Typer(help="Pack import, validation and listing.")
 fixtures_app = typer.Typer(help="Generated fixture packs.")
 app.add_typer(packs_app, name="packs")
@@ -136,13 +136,21 @@ def packs_ecosystem(
     from ..datasets.baseline import read_market_baseline
 
     dirs = [path] if (path / "manifest.yaml").exists() else sorted(d for d in path.iterdir() if (d / "manifest.yaml").exists() and not (read_market_baseline(d) or {}).get("ecosystem"))
+    failed = 0
     for d in dirs:
-        eco = write_ecosystem(d, rpc_url_env=rpc_url_env)
+        try:
+            eco = write_ecosystem(d, rpc_url_env=rpc_url_env)
+        except Exception as e:  # the next day still gets its turn; the message names no endpoint
+            failed += 1
+            typer.echo(f"{d.name}: not read ({type(e).__name__}: {e})", err=True)
+            continue
         typer.echo(f"{d.name}: {len(eco['tokens'])} tokens, depth-weighted {eco['depth_weighted_return_vs_eth']} vs ETH, ETH/USD {eco['eth_usd_return']}, {eco['budget']['requests']} requests", err=True)
         for n in eco["notes"]:
             typer.echo(f"  | {n}", err=True)
     if not dirs:
         typer.echo("every day already carries the ecosystem section", err=True)
+    if failed:
+        raise typer.Exit(1)
 
 
 @packs_app.command("import")

@@ -5,8 +5,10 @@ The launch basket in ``datasets/baseline.py`` says what buying every new coin wo
 Base that is a rug-pull statistic. Owners asked to compare with the market as a whole, which is this:
 DEGEN, BRETT, TOSHI, AERO, VIRTUAL and cbBTC against ETH, plus ETH itself in dollars through the
 USDC pool. Each token's deepest Uniswap v3 pool against WETH is found through the factory, its
-symbol is checked on chain, and its price is read from ``slot0`` at the two blocks. About 120 RPC
-requests per day. Read-only and budgeted like every collector; never imported by the engine.
+symbol is checked on chain, and its price is the ``sqrtPriceX96`` of the pool's first Swap event in
+the day's first blocks and its last Swap event in the day's last blocks. Logs are used rather than
+``slot0`` at a historical block because public endpoints prune old state but keep logs. About 100
+RPC requests per day. Read-only and budgeted like every collector; never imported by the engine.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ import yaml
 
 from ..datasets.baseline import BASELINE_FILE
 from .base import Budget, HttpCollector, ProviderError, ReceiptStore
-from .evm_rpc import RpcClient, hex_to_int, word
+from .evm_rpc import TOPIC_V3_SWAP, RpcClient, hex_to_int, word
 
 ECOSYSTEM_BASIS = "base_large_token_basket_vs_eth_v1"
 WETH = "0x4200000000000000000000000000000000000006"
@@ -41,12 +43,11 @@ BASKET: tuple[tuple[str, str], ...] = (
 SEL_SYMBOL = "0x95d89b41"
 SEL_DECIMALS = "0x313ce567"
 SEL_GET_POOL = "0x1698ee82"
-SEL_LIQUIDITY = "0x1a686502"
-SEL_SLOT0 = "0x3850c7bd"
+EDGE_BLOCKS = (1500, 12000)  # blocks searched for the first and last swap; a large token trades many times in 1500 blocks (50 minutes)
 
 CAVEATS = [
     "A fixed basket of six large Base tokens against ETH, not a published index and not weighted by market value; the depth-weighted line weights each token by the ETH its deepest v3 pool held at the start of the day.",
-    "Prices are the mid price of one Uniswap v3 pool at the day's first and last block, so they include no fees or slippage.",
+    "Prices are the pool price after the first swap of the day and after the last swap of the day in one Uniswap v3 pool, so they include no fees or slippage.",
     "ETH in dollars comes from the deepest WETH/USDC v3 pool on Base, not from an exchange.",
     "Returns against ETH are what an agent's final ETH return can be compared with; the dollar line only says what ETH itself did.",
 ]
@@ -81,28 +82,31 @@ def _eth_depth(liquidity: int, sqrt_p: int, weth_is_token0: bool) -> int:
     return (liquidity * Q96) // sqrt_p if weth_is_token0 else (liquidity * sqrt_p) // Q96
 
 
-def _deepest_pool(rpc: RpcClient, token: str, block: int) -> tuple[str, int, int] | None:
-    """(pool, fee, liquidity) of the token's deepest WETH pool on the v3 factory at ``block``."""
+def _pools_of(rpc: RpcClient, token: str) -> list[tuple[str, int]]:
+    """(pool, fee) for every fee tier the token has against WETH on the v3 factory (state read at latest:
+    a pool address never changes, and old state is pruned on public endpoints)."""
     a, b = sorted([token.lower(), WETH])
-    best: tuple[str, int, int] | None = None
+    out: list[tuple[str, int]] = []
     for fee in FEES:
         data = SEL_GET_POOL + _pad_addr(a) + _pad_addr(b) + hex(fee)[2:].rjust(64, "0")
-        res = rpc.eth_call(V3_FACTORY, data, block)
+        res = rpc.eth_call(V3_FACTORY, data, "latest")
         pool = "0x" + res[-40:] if res and len(res) >= 42 else None
-        if not pool or int(pool, 16) == 0:
-            continue
-        liq_hex = rpc.eth_call(pool, SEL_LIQUIDITY, block)
-        liq = hex_to_int(liq_hex) if liq_hex and liq_hex != "0x" else 0
-        if best is None or liq > best[2]:
-            best = (pool, fee, liq)
-    return best
+        if pool and int(pool, 16) != 0:
+            out.append((pool, fee))
+    return out
 
 
-def _sqrt_price(rpc: RpcClient, pool: str, block: int) -> int:
-    res = rpc.eth_call(pool, SEL_SLOT0, block)
-    if not res or res == "0x":
-        raise ProviderError(f"slot0 returned nothing for {pool}")
-    return word(res, 0)
+def _edge_swap(rpc: RpcClient, pool: str, block: int, *, first: bool, hi: int) -> tuple[int, int] | None:
+    """(sqrtPriceX96, liquidity) after the first swap at or after ``block`` (``first``) or the last swap at
+    or before it, searching a short block window and then a longer one."""
+    for span in EDGE_BLOCKS:
+        lo, up = (block, min(block + span, hi)) if first else (max(block - span, 1), block)
+        logs = rpc.get_logs(address=pool, topics=[TOPIC_V3_SWAP], from_block=lo, to_block=up)
+        if logs:
+            logs.sort(key=lambda lg: (hex_to_int(lg["blockNumber"]), hex_to_int(lg["logIndex"])))
+            lg = logs[0] if first else logs[-1]
+            return word(lg["data"], 2), word(lg["data"], 3)
+    return None
 
 
 def collect_ecosystem(pack_dir: Path | str, *, rpc_url_override: str | None = None, rpc_url_env: str = "BASE_RPC_URL", transport=None, sleep=None, max_requests: int = 600) -> dict[str, Any]:
@@ -139,32 +143,46 @@ def collect_ecosystem(pack_dir: Path | str, *, rpc_url_override: str | None = No
     tokens: list[dict[str, Any]] = []
     for expected, addr in BASKET:
         try:
-            symbol = _decode_string(rpc.eth_call(addr, SEL_SYMBOL, start_block)).strip()
+            symbol = _decode_string(rpc.eth_call(addr, SEL_SYMBOL, "latest")).strip()
         except (ProviderError, ValueError) as e:
             notes.append(f"{expected}: symbol() failed ({e}); left out")
             continue
         if symbol.lower() != expected.lower():
             notes.append(f"{expected}: contract reports symbol {symbol!r}; left out")
             continue
-        pool = _deepest_pool(rpc, addr, start_block)
-        if pool is None or pool[2] <= 0:
-            notes.append(f"{expected}: no WETH pool with liquidity on the v3 factory; left out")
-            continue
-        pool_addr, fee, liq = pool
         weth0 = WETH < addr.lower()
-        sp0, sp1 = _sqrt_price(rpc, pool_addr, start_block), _sqrt_price(rpc, pool_addr, end_block)
+        best: tuple[int, str, int, int, int] | None = None  # (eth depth at the start, pool, fee, sqrt start, sqrt end)
+        for pool_addr, fee in _pools_of(rpc, addr):
+            a, b = _edge_swap(rpc, pool_addr, start_block, first=True, hi=end_block), _edge_swap(rpc, pool_addr, end_block, first=False, hi=end_block)
+            if a is None or b is None:
+                continue
+            depth = _eth_depth(a[1], a[0], weth0)
+            if best is None or depth > best[0]:
+                best = (depth, pool_addr, fee, a[0], b[0])
+        if best is None:
+            notes.append(f"{expected}: no WETH pool on the v3 factory traded at both ends of the day; left out")
+            continue
+        depth, _pool_addr, fee, sp0, sp1 = best
         p0, p1 = _token_price_in_weth(sp0, weth0), _token_price_in_weth(sp1, weth0)
-        tokens.append({"symbol": symbol, "pool_fee_pips": fee, "eth_depth_start_raw": str(_eth_depth(liq, sp0, weth0)), "return_vs_eth": _fmt(p1 / p0 - 1)})
+        tokens.append({"symbol": symbol, "pool_fee_pips": fee, "eth_depth_start_raw": str(depth), "return_vs_eth": _fmt(p1 / p0 - 1)})
     eth_usd: str | None = None
     try:
-        pool = _deepest_pool(rpc, USDC, start_block)
-        if pool is not None:
-            weth0 = WETH < USDC
-            sp0, sp1 = _sqrt_price(rpc, pool[0], start_block), _sqrt_price(rpc, pool[0], end_block)
-            usd0 = 1 / _token_price_in_weth(sp0, weth0) * Fraction(10**12)  # USDC (6 dp) per ETH (18 dp)
-            usd1 = 1 / _token_price_in_weth(sp1, weth0) * Fraction(10**12)
+        weth0 = WETH < USDC
+        usd_best: tuple[int, int, int, int] | None = None  # (depth, fee, sqrt start, sqrt end)
+        for pool_addr, fee in _pools_of(rpc, USDC):
+            a, b = _edge_swap(rpc, pool_addr, start_block, first=True, hi=end_block), _edge_swap(rpc, pool_addr, end_block, first=False, hi=end_block)
+            if a is None or b is None:
+                continue
+            depth = _eth_depth(a[1], a[0], weth0)
+            if usd_best is None or depth > usd_best[0]:
+                usd_best = (depth, fee, a[0], b[0])
+        if usd_best is not None:
+            usd0 = 1 / _token_price_in_weth(usd_best[2], weth0) * Fraction(10**12)  # USDC (6 dp) per ETH (18 dp)
+            usd1 = 1 / _token_price_in_weth(usd_best[3], weth0) * Fraction(10**12)
             eth_usd = _fmt(usd1 / usd0 - 1)
-            notes.append(f"ETH/USD read from the {pool[1] / 10000:g}% WETH/USDC v3 pool: {float(usd0):.2f} at the start, {float(usd1):.2f} at the end")
+            notes.append(f"ETH/USD read from the {usd_best[1] / 10000:g}% WETH/USDC v3 pool: {float(usd0):.2f} at the start, {float(usd1):.2f} at the end")
+        else:
+            notes.append("ETH/USD unavailable: no WETH/USDC v3 pool traded at both ends of the day")
     except (ProviderError, ValueError, ZeroDivisionError) as e:
         notes.append(f"ETH/USD unavailable: {e}")
     rets = [Fraction(t["return_vs_eth"]) for t in tokens]
