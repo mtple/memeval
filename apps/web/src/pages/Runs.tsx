@@ -97,7 +97,6 @@ export default function Runs() {
                       <tr key={r.run_id}>
                         <td>
                           <Link to={`/agents/${r.agent_id}`}>{r.agent_name ?? agents.data?.find((a) => a.agent_id === r.agent_id)?.name ?? shortHash(r.agent_id)}</Link>
-                          {r.agent_version && <span className="muted small"> v{r.agent_version}</span>}
                         </td>
                         <td>
                           {r.pack_label ?? r.pack_name ?? shortHash(r.pack_id)}
@@ -220,7 +219,7 @@ function RunSuite({ agents, suites, onCreated, runtimes, hosted }: { agents: Age
             <option value="">select…</option>
             {agents.map((a) => (
               <option key={a.agent_id} value={a.agent_id}>
-                {a.name} v{a.version}
+                {a.name}
               </option>
             ))}
           </select>

@@ -88,7 +88,7 @@ function NewComparison({ agents, suites, onCreated }: { agents: Agent[]; suites:
             <option value="">select…</option>
             {agents.map((a) => (
               <option key={a.agent_id} value={a.agent_id}>
-                {a.name} v{a.version}
+                {a.name}
               </option>
             ))}
           </select>
@@ -99,7 +99,7 @@ function NewComparison({ agents, suites, onCreated }: { agents: Agent[]; suites:
             <option value="">select…</option>
             {agents.map((a) => (
               <option key={a.agent_id} value={a.agent_id}>
-                {a.name} v{a.version}
+                {a.name}
               </option>
             ))}
           </select>
@@ -222,9 +222,9 @@ function ComparisonView({ c }: { c: Comparison }) {
               ["Stochastic trials A / B", `${c.evidence_counts?.stochastic_trials_a} / ${c.evidence_counts?.stochastic_trials_b}`],
               ["Suite", c.suite_id ?? "n/a"],
               ["Suite fingerprint", <span className="mono">{c.suite_fingerprint ?? "n/a"}</span>],
-              ["Agent A", `${c.agents.a.name} v${c.agents.a.version} (${c.agents.a.runtime})`],
+              ["Agent A", `${c.agents.a.name} (${c.agents.a.runtime})`],
               ["A fingerprint", <span className="mono">{c.agents.a.fingerprint}</span>],
-              ["Agent B", `${c.agents.b.name} v${c.agents.b.version} (${c.agents.b.runtime})`],
+              ["Agent B", `${c.agents.b.name} (${c.agents.b.runtime})`],
               ["B fingerprint", <span className="mono">{c.agents.b.fingerprint}</span>],
               ["Created", fmtDate(c.created_at)],
             ]}

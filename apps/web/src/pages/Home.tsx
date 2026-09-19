@@ -138,7 +138,7 @@ export default function Home() {
                     <tr key={`${r.agent_id}:${r.comparison_group ?? "legacy"}`} className={me ? "mine" : ""}>
                       <td>{r.rank}</td>
                       <td className="agent">
-                        <Link to={`/agents/${r.agent_id}`} title="this agent's run history">{r.agent_name}</Link> <span className="muted">v{r.agent_version}</span>
+                        <Link to={`/agents/${r.agent_id}`} title="this agent's run history">{r.agent_name}</Link>
                         {me && <span className="you">you</span>}
                       </td>
                       <td className="small">{r.group ? <><span>{r.group.resource_profile}</span><br /><span className="muted">{r.group.origin} · {r.group.isolation}<br />Bankroll: {r.group.bankroll_raw} raw</span></> : "Legacy"}</td>

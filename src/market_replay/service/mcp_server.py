@@ -120,8 +120,8 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
     for mcp_name, canonical in MCP_NAME_MAP.items():
         register(mcp_name, canonical, TOOLS[canonical])
 
-    @mcp.tool(name="enroll", description="Join once: first ask your user what name to sign up with, suggesting your own plain name exactly as they know you (no strategy or attempt suffix), and register under the name they choose to get your identity token (agent_token). No credential needed. Keep one name; it is your reputation on the board (a new version of the same name is fine; a second name from the same address is refused). Creates no runs: call `play` with the agent_token to trade.", structured_output=True)
-    def enroll(ctx: Context, agent_name: str, agent_version: str = "1") -> dict[str, Any]:
+    @mcp.tool(name="enroll", description="Join once: first ask your user what name to sign up with, suggesting your own plain name exactly as they know you (no strategy or attempt suffix), and register under the name they choose to get your identity token (agent_token). No credential needed. Keep one name; it is your reputation on the board and every run you make lists under it, however much your strategy changes (a second name from the same address is refused). Creates no runs: call `play` with the agent_token to trade.", structured_output=True)
+    def enroll(ctx: Context, agent_name: str, agent_version: str = "1") -> dict[str, Any]:  # agent_version: legacy, ignored
         try:
             if not public_runs():
                 return {"status": "error", "error": {"code": "UNAUTHORIZED", "message": "public runs are switched off on this server; ask its operator"}}
@@ -129,7 +129,7 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
             key = client_ip(req) if client_ip is not None and req is not None else None
             if key is not None:
                 manager.rate_limit("runs", key)
-            return {"status": "ok", "data": manager.enroll(agent={"name": agent_name, "version": agent_version, "runtime": "external"}, client_key=key)}
+            return {"status": "ok", "data": manager.enroll(agent={"name": agent_name, "runtime": "external"}, client_key=key)}
         except Exception as e:
             return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
 
@@ -141,7 +141,7 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
         except Exception as e:
             return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
 
-    @mcp.tool(name="rename", description="Change the name you show under (for example to drop a suffix your user did not ask for). Your id, token, runs and board rows stay. Refused if another agent already uses that name with your version.", structured_output=True)
+    @mcp.tool(name="rename", description="Change the name you show under (for example to drop a suffix your user did not ask for). Your id, token, runs and board rows stay. Refused if another agent already uses that name.", structured_output=True)
     def rename(agent_token: str, name: str) -> dict[str, Any]:
         try:
             return {"status": "ok", "data": manager.rename_agent(agent_token=agent_token, name=name)}

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Market Replay participant. Joins, lists the recorded days, and plays the ones you pick. Standard library only.
 
-    python3 market_replay_agent.py --agent my-bot --version 1
+    python3 market_replay_agent.py --agent my-bot
     python3 market_replay_agent.py --agent my-bot --server https://memeval-web.vercel.app
 
 Replace `decide` with your strategy. The default holds cash, which is a legitimate result.
@@ -67,10 +67,10 @@ def http(method: str, url: str, body: dict | None = None, token: str | None = No
 class Credentials:
     """An atomic, owner-only credential file. Never print its contents or commit it."""
 
-    def __init__(self, path: Path, server: str, agent: str, version: str) -> None:
+    def __init__(self, path: Path, server: str, agent: str) -> None:
         self.path = path.expanduser()
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self.scope = {"server": server, "agent": agent, "version": version}
+        self.scope = {"server": server, "agent": agent}
         self.data = {"schema": 1, **self.scope, "identity": None, "runs": {}}
 
     def __enter__(self):
@@ -82,7 +82,7 @@ class Credentials:
             if self.path.exists():
                 self.data = json.loads(self.path.read_text())
                 if self.data.get("schema") != 1 or any(self.data.get(k) != v for k, v in self.scope.items()):
-                    raise ValueError("Credential file belongs to a different server, agent or version.")
+                    raise ValueError("Credential file belongs to a different server or agent.")
                 if not isinstance(self.data.get("runs"), dict):
                     raise ValueError("Credential file has invalid run records.")
             self.save()  # Check persistence before creating any credentials on the server.
@@ -108,8 +108,8 @@ class Credentials:
                 os.unlink(name)
 
 
-def default_state_path(server: str, agent: str, version: str) -> Path:
-    scope = json.dumps([server, agent, version], separators=(",", ":"))
+def default_state_path(server: str, agent: str) -> Path:
+    scope = json.dumps([server, agent], separators=(",", ":"))
     key = hashlib.sha256(scope.encode()).hexdigest()[:24]
     root = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
     return root / "market-replay" / f"{key}.json"
@@ -248,13 +248,13 @@ def run_saved(a, credentials: Credentials) -> int:
     if not joined:
         if a.resume:
             raise ValueError("No saved identity or runs. Use the credential file from the original invocation.")
-        joined = http("POST", f"{server}/api/v1/enroll", {"agent": {"name": a.agent, "version": a.version, "runtime": "external"}})
+        joined = http("POST", f"{server}/api/v1/enroll", {"agent": {"name": a.agent, "runtime": "external"}})
         saved["identity"] = joined
         credentials.save()
 
     if not (a.pack or a.suite or a.all or a.resume):
         listing = http("GET", f"{server}/api/v1/play", token=joined["agent_token"])
-        print(f"joined as {joined['agent_name']} v{joined['agent_version']}. Recorded days:")
+        print(f"joined as {joined['agent_name']}. Recorded days:")
         for e in listing.get("episodes") or []:
             print(f"- {e['pack_id']}  {e['label']}: {e.get('pools_tradable')} tradable pools, {e.get('tape_events')} events; you: {e.get('your_status')}")
         print("pick with --pack <pack_id> (repeatable), or --all. Use --resume to continue saved unfinished runs.")
@@ -298,7 +298,7 @@ def run_saved(a, credentials: Credentials) -> int:
         runs.extend(enrolled["runs"])
 
     results_url = joined.get("results_url", server)
-    print(f"joined as {joined['agent_name']} v{joined['agent_version']}; {len(runs)} episode(s) to play; results: {results_url}")
+    print(f"joined as {joined['agent_name']}; {len(runs)} episode(s) to play; results: {results_url}")
     failed = False
     for r in runs:
         cred = r["session_credential"]
@@ -322,18 +322,17 @@ def run_saved(a, credentials: Credentials) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--server", default=DEFAULT_SERVER)
-    ap.add_argument("--agent", required=True, help="your agent's name (same name + version = same agent)")
-    ap.add_argument("--version", default="1")
+    ap.add_argument("--agent", required=True, help="your agent's name (the name is the agent; every run you make lists under it)")
     selection = ap.add_mutually_exclusive_group()
     selection.add_argument("--suite", help="an operator test suite id")
     selection.add_argument("--pack", action="append", help="play this episode; repeatable; saved unfinished runs resume")
     selection.add_argument("--all", action="store_true", help="resume saved runs first, otherwise play unfinished recorded days")
     selection.add_argument("--resume", nargs="?", const="all", help="resume saved unfinished runs, or one run id; creates no runs")
-    ap.add_argument("--state-file", type=Path, help="private credential file; default is scoped by server, agent and version under XDG_STATE_HOME/market-replay")
+    ap.add_argument("--state-file", type=Path, help="private credential file; default is scoped by server and agent under XDG_STATE_HOME/market-replay")
     a = ap.parse_args()
     server = a.server.rstrip("/")
     try:
-        with Credentials(a.state_file or default_state_path(server, a.agent, a.version), server, a.agent, a.version) as credentials:
+        with Credentials(a.state_file or default_state_path(server, a.agent), server, a.agent) as credentials:
             return run_saved(a, credentials)
     except BlockingIOError:
         print("Another starter invocation is using this credential file.", file=sys.stderr)

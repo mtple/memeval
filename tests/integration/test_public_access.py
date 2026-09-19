@@ -143,15 +143,25 @@ def test_leaderboard_ranks_agents_per_category_and_join_serves_the_skill(tmp_pat
     assert c.get("/api/v1/leaderboard?all=1").json()["category"]["kind"] == "all"
     join = c.get("/join")
     assert join.status_code == 200 and join.text.startswith("---\nname: market-replay")
-    enrolled = c.post("/api/v1/enroll", json={"agent": {"name": "holder", "version": "1"}}).json()
+    enrolled = c.post("/api/v1/enroll", json={"agent": {"name": "holder"}}).json()
+    # the name is the agent, so this is the same "holder" that already ran above, not a new one
+    before = len(c.get("/api/v1/runs", params={"agent_id": enrolled["agent_id"]}).json()["items"])
     assert enrolled["results_url"].endswith(f"/?agent={enrolled['agent_id']}") and enrolled["agent_token"].startswith("agn_")
     played = c.post("/api/v1/play", headers={"Authorization": "Bearer " + enrolled["agent_token"]}, json={"pack_id": "gen_dev_short"})
     assert played.status_code == 201 and len(played.json()["runs"]) == 1
-    # one name per agent: a second name from the same address is refused; a new version of the same name is not
-    second = c.post("/api/v1/enroll", json={"agent": {"name": "holder-momentum", "version": "1"}})
+    # one name per agent: a second name from the same address is refused
+    second = c.post("/api/v1/enroll", json={"agent": {"name": "holder-momentum"}})
     assert second.status_code == 409 and second.json()["code"] == "ONE_NAME" and "holder" in second.json()["message"]
-    again = c.post("/api/v1/enroll", json={"agent": {"name": "Holder", "version": "2"}})
-    assert again.status_code == 201
+    # the name is the agent: joining again under it is the same agent, with a fresh token, whatever
+    # the strategy did in between — and a legacy client still sending a version gets that same agent
+    again = c.post("/api/v1/enroll", json={"agent": {"name": "holder", "version": "7"}})
+    assert again.status_code == 201 and again.json()["agent_id"] == enrolled["agent_id"]
+    assert again.json()["agent_token"] != enrolled["agent_token"]
+    played_again = c.post("/api/v1/play", headers={"Authorization": "Bearer " + again.json()["agent_token"]}, json={"pack_id": "gen_dev_short"})
+    assert played_again.status_code == 201
+    mine = c.get("/api/v1/runs", params={"agent_id": enrolled["agent_id"]}).json()["items"]
+    assert len(mine) == before + 2  # every run this name makes lists under it, across re-joins
+    assert {r["agent_name"] for r in mine} == {"holder"}
     mgr.close()
 
 
@@ -252,7 +262,7 @@ def test_enrolling_again_adds_only_unfinished_episodes(tmp_path: Path, dev_pack_
     monkeypatch.setattr(runs_mod, "WEEKS_DIR", weeks)
     mgr = RunManager(data_dir=tmp_path / "a", store_url=str(tmp_path / "store.sqlite"), hosted=True)
     mgr.register_shipped_weeks()
-    joined = mgr.enroll(agent={"name": "turtle", "version": "1"})
+    joined = mgr.enroll(agent={"name": "turtle"})
     ep = joined["episodes"][0]
     assert ep["your_status"] == "new" and ep["agents_ranked"] == 0 and ep["top_return"] is None
     assert ep["pools_tradable"] >= 1 and ep["tape_events"] >= 1 and ep["gas_per_fill_raw"] == "0" and ep["date"]  # a fixture-built pack measured no gas
@@ -278,13 +288,18 @@ def test_enrolling_again_adds_only_unfinished_episodes(tmp_path: Path, dev_pack_
     # an explicit choice is played even when finished: a new attempt
     assert len(mgr.play(agent_token=joined["agent_token"], pack_ids=[ep["pack_id"]])["runs"]) == 1
     # joining again retires the old token and issues a new one
-    rejoined = mgr.enroll(agent={"name": "turtle", "version": "1"})
+    rejoined = mgr.enroll(agent={"name": "turtle"})
     assert rejoined["agent_id"] == joined["agent_id"] and rejoined["agent_token"] != joined["agent_token"]
     with pytest.raises(ApiError):
         mgr.play(agent_token=joined["agent_token"])
-    # a new version of the name starts fresh
-    v2 = mgr.enroll(agent={"name": "turtle", "version": "2"})
-    assert [r["pack_name"] for r in mgr.play(agent_token=v2["agent_token"])["runs"]] == ["base_day_2026-09-08"]
+    # the name is the agent: a legacy client sending a different version is still that same agent,
+    # with the same finished episodes, and re-trading a finished day is an explicit pack_id
+    legacy = mgr.enroll(agent={"name": "turtle", "version": "2"})
+    assert legacy["agent_id"] == joined["agent_id"]
+    assert mgr.play(agent_token=legacy["agent_token"])["runs"] == []
+    pack_id = mgr.episodes_for(joined["agent_id"])[0]["pack_id"]
+    replayed = mgr.play(agent_token=legacy["agent_token"], pack_id=pack_id)
+    assert [r["pack_name"] for r in replayed["runs"]] == ["base_day_2026-09-08"]
     mgr.close()
 
 

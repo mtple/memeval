@@ -26,7 +26,7 @@ def test_interruption_keeps_all_tokens_and_resume_never_enrolls_or_creates(start
     def http(method, url, body=None, token=None):
         calls.append((method, url))
         if url.endswith("/enroll"):
-            return {"agent_name": "bot", "agent_version": "1", "agent_token": "agn_private", "results_url": server}
+            return {"agent_name": "bot", "agent_token": "agn_private", "results_url": server}
         if url.endswith("/play"):
             return {"suite_id": "test-suite", "runs": [{"run_id": f"run_{i}", "pack_id": f"pack_{i}", "pack_name": f"episode_{i}", "session_credential": {"commands_url": server + "/agent/v1/commands", "token": f"agt_private_{i}"}} for i in (1, 2)]}
         if url.endswith("/runs/run_1"):
@@ -43,12 +43,12 @@ def test_interruption_keeps_all_tokens_and_resume_never_enrolls_or_creates(start
 
     monkeypatch.setattr(starter, "http", http)
     monkeypatch.setattr(starter, "play", play)
-    args = argparse.Namespace(server=server, agent="bot", version="1", suite="test-suite", pack=None, all=False, resume=None)
-    with starter.Credentials(path, server, "bot", "1") as credentials:
+    args = argparse.Namespace(server=server, agent="bot", suite="test-suite", pack=None, all=False, resume=None)
+    with starter.Credentials(path, server, "bot") as credentials:
         assert starter.run_saved(args, credentials) == 1
     assert path.stat().st_mode & 0o777 == 0o600
     args.suite, args.resume = None, "all"
-    with starter.Credentials(path, server, "bot", "1") as credentials:
+    with starter.Credentials(path, server, "bot") as credentials:
         assert starter.run_saved(args, credentials) == 0
     assert attempts == ["agt_private_1", "agt_private_2", "agt_private_1"]
     assert calls.count(("POST", server + "/api/v1/enroll")) == 1
@@ -59,12 +59,12 @@ def test_interruption_keeps_all_tokens_and_resume_never_enrolls_or_creates(start
 
 def test_credential_scope_lock_and_atomic_save(starter, tmp_path, monkeypatch):
     path = tmp_path / "credentials.json"
-    with starter.Credentials(path, "http://one.test", "bot", "1") as credentials:
+    with starter.Credentials(path, "http://one.test", "bot") as credentials:
         credentials.data["identity"] = {"agent_token": "saved"}
         credentials.save()
         before = path.read_bytes()
         with pytest.raises(BlockingIOError):
-            with starter.Credentials(path, "http://one.test", "bot", "1"):
+            with starter.Credentials(path, "http://one.test", "bot"):
                 pass
         def fail_replace(*_):
             raise OSError("disk failure")
@@ -75,5 +75,5 @@ def test_credential_scope_lock_and_atomic_save(starter, tmp_path, monkeypatch):
         assert path.read_bytes() == before
         assert sorted(p.name for p in tmp_path.iterdir()) == ["credentials.json", "credentials.json.lock"]
     with pytest.raises(ValueError, match="different server"):
-        with starter.Credentials(path, "http://other.test", "bot", "1"):
+        with starter.Credentials(path, "http://other.test", "bot"):
             pass

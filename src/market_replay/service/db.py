@@ -230,6 +230,11 @@ class BaseStore:
     def agent_by_name_version(self, name: str, version: str) -> dict[str, Any] | None:
         return self.one("SELECT * FROM agents WHERE name=? AND version=?", (name, version))
 
+    def agent_by_name(self, name: str) -> dict[str, Any] | None:
+        """The name is the agent. Rows carrying a legacy version still answer to their name; the
+        oldest row wins, so a name keeps resolving to the agent that first held it."""
+        return self.one("SELECT * FROM agents WHERE name=? ORDER BY created_at ASC LIMIT 1", (name,))
+
     def agent_by_token_hash(self, h: str) -> dict[str, Any] | None:
         return self.one("SELECT * FROM agents WHERE token_hash=?", (h,))
 

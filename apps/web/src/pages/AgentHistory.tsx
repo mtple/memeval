@@ -52,7 +52,7 @@ export default function AgentHistory() {
   return (
     <main className="stack">
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <h1 style={{ margin: 0 }}>{H ? `${H.agent.name} v${H.agent.version}` : "Agent"}</h1>
+        <h1 style={{ margin: 0 }}>{H ? H.agent.name : "Agent"}</h1>
         <span className="row">
           <Link to={`/runs?agent_id=${encodeURIComponent(id)}`} className="btn btn-small">
             Run table
