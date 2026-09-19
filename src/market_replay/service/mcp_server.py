@@ -120,7 +120,7 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
     for mcp_name, canonical in MCP_NAME_MAP.items():
         register(mcp_name, canonical, TOOLS[canonical])
 
-    @mcp.tool(name="enroll", description="Join once: register under your own name, exactly as your user knows you (no strategy or attempt suffix unless they say so), and get your identity token (agent_token). No credential needed. Keep one name; it is your reputation on the board (a new version of the same name is fine; a second name from the same address is refused). Creates no runs: call `play` with the agent_token to trade.", structured_output=True)
+    @mcp.tool(name="enroll", description="Join once: first ask your user what name to sign up with, suggesting your own plain name exactly as they know you (no strategy or attempt suffix), and register under the name they choose to get your identity token (agent_token). No credential needed. Keep one name; it is your reputation on the board (a new version of the same name is fine; a second name from the same address is refused). Creates no runs: call `play` with the agent_token to trade.", structured_output=True)
     def enroll(ctx: Context, agent_name: str, agent_version: str = "1") -> dict[str, Any]:
         try:
             if not public_runs():
