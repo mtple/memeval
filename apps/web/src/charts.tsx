@@ -1,5 +1,5 @@
 import type { Bar } from "./api";
-import { fmtRel } from "./format";
+import { fmtClock, fmtRel } from "./format";
 
 /*
  * Inline-SVG charts. Decimal strings are converted to Number ONLY for pixel placement;
@@ -14,7 +14,35 @@ const num = (s: string | null | undefined): number | null => {
 
 type Gap = { start_ms: number; end_ms: number; reason: string };
 
-export function CandleChart({ bars, gaps, clockMs, markers = [], width = 720, height = 220 }: { bars: Bar[]; gaps: Gap[]; clockMs: number; markers?: { time_ms: number; price: string; label: string; side: string }[]; width?: number; height?: number }) {
+/** A unit that makes tiny per-token prices readable: 0.0000000543 ETH becomes 54.3 nano-ETH. */
+export type PriceScale = { factor: number; unitName: string; oneIs: string; fmt: (v: string | number) => string };
+const SCALES: [number, string, string][] = [
+  [1, "ETH", "1"],
+  [1e-3, "milli-ETH", "0.001"],
+  [1e-6, "micro-ETH", "0.000001"],
+  [1e-9, "nano-ETH", "0.000000001"],
+  [1e-12, "pico-ETH", "0.000000000001"],
+  [1e-15, "femto-ETH", "0.000000000000001"],
+  [1e-18, "wei", "0.000000000000000001"],
+];
+export function priceScale(values: (string | number)[], unit = "ETH"): PriceScale | null {
+  const nums = values.map(Number).filter((v) => Number.isFinite(v) && v > 0);
+  if (!nums.length) return null;
+  const typical = nums.slice().sort((a, b) => a - b)[Math.floor(nums.length / 2)]!;
+  const pick = SCALES.find(([f]) => typical >= f) ?? SCALES[SCALES.length - 1]!;
+  const [factor, name, oneIs] = pick;
+  const unitName = name === "ETH" ? unit : unit === "ETH" ? name : `${name.replace("ETH", unit)}`;
+  const fmt = (v: string | number) => {
+    const x = Number(v) / factor;
+    if (!Number.isFinite(x)) return String(v);
+    return x >= 100 ? x.toFixed(0) : x >= 10 ? x.toFixed(1) : x.toFixed(2);
+  };
+  return { factor, unitName, oneIs, fmt };
+}
+
+export function CandleChart({ bars, gaps, clockMs, markers = [], width = 720, height = 220, scale }: { bars: Bar[]; gaps: Gap[]; clockMs: number; markers?: { time_ms: number; price: string; label: string; side: string }[]; width?: number; height?: number; scale?: PriceScale }) {
+  const tick = (v: number) => (scale ? scale.fmt(v) : v.toPrecision(5));
+  const when = (t: number) => (scale ? fmtClock(t) : fmtRel(t));
   // Hard guard: never render anything at or beyond the virtual clock.
   const visible = bars.filter((b) => b.start_ms < clockMs && !b.synthetic_empty_bar && b.close !== null);
   if (visible.length === 0) {
@@ -57,7 +85,7 @@ export function CandleChart({ bars, gaps, clockMs, markers = [], width = 720, he
         <g key={i}>
           <line x1={pad.l} x2={width - pad.r} y1={ys(v)} y2={ys(v)} className="grid" />
           <text x={pad.l - 6} y={ys(v) + 4} textAnchor="end" className="axis">
-            {v.toPrecision(5)}
+            {tick(v)}
           </text>
         </g>
       ))}
@@ -83,17 +111,17 @@ export function CandleChart({ bars, gaps, clockMs, markers = [], width = 720, he
           </g>
         );
       })}
-      {visibleMarkers.map((m, i) => <g key={`${m.time_ms}-${i}`} role="img" aria-label={`${m.label} at ${fmtRel(m.time_ms)}, price ${m.price}`}>
-        <title>{`${m.label} at ${fmtRel(m.time_ms)} · ${m.price}`}</title>
+      {visibleMarkers.map((m, i) => <g key={`${m.time_ms}-${i}`} role="img" aria-label={`${m.label} at ${when(m.time_ms)}, price ${tick(Number(m.price))}`}>
+        <title>{`${m.label} at ${when(m.time_ms)} for ${tick(Number(m.price))}${scale ? ` ${scale.unitName}` : ""} per token`}</title>
         <circle cx={xs(m.time_ms)} cy={ys(Number(m.price))} r={5} fill={m.side === "buy" ? "#168047" : "#be4535"} stroke="white" />
         <text x={xs(m.time_ms)} y={Math.max(12, ys(Number(m.price)) - 9)} textAnchor="middle" fill="currentColor" fontSize="11">{m.side === "buy" ? "B" : "S"}</text>
       </g>)}
       <line x1={xs(t1)} x2={xs(t1)} y1={pad.t} y2={height - pad.b} className="clock-line" />
       <text x={pad.l} y={height - 6} className="axis">
-        {fmtRel(t0)}
+        {when(t0)}
       </text>
       <text x={width - pad.r} y={height - 6} textAnchor="end" className="axis">
-        {fmtRel(t1)} (clock)
+        {when(t1)}{scale ? "" : " (clock)"}
       </text>
     </svg>
   );

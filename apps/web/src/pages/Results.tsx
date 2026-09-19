@@ -135,28 +135,20 @@ export default function Results() {
 
           <TradeReview key={id} runId={id} />
           <DecisionTimeline key={`timeline-${id}`} runId={id} />
-          <Card title="How much to trust this">
+          <p className="small muted" style={{ maxWidth: "80ch" }}>
+            This is a replay of a recorded day, not live trading: other traders' actions are fixed, fills come from a pool model, and nothing here predicts live results. <Link to="/about">How results work</Link>.
+          </p>
+          <details className="more">
+            <summary>All the details (risk, costs, activity, unresolved items, assumptions, versions, reproducibility, exports)</summary>
+            <div className="stack" style={{ marginTop: 8 }}>
+          <Card title="Trust and validity">
             <ul className="plain" style={{ paddingLeft: 18 }}>
               {DIMENSION_ORDER.map((k) => (
                 <li key={k}>
                   <strong>{dimensionLabel(k)}.</strong> {explainDimension(k, R.status_dimensions?.[k])}
                 </li>
               ))}
-              <li>
-                <strong>Valuation.</strong>{" "}
-                {R.outcome.valuation_complete ? "Every holding could be priced by selling it through the model's own pools, so the final value is complete." : "Some holdings could not be priced, so liquidatable portfolio value is unknown. Final ETH/cash return does not depend on unsold token values."}
-              </li>
             </ul>
-            {R.coverage_and_assumptions.limitations?.length > 0 && (
-              <>
-                <h3>Known limits of this simulation</h3>
-                <ul className="plain" style={{ paddingLeft: 18 }}>
-                  {R.coverage_and_assumptions.limitations.map((l, i) => (
-                    <li key={i}>{l}</li>
-                  ))}
-                </ul>
-              </>
-            )}
             <h3>Run validity</h3>
             {R.execution_validity ? <>
               <p className={R.provisional ? "notice warn" : "muted"}>{R.provisional ? "Provisional outcome. This run is excluded from ranking under the execution eligibility rule." : "This run passes the execution eligibility gates for its declared model and resource profile."}</p>
@@ -167,10 +159,6 @@ export default function Results() {
             {R.resource_profile && <KV rows={[["Resource profile", humanize(R.resource_profile.profile_id)], ["Computation treatment", R.resource_profile.decision_latency_basis], ["Assumed decision time", `${R.resource_profile.decision_latency_ms} ms`], ["Execution stress", R.resource_profile.stress_basis]]} />}
             <p className="statement">{R.statement}</p>
           </Card>
-
-          <details className="more">
-            <summary>All the details (risk, costs, activity, unresolved items, assumptions, versions, reproducibility, exports)</summary>
-            <div className="stack" style={{ marginTop: 8 }}>
           {R.attribution && <Card title="Concentration and trade dependence"><KV rows={[["Largest asset share of buy notional", fmtPct(R.attribution.largest_asset_share_of_buy_notional)], ["Best sale's share of positive realized contributions", fmtPct(R.attribution.best_trade_share_of_positive_realized_contributions)], ["Cash reference return", fmtReturn(R.attribution.cash_reference_return)]]} /><p className="muted small">{R.attribution.note}</p></Card>}
           {R.execution_evidence && <Card title="Execution evidence"><KV rows={Object.entries(R.execution_evidence.mechanics).map(([key, value]) => [humanize(key), humanize(value)])} /><p className="muted small">{humanize(R.execution_evidence.flow_basis)}. {R.execution_evidence.calibration}</p></Card>}
           <div className="grid-2">

@@ -976,16 +976,30 @@ class RunManager:
 
     def _store_trade_review(self, ctx: RunContext) -> dict[str, Any] | None:
         """Keep the trade review next to the report while the session is live: rebuilding a session of a
-        real day later means replaying the whole day, which a serverless function cannot afford."""
+        real day later means replaying the whole day, which a serverless function cannot afford. The
+        price history of every pool the agent traded in travels with it, so the charts need no session."""
         from ..evaluation.trade_review import build_trade_review
 
         try:
             review = build_trade_review(ctx.session)
+            review["series"] = self._traded_pool_series(ctx.session, review)
         except Exception:
             LOG.exception("trade_review_failed run_id=%s", ctx.run_id)
             return None
         self.store.put_doc(ctx.run_id, "trade_review", review)
         return review
+
+    @staticmethod
+    def _traded_pool_series(s: Session, review: dict[str, Any]) -> dict[str, Any]:
+        """Candles over the whole episode for each pool with an order, about 300 bars each."""
+        duration = max(1, s.sim.end_ms)
+        interval_ms = max(60_000, -(-duration // 300 // 60_000) * 60_000)
+        out: dict[str, Any] = {}
+        for pid in sorted({e["pool_id"] for e in review.get("events", [])}):
+            r = s.alias.resolve(pid)
+            if r and r[0] == "pool":
+                out[pid] = _pool_series(s, r[1], pid, interval_ms)
+        return out
 
     def pause(self, run_id: str) -> dict[str, Any]:
         ctx = self._ctx(run_id)
@@ -1813,6 +1827,28 @@ FIXTURE_SCENARIO_NAMES = {
     "gen_week_liquidity_shift": "liquidity moves between pools",
     "gen_dev_short": "short warm-up",
 }
+
+
+def _pool_series(s: Session, key: str, pid: str, interval_ms: int) -> dict[str, Any]:
+    """Public candles of one pool up to the session clock, quote per base with decimals applied."""
+    from fractions import Fraction
+
+    from ..domain.quantities import fraction_to_decimal_str
+    from ..observations.store import aggregate_candles
+
+    base, quote = s._base_quote(key)
+    end = s.now
+    start = max(end - interval_ms * 400, -(10**12))
+    candles, gaps = aggregate_candles(s.sim.obs[key], base_asset=base, interval_ms=interval_ms, start_ms=start, end_ms=end, as_of=s.now, availability_delay_ms=s.params.availability_delay_ms, include_partial=False)
+    scale = Fraction(10 ** s._decimals(base), 10 ** s._decimals(quote))
+    items = []
+    for c in candles:
+        d = c.to_public()
+        for f in ("open", "high", "low", "close"):
+            v = getattr(c, f)
+            d[f] = None if v is None else fraction_to_decimal_str(v * scale, 18)
+        items.append(d)
+    return {"pool_id": pid, "interval_ms": interval_ms, "items": items, "gaps": gaps, "as_of_ms": s.now}
 
 
 def is_internal_agent(name: str | None) -> bool:

@@ -6,6 +6,7 @@ import { Badge } from "./ui";
 import Home from "./pages/Home";
 import Episodes from "./pages/Episodes";
 import AgentHistory from "./pages/AgentHistory";
+import About from "./pages/About";
 import Agents from "./pages/Agents";
 import Runs from "./pages/Runs";
 import RunDetail from "./pages/RunDetail";
@@ -17,6 +18,7 @@ const NAV: [string, string, boolean][] = [
   ["/", "Leaderboard", false],
   ["/results", "Runs", false],
   ["/episodes", "Days", false],
+  ["/about", "How it works", false],
   ["/agents", "Agents", true],
   ["/compare", "Compare", true],
 ];
@@ -196,6 +198,7 @@ function Shell({ conn, recheck }: { conn: Conn; recheck: () => void }) {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/episodes" element={<Episodes />} />
+          <Route path="/about" element={<About />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/agents/:id" element={<AgentHistory />} />
           <Route path="/runs" element={<Runs />} />

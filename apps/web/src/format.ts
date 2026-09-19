@@ -32,6 +32,19 @@ export function fmtAmount(raw: string | null | undefined, decimals: number | nul
   return unit && v !== "—" ? `${v} ${unitLabel(unit)}` : v;
 }
 
+/** Time of day from milliseconds since the day started: "13:55", or "day 2, 03:14" past the first day. */
+export function fmtClock(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) return "—";
+  const neg = ms < 0;
+  const total = Math.floor(Math.abs(ms) / 60_000);
+  const day = Math.floor(total / 1440);
+  const h = Math.floor((total % 1440) / 60);
+  const m = total % 60;
+  const hm = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  if (neg) return `${hm} the day before`;
+  return day > 0 ? `day ${day + 1}, ${hm}` : hm;
+}
+
 /** Relative virtual time: "2d 03:14:07", negative prehistory as "-1d 00:00:00". */
 export function fmtRel(ms: number | null | undefined): string {
   if (ms === null || ms === undefined || !Number.isFinite(ms)) return "—";

@@ -105,10 +105,11 @@ def test_ui_smoke(ui_server):
         page.wait_for_selector("text=completed", timeout=20_000)
         page.screenshot(path=str(OUT / "run.png"))
         page.goto(f"{srv.url}/runs/{run_id}/results")
-        page.wait_for_selector("text=How much to trust this", timeout=20_000)
+        page.wait_for_selector("text=How results work", timeout=20_000)
+        page.wait_for_selector("text=The trades", timeout=20_000)
         page.wait_for_selector("text=never placed an order", timeout=20_000)
         body = page.inner_text("body")
-        assert "does not establish an edge" in body and "predictive validity is not established" in body
+        assert "not live trading" in body and "predicts live results" in body
         assert "cpmm_fixed_flow_v1" not in body.split("All the details")[0]  # no raw tokens above the fold
         body = page.inner_text("body")
         assert "score" not in body.lower().replace("scored", "") or "0-100" not in body
