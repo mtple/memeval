@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { get, type Observed } from "./api";
 import { CandleChart } from "./charts";
-import { fmtRaw, fmtRel } from "./format";
+import { fmtRaw, fmtRel, unitLabel } from "./format";
 import { Card, ErrorState, Loading, useLoad } from "./ui";
 
 type Token = { asset_id: string; decimals: number; eth_spent_raw: string; eth_recovered_raw: string; gas_raw: string; net_cash_raw: string; remaining_raw: string; pending_raw: string; buys: number; sells: number; first_buy_ms: number | null; last_sell_ms: number | null; average_hold_ms: number | null };
@@ -26,7 +26,7 @@ function LoadedReview({ runId }: { runId: string }) {
   if (!r.events.length) return <p>No accepted orders. {r.rejected_calls.length} submit calls returned errors{r.rejected_calls.length ? `: ${[...new Set(r.rejected_calls.map(c => c.error_code))].join(", ")}` : ". The agent did not submit an order"}.</p>;
   const selected = r.tokens.find(t => t.asset_id === chosen) ?? r.tokens[0]!;
   const events = r.events.filter(e => e.asset_id === selected.asset_id);
-  const cash = (v: string | null) => `${fmtRaw(v, r.numeraire_decimals)} ${r.numeraire}`;
+  const cash = (v: string | null) => `${fmtRaw(v, r.numeraire_decimals)} ${unitLabel(r.numeraire)}`;
   return <div className="stack">
     <p className="small muted">{r.note}</p>
     {r.rejected_calls.length > 0 && <p className="notice">{r.rejected_calls.length} submit calls returned errors: {[...new Set(r.rejected_calls.map(c => c.error_code))].join(", ")}. These calls are separate from the recorded orders below.</p>}
@@ -36,7 +36,7 @@ function LoadedReview({ runId }: { runId: string }) {
     <h3>{selected.asset_id}</h3>
     <p>{selected.buys} confirmed buys · {selected.sells} confirmed sells · Average holding time of sold tokens: {selected.average_hold_ms === null ? "no matched sales" : fmtRel(selected.average_hold_ms)}.</p>
     {BigInt(selected.remaining_raw) > 0n && <p className="notice">{fmtRaw(selected.remaining_raw, selected.decimals)} tokens remained unsold, including {fmtRaw(selected.pending_raw, selected.decimals)} pending confirmation. These tokens do not count toward final ETH/cash return.</p>}
-    <PoolReview key={selected.asset_id} runId={runId} events={events} clockMs={r.clock_ms} unit={r.numeraire} />
+    <PoolReview key={selected.asset_id} runId={runId} events={events} clockMs={r.clock_ms} unit={unitLabel(r.numeraire)} />
     <h3>Order timeline</h3>
     <div className="table-wrap"><table><thead><tr><th>Submitted / filled</th><th>Action</th><th>Status</th><th>Tokens filled</th><th>ETH/cash exchanged</th><th>Gas</th></tr></thead><tbody>
       {events.slice(page * 100, (page + 1) * 100).map(e => <tr key={e.order_id}><td>{fmtRel(e.submitted_ms)} / {e.fill_time_ms === null ? "not filled" : fmtRel(e.fill_time_ms)}</td><td>{e.side}</td><td>{e.state}{e.reason ? `: ${e.reason}` : ""}</td><td>{e.quantity_raw === null ? "—" : fmtRaw(e.quantity_raw, selected.decimals)}</td><td>{e.cash_raw === null ? "—" : cash(e.cash_raw)}</td><td>{cash(e.gas_raw)}</td></tr>)}

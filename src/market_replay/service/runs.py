@@ -536,7 +536,7 @@ class RunManager:
         state = str(row["state"])
         counts = state == str(RunState.COMPLETED) and summ.get("primary_metric") == "final_cash_return_v1" and summ.get("headline_return") is not None and summ.get("ranking_eligible", False)
         dec = int(summ.get("numeraire_decimals") or 18)
-        unit = summ.get("numeraire") or "ETH"
+        unit = "ETH" if (summ.get("numeraire") or "NATIVE") == "NATIVE" else str(summ.get("numeraire"))  # the pack calls the wrapped native coin NATIVE; owners know it as ETH
 
         def amount(raw: Any) -> str | None:
             if raw is None:

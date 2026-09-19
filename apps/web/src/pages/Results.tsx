@@ -5,7 +5,7 @@ import { Link, useParams } from "react-router-dom";
 import { marketLines, marketPct } from "../MarketCard";
 import { get, post, type Pack, type Report, type ReplayResult, type Run } from "../api";
 import { DIMENSION_ORDER, dimensionLabel, explainDimension, summarySentence } from "../explain";
-import { fmtAmount, fmtDuration, fmtMs, fmtPct, fmtRaw, fmtReturn, humanize, shortHash } from "../format";
+import { fmtAmount, fmtDuration, fmtMs, fmtPct, fmtRaw, fmtReturn, humanize, shortHash, unitLabel } from "../format";
 import { useRole } from "../role";
 import { Badge, Card, ErrorState, JsonView, KV, Loading, StrList, downloadJson, useLoad } from "../ui";
 
@@ -23,7 +23,7 @@ export default function Results() {
 
   const R = rep.data;
   const dec = R?.outcome.numeraire_decimals;
-  const unit = R?.outcome.numeraire;
+  const unit = unitLabel(R?.outcome.numeraire);
   const amt = (raw: string | null | undefined) => fmtAmount(raw, dec, unit);
 
   const doExport = async (role: "admin" | "participant") => {

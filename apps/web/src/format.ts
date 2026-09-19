@@ -20,10 +20,16 @@ export function fmtRaw(raw: string | null | undefined, decimals: number | null |
   return `${neg ? "-" : ""}${wholeStr}${frac ? "." + frac : ""}`;
 }
 
+/** The unit people know: a recorded pack calls its wrapped native coin NATIVE (the generic name inside a session); on the site that is ETH. */
+export function unitLabel(unit: string | null | undefined): string {
+  if (!unit) return "";
+  return unit === "NATIVE" ? "ETH" : unit;
+}
+
 /** Format a raw amount and append the numeraire alias when known. */
 export function fmtAmount(raw: string | null | undefined, decimals: number | null | undefined, unit?: string | null, places = 6): string {
   const v = fmtRaw(raw, decimals, places);
-  return unit && v !== "—" ? `${v} ${unit}` : v;
+  return unit && v !== "—" ? `${v} ${unitLabel(unit)}` : v;
 }
 
 /** Relative virtual time: "2d 03:14:07", negative prehistory as "-1d 00:00:00". */

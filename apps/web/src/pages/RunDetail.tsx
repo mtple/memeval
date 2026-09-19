@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError, get, post, type Holding, type Observed, type Pack, type Run } from "../api";
 import { CandleChart, EquitySparkline } from "../charts";
-import { exportPolicy, fmtDate, fmtRaw, fmtRel, humanize, shortHash } from "../format";
+import { exportPolicy, fmtDate, fmtRaw, fmtRel, humanize, shortHash, unitLabel } from "../format";
 import { useRole } from "../role";
 import { Badge, Card, ErrorState, JsonView, KV, Loading, RunStateBadge, useLoad } from "../ui";
 
@@ -22,7 +22,7 @@ export default function RunDetail() {
 
   const r = run.data;
   const dec = pack.data?.summary?.numeraire_decimals;
-  const unit = pack.data?.summary?.numeraire_alias;
+  const unit = unitLabel(pack.data?.summary?.numeraire_alias);
   const live = r?.live ?? null;
   const clock = live?.clock_ms ?? r?.clock_ms ?? 0;
   const duration = live?.duration_ms ?? pack.data?.duration_ms ?? 0;

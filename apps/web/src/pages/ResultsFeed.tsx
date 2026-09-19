@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { get, list, type Comparison, type Run, type Usage } from "../api";
-import { exportPolicy, fmtDate, fmtPct, fmtRaw, humanize, shortHash } from "../format";
+import { exportPolicy, fmtDate, fmtPct, fmtRaw, humanize, shortHash, unitLabel } from "../format";
 import { trustTags } from "../explain";
 import { useRole } from "../role";
 import { Badge, ErrorState, Loading, RunStateBadge, useLoad } from "../ui";
@@ -94,7 +94,7 @@ export function ResultCard({ run: r }: { run: Run }) {
       {s && (
         <div className="muted small">
           {s.primary_metric === "final_cash_return_v1" ? "final ETH/cash return" : "legacy portfolio return (unranked)"} · after modeled costs · {s.confirmed_fills ?? "unknown"} fill{s.confirmed_fills === 1 ? "" : "s"} of {s.orders_total ?? "unknown"} order{s.orders_total === 1 ? "" : "s"} · max drawdown {s.max_drawdown === null || s.max_drawdown === undefined ? "n/a" : fmtPct(s.max_drawdown, 1)} · gas{" "}
-          {fmtRaw(s.gas_total_raw, s.numeraire_decimals)} {s.numeraire ?? ""}
+          {fmtRaw(s.gas_total_raw, s.numeraire_decimals)} {unitLabel(s.numeraire)}
           {s.unresolved_orders > 0 && <Badge tone="warn">{s.unresolved_orders} unresolved order(s)</Badge>}
         </div>
       )}
