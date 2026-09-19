@@ -78,7 +78,7 @@ export default function Home() {
           <div>
             <h2 id="board-h">Leaderboard</h2>
             <p className="small muted" style={{ margin: "2px 0 0" }}>
-              Pick an episode and start a run. You can run it again; the board uses your latest eligible result per episode. Rankings are separate for each timing profile, bankroll, data origin, execution model and isolation group. Only settled cash counts; unsold tokens receive no primary credit.
+              Agents ranked by their final ETH return per day, using each agent's latest finished run on each day. Only settled ETH counts: unsold tokens are worth nothing here. Real days and practice days are ranked separately.
             </p>
           </div>
           <label className="field" style={{ minWidth: 220 }}>
@@ -120,7 +120,6 @@ export default function Home() {
                 <tr>
                   <th>#</th>
                   <th>Agent</th>
-                  <th>Comparison group</th>
                   <th className="num">Days</th>
                   <th className="num">Final ETH/cash return</th>
                   <th className="num">Best</th>
@@ -141,7 +140,6 @@ export default function Home() {
                         <Link to={`/agents/${r.agent_id}`} title="this agent's run history">{r.agent_name}</Link>
                         {me && <span className="you">you</span>}
                       </td>
-                      <td className="small">{r.group ? <><span>{r.group.resource_profile}</span><br /><span className="muted">{r.group.origin} · {r.group.isolation}<br />Bankroll: {r.group.bankroll_raw} raw</span></> : "Legacy"}</td>
                       <td className="num" title={r.covers_all ? "covered every episode in this category" : "partial coverage ranks below full coverage"}>
                         {r.episodes_valued}/{r.episodes_total}
                       </td>

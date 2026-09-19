@@ -189,7 +189,7 @@ export default function Results() {
                   ["Gas total", `${amt(R.costs.gas_total_raw)} (${humanize(R.costs.gas_basis)})`],
                   ["Turnover (numeraire)", amt(R.costs.turnover_numeraire_raw)],
                   ["Implicit pool fee (numeraire)", amt(R.costs.implicit_pool_fee_numeraire_raw)],
-                  ["Implicit pool fee (other, raw)", typeof R.costs.implicit_pool_fee_other_raw === "string" ? R.costs.implicit_pool_fee_other_raw : <code>{JSON.stringify(R.costs.implicit_pool_fee_other_raw)}</code>],
+                  ["Implicit pool fee paid in tokens", typeof R.costs.implicit_pool_fee_other_raw === "string" ? fmtRaw(R.costs.implicit_pool_fee_other_raw, dec) : "several tokens"],
                   ["Fee note", R.costs.fee_note],
                 ]}
               />
@@ -264,7 +264,7 @@ export default function Results() {
                       ["Data / quote / submit latency", `${fmtMs(R.coverage_and_assumptions.latency_assumptions.data_latency_ms)} / ${fmtMs(R.coverage_and_assumptions.latency_assumptions.quote_latency_ms)} / ${fmtMs(R.coverage_and_assumptions.latency_assumptions.submit_latency_ms)}`],
                       ["Confirm blocks / settlement tail", `${R.coverage_and_assumptions.latency_assumptions.confirm_blocks} / ${R.coverage_and_assumptions.latency_assumptions.settlement_tail_blocks}`],
                       ["Quote TTL / availability delay", `${fmtMs(R.coverage_and_assumptions.latency_assumptions.quote_ttl_ms)} / ${fmtMs(R.coverage_and_assumptions.latency_assumptions.availability_delay_ms)}`],
-                      ["Gas cost (raw) / basis", `${R.coverage_and_assumptions.latency_assumptions.gas_cost_raw} / ${humanize(R.coverage_and_assumptions.latency_assumptions.gas_basis)}`],
+                      ["Gas per fill", `${amt(R.coverage_and_assumptions.latency_assumptions.gas_cost_raw)} (${humanize(R.coverage_and_assumptions.latency_assumptions.gas_basis)})`],
                     ]}
                   />
                 )}
@@ -285,7 +285,7 @@ export default function Results() {
             </div>
           </Card>
 
-          <div className="grid-2">
+          {role === "admin" && <div className="grid-2">
             <Card title="Versions">
               <KV rows={Object.entries(R.versions ?? {}).map(([k, v]) => [humanize(k), <span key={k} className="mono">{v}</span>])} />
               <KV rows={[["Report version", R.report_version]]} />
@@ -334,7 +334,7 @@ export default function Results() {
                 </div>
               )}
             </Card>
-          </div>
+          </div>}
 
           <Card
             title="Export"

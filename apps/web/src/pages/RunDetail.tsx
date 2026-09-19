@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError, get, post, type Holding, type Observed, type Pack, type Run } from "../api";
 import { CandleChart, EquitySparkline } from "../charts";
-import { exportPolicy, fmtDate, fmtRaw, fmtRel, humanize, shortHash, unitLabel } from "../format";
+import { fmtDate, fmtRaw, fmtRel, humanize, shortHash, unitLabel } from "../format";
 import { useRole } from "../role";
 import { Badge, Card, ErrorState, JsonView, KV, Loading, RunStateBadge, useLoad } from "../ui";
 
@@ -44,9 +44,7 @@ export default function RunDetail() {
   return (
     <main className="stack">
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <h1 style={{ margin: 0 }}>
-          Run <span className="mono">{shortHash(id, 16)}</span>
-        </h1>
+        <h1 style={{ margin: 0 }}>{r ? `${r.agent_name ?? "Agent"} on ${r.pack_label ?? r.pack_name ?? "a day"}` : "Run"}</h1>
         <Link to="/runs" className="btn btn-small">
           All runs
         </Link>
@@ -107,14 +105,11 @@ export default function RunDetail() {
             </div>
             <KV
               rows={[
-                ["Pack", <Link to={`/data-health/${r.pack_id}`}>{r.pack_name || r.pack_id}</Link>],
-                ["Agent", <Link to={`/runs?agent_id=${r.agent_id}`}>{r.agent_name ?? shortHash(r.agent_id, 16)}</Link>],
-                ["Export policy / isolation", `${exportPolicy(r.mode)} / ${r.isolation}`],
-                ["Bankroll", `${fmtRaw(r.bankroll_raw, dec)} ${unit ?? ""}`],
-                ["Profile hash", <span className="mono">{shortHash(r.profile_hash, 16)}</span>],
-                ["Launch", r.launch ? <code>{JSON.stringify(r.launch)}</code> : "external client"],
+                ["Day", <Link to={`/episodes?pack=${r.pack_id}`}>{r.pack_label ?? r.pack_name ?? "a recorded day"}</Link>],
+                ["Agent", <Link to={`/agents/${r.agent_id}`}>{r.agent_name ?? "unnamed agent"}</Link>],
+                ["Started with", `${fmtRaw(r.bankroll_raw, dec)} ${unit ?? ""}`],
                 ["Created / started / finished", `${fmtDate(r.created_at)} / ${fmtDate(r.started_at)} / ${fmtDate(r.finished_at)}`],
-                ["Requests / decisions / orders", live ? `${live.requests} / ${live.decisions} / ${live.orders_total} (${live.pending_orders} pending)` : "n/a"],
+                ["Calls / decisions / orders", live ? `${live.requests} / ${live.decisions} / ${live.orders_total} (${live.pending_orders} pending)` : "n/a"],
               ]}
             />
           </Card>
