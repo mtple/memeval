@@ -71,3 +71,32 @@ It issues no new session commands, creates no attempt, and preserves the origina
 trace and finish timestamp. Repeated repair requests are idempotent. Other failures and
 missing or mismatched terminal receipts are refused. Recovery provenance is recorded in
 `report_recovery`; execution eligibility still evaluates every existing fidelity flag.
+
+## Zero-output historical swaps
+
+The 59 fidelity flags in FreeTurtle's Sept 12 report all have the code
+`EXTERNAL_SWAP_FAILED_ON_PRIVATE_STATE`. A separate no-agent reconstruction reproduces
+all 59 at the same timestamps, with the underlying error `INSUFFICIENT_OUTPUT_AMOUNT`.
+Each corresponds to a recorded Uniswap v4 event with positive input and zero output.
+None of the eight flagged pool aliases overlaps the three pools in FreeTurtle's 22
+confirmed order receipts.
+
+The historical adapter incorrectly required both legs to be positive. Core swap math
+can consume input while the integer output rounds to zero, and the pool price can still
+move. See the [Uniswap v4 core swap implementation](https://github.com/Uniswap/v4-core/blob/main/src/libraries/Pool.sol).
+The reference reconstruction already accepted these recorded transitions, but the
+private copy rejected them and retained its prior state.
+
+Engine v3 permits zero output only when the historical event itself records zero
+output. It commits the calculated pool state without emitting an exchange-price
+observation, a zero-price candle, or a price alert. Agent orders retain their positive
+output requirement. A positive-output historical event that cannot execute still
+raises a fidelity flag. Reports count handled events under
+`coverage_and_assumptions.external_zero_output_swaps`.
+
+Verification on the complete Sept 12 pack after this change: 59 zero-output events
+handled, zero fidelity flags, zero reconciliation mismatches, and all final private
+pool states exactly equal to their reference states without agent intervention.
+This check does not create a hosted attempt or overwrite FreeTurtle's original report.
+The original report describes engine v2; it is not silently promoted to a result under
+engine v3. Its original 22 fills and terminal balance remain preserved.

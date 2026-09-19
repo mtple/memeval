@@ -73,7 +73,7 @@ class World:
         self.rows.append({**self._base(st.key, block, 2), "kind": "cl_swap", "amount0": str(a0), "amount1": str(a1), "sqrt_price_x96_after": str(sqrt), "liquidity_after": str(liq), "tick_after": tick, "fee_pips": st.fee_pips if fee_pips is None else fee_pips})
 
 
-def make_cl_pack(out_dir: Path, *, tamper_seq: int | None = None, overdraw: bool = False, degenerate_seq: int | None = None, tamper_pool: str | None = None) -> Pack:
+def make_cl_pack(out_dir: Path, *, tamper_seq: int | None = None, overdraw: bool = False, degenerate_seq: int | None = None, tamper_pool: str | None = None, zero_output: bool = False) -> Pack:
     """Two CL pools: POOL1 (v3, live before the window, initial state from the driving state) and POOL2
     (v4 with hooks and a dynamic fee, initialized inside the period)."""
     world = World()
@@ -100,6 +100,9 @@ def make_cl_pack(out_dir: Path, *, tamper_seq: int | None = None, overdraw: bool
     world.init(p2, POOL2_BLOCK)
     world.modify(p2, POOL2_BLOCK + 1, -1200, 1200, L1)
     world.swap(p2, POOL2_BLOCK + 2, zero_for_one=True, fee_pips=DYN_FEE)
+    if zero_output:
+        world.swap(p2, POOL2_BLOCK + 3, zero_for_one=True, amount_in=2, fee_pips=DYN_FEE)
+        assert world.rows[-1]["amount1"] == "0"
     world.swap(p2, POOL2_BLOCK + 20, zero_for_one=False, fee_pips=DYN_FEE)
     tape = sorted(world.rows, key=lambda r: (r["block"], r["log_index"], r["seq"]))
     for i, r in enumerate(tape, start=1):
@@ -440,3 +443,25 @@ def test_session_exposes_cl_pool_and_liquidity_views(cl_pack: Pack):
     assert env.data["hooks"].startswith("hook_") and HOOKS not in env.data["hooks"]
     env = s.handle("r9", "market.liquidity", {"pool_id": pid2})
     assert env.status == "ok" and env.data["liquidity"] == str(L1) and env.data["fee_pips"] == FEE2
+
+
+def test_recorded_zero_output_event_updates_state_without_a_price(tmp_path):
+    from market_replay.evaluation.report import build_report
+
+    pack = make_cl_pack(tmp_path / "zero_output", zero_output=True)
+    s = Session.create(session_id="zero", pack=pack, bankroll_raw=BANK, mask_seed="m", engine_seed="e")
+    sim = s.sim
+    end_of_event = block_time(POOL2_BLOCK + 3) - START_MS
+    sim.process_until(end_of_event)
+    assert sim.external_zero_output_swaps == 1
+    assert sim.fidelity_flags == []
+    assert cl_fields(sim.pools[POOL2]) == cl_fields(sim.ref_pools[POOL2])
+    assert all(t.amount_in > 0 and t.amount_out > 0 for obs in sim.obs.values() for t in obs.trades)
+    assert not any(t.event_ms == end_of_event for t in sim.obs[POOL2].trades)
+    sim.process_until(sim.end_ms)
+    assert cl_fields(sim.pools[POOL2]) == cl_fields(sim.ref_pools[POOL2])
+    s.finish()
+    report = build_report(s, run_meta={"state": "completed"})
+    assert report["coverage_and_assumptions"]["external_zero_output_swaps"] == 1
+    assert report["execution_validity"]["eligible"]
+    assert report["unresolved"]["environment_fidelity_flags"] == []

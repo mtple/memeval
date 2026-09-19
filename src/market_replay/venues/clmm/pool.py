@@ -554,14 +554,15 @@ class ClPoolState:
         self.liquidity = trial.liquidity
         return out
 
-    def apply_intent(self, zero_for_one: bool, amount_specified: int, fee_pips: int | None = None) -> tuple[int, int]:
+    def apply_intent(self, zero_for_one: bool, amount_specified: int, fee_pips: int | None = None, *, allow_zero_output: bool = False) -> tuple[int, int]:
         """Re-execute a recorded swap intent on this state and return ``(amount_in, amount_out)``.
 
         ``amount_specified`` follows ``swap``: positive exact input, negative exact output.
         ``fee_pips`` is the fee the recorded event reported (v4 dynamic fees). The swap is
-        run on a copy and committed only when both legs are non-zero; otherwise the state is
-        untouched and ``INSUFFICIENT_INPUT_AMOUNT`` / ``INSUFFICIENT_OUTPUT_AMOUNT`` is raised,
-        the same codes the CPMM adapter uses for an external swap it cannot honour.
+        run on a copy. Historical events explicitly recording zero output may opt in to
+        committing their state transition: core swaps can consume input while output rounds
+        to zero. Other intents still require positive input and output. Broker execution
+        uses ``apply_swap`` and never opts in to this historical-event exception.
         """
         trial = self.copy()
         amount0, amount1, _, _, _ = trial.swap(zero_for_one, amount_specified, None, fee_pips)
@@ -569,7 +570,7 @@ class ClPoolState:
         amount_out = -(amount1 if zero_for_one else amount0)
         if amount_in <= 0:
             raise ClMathError("INSUFFICIENT_INPUT_AMOUNT")
-        if amount_out <= 0:
+        if amount_out < 0 or (amount_out == 0 and not allow_zero_output):
             raise ClMathError("INSUFFICIENT_OUTPUT_AMOUNT")
         self.sqrt_price_x96 = trial.sqrt_price_x96
         self.tick = trial.tick

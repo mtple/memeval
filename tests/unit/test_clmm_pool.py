@@ -28,6 +28,27 @@ def fresh_pool(fee_pips: int = 3000, spacing: int = 60) -> ClPoolState:
     return ClPoolState.initialize("p", "A", "B", fee_pips, spacing, Q96)
 
 
+def test_recorded_zero_output_commits_core_state_without_relaxing_broker():
+    pool = fresh_pool()
+    pool.apply_modify_liquidity(-120, 120, L)
+    before = pool.copy()
+    # Two raw units: one pays the rounded fee, one moves sqrt price by floor(Q96/L).
+    # The output of that movement is below one raw unit and therefore rounds to zero.
+    expected_sqrt = Q96 + Q96 // L
+    with pytest.raises(ClMathError, match="INSUFFICIENT_OUTPUT_AMOUNT"):
+        pool.apply_swap("B", 2)
+    assert pool == before
+    with pytest.raises(ClMathError, match="INSUFFICIENT_OUTPUT_AMOUNT"):
+        pool.apply_intent(False, 2)
+    assert pool == before
+    assert pool.apply_intent(False, 2, allow_zero_output=True) == (2, 0)
+    assert (pool.sqrt_price_x96, pool.tick, pool.liquidity) == (expected_sqrt, 0, L)
+    reference = before.copy()
+    differences = reference.apply_recorded_swap(0, 2, expected_sqrt, L, 0)
+    assert all(differences[k] == 0 for k in ("amount0", "amount1", "sqrt_price_x96", "liquidity", "tick"))
+    assert pool == reference
+
+
 # ------------------------------------------------------------------- scenario
 
 

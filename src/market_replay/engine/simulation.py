@@ -254,6 +254,7 @@ class Simulation:
         self.reconciliation_mismatches: list[dict[str, Any]] = []
         self.reserve_adjustments: dict[str, int] = defaultdict(int)  # explained / material checkpoint corrections
         self.fidelity_flags: list[FidelityFlag] = []
+        self.external_zero_output_swaps = 0
 
         # Broker
         self.ledger = Ledger()
@@ -554,11 +555,17 @@ class Simulation:
         amount_out = -(ev.amount1 if zero_for_one else ev.amount0)
         specified = -amount_out if rec["mode"] == "exact_out" else amount_in
         try:
-            actual_in, actual_out = pool.apply_intent(zero_for_one, specified, ev.fee_pips)
+            actual_in, actual_out = pool.apply_intent(zero_for_one, specified, ev.fee_pips,
+                                                     allow_zero_output=amount_out == 0)
         except ClMathError as e:
             self._flag(ev, "EXTERNAL_SWAP_FAILED_ON_PRIVATE_STATE", str(e))
             return
         self.state_version += 1
+        if actual_out == 0:
+            # Preserve the core pool transition, but no exchange price exists for this
+            # event. Do not invent a zero-price trade/candle or fire a price alert.
+            self.external_zero_output_swaps += 1
+            return
         if ev.available_ms is not None:
             self._record_trade(ev, pool, pool.asset0 if zero_for_one else pool.asset1, actual_in, actual_out, origin="external")
 

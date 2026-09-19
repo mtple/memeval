@@ -18,7 +18,7 @@ from ..engine.session import Session
 from .debrief import attribution
 from .validity import execution_validity
 
-ENGINE_VERSION = "market_replay_engine_v2"
+ENGINE_VERSION = "market_replay_engine_v3"
 REPORT_VERSION = "run_report_v3"
 
 
@@ -202,6 +202,8 @@ def build_report(session: Session, *, run_meta: dict[str, Any], role: str = "adm
             "availability_model": m.data.availability_model,
             "reconciliation_mismatches_in_run": len(sim.reconciliation_mismatches),
             "reserve_adjustments_in_run": dict(sim.reserve_adjustments),
+            "external_zero_output_swaps": sim.external_zero_output_swaps,
+            "zero_output_swap_policy": "Recorded zero-output swaps update pool state but supply no exchange price or price alert. Agent orders still require positive output.",
             "limitations": [
                 "Historical-flow-based simulation: external intents fixed, outputs counterfactual.",
                 "Blinded interface, not contamination-proof.",
