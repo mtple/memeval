@@ -101,7 +101,8 @@ a `watchlist` of pool aliases, `conditions` for the next wait, and `review_after
 Action results are available at the next decision in `memory["action_results"]`.
 The default observes every five virtual minutes or after a new pool notification, whichever
 comes first, and places no orders. Change the attention schedule as part of your policy.
-Snapshots are paginated; check `next_cursor` before assuming you inspected the whole market.
+The starter requests compact snapshots. Market/discovery `items` are arrays whose fields are
+listed in `columns`. Check `next_cursor` before assuming you inspected the whole market.
 
 ## MCP path (OpenClaw, Hermes, Claude, any MCP-capable agent)
 
@@ -145,7 +146,7 @@ run; read it and continue.
 | Tool | Arguments | What you get |
 |---|---|---|
 | `session.describe` | – | `episode.duration_ms`, `numeraire.asset_id` (the cash asset) and decimals, `bankroll_raw` (one whole unit of the cash asset: 1 ETH, i.e. `10^18` raw, on a real Base day), budgets, latency assumptions, limitations |
-| `session.snapshot` | `pool_ids?, since_ms?, window_ms?, stale_after_ms?, limit?, market_cursor?, discovery_cursor?, order_cursor?` | watchlist activity, price changes, freshness, coverage, modeled liquidity, separate discoveries, portfolio and changed orders |
+| `session.snapshot` | `format?, pool_ids?, since_ms?, window_ms?, stale_after_ms?, limit?, market_cursor?, discovery_cursor?, order_cursor?` | watchlist activity, price changes, freshness, coverage, modeled liquidity, separate discoveries, portfolio and changed orders |
 | `markets.list` | `limit, cursor, sort (pool_id, newest, most_traded, recently_traded), filters{execution_supported_only, min_age_ms, max_age_ms, active_since_ms, min_visible_trades, venue_model}` | pools you can currently see, with `listed_ms`, `last_trade_ms`, `visible_trade_count`. A real day lists every pool launched that day, thousands of them; most die within a few trades. Discovery is your job: page through `newest` launches, watch `most_traded`, and decide. |
 | `markets.get` | `pool_id` | metadata, last visible trade, restrictions |
 | `market.trades` | `pool_id, start_ms, end_ms, limit, cursor` | trades visible as of now |
@@ -160,6 +161,14 @@ run; read it and continue.
 | `clock.advance` | `to_ms` or `next_event: true, max_ms` | moves virtual time; returns `episode_ended` |
 | `clock.wait` | `until_ms, conditions?` | waits for a deadline or delayed notification; returns `alerts`, `reason`, `episode_ended` |
 | `session.finish` | – | ends the run; the report is built |
+
+For direct LLM use, request `session.snapshot` with `{"format":"compact","limit":25}`.
+Market and discovery pages send a `columns` list once and arrays in `items`; each array follows
+that column order. Quantities and prices remain exact strings, and unknowns remain `null`.
+Execution support, coverage, restriction evidence and freshness stay explicit.
+Use `dict(zip(page["columns"], row))` in Python to expand one row. `format:"full"` retains
+the original nested response and remains the API default for existing clients. Use a watchlist
+and pagination instead of collecting every pool into a single LLM prompt.
 
 Snapshots charge one data request and its latency. Pass the previous snapshot's `as_of_ms`
 as `since_ms`; discoveries are newer than that cutoff, and orders include changes at the
@@ -231,3 +240,26 @@ profiles are assumptions, never historical reconstructions. Unknown token sellab
 unknown. Approvals, cancellation/replacement and hook callbacks are excluded. You may attach
 optional `reason` and `exit_condition` to `broker.submit`, up to 512 characters each. They are
 scanned pre-submission metadata, included in idempotency, and are never scored.
+
+## Starter recovery
+
+The starter saves its identity token and every run credential before sending session commands.
+Files are written atomically with owner-only permissions under `$XDG_STATE_HOME/market-replay`
+or `~/.local/state/market-replay`, separately for each server, agent name and version. Override
+with `--state-file /private/path/credentials.json`. Keep this file private and out of Git.
+Re-running uses the saved identity without enrolling again. Matching unfinished runs resume.
+
+```bash
+python3 market_replay_agent.py --agent YOUR-AGENT-NAME --version 1 --resume
+python3 market_replay_agent.py --agent YOUR-AGENT-NAME --version 1 --resume run_ID
+```
+
+`--resume` creates no new runs. It obtains fresh state using the existing session token.
+Custom policy memory is not persisted; rebuild it from current orders/positions or add your
+own durable policy state. After an uncertain submit response, inspect orders and reuse that
+order's idempotency key if you retry. Interrupted runs retain their credentials and the process
+exits nonzero.
+
+HTTP returns `503` with code `RUN_BUSY` and `Retry-After: 1` when lock acquisition exceeds five
+seconds. MCP returns the same error code. This does not consume a request or advance simulated
+time. Retry after the active request finishes; do not re-enroll or replace the run.

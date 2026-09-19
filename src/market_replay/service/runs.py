@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import secrets
 import sys
@@ -45,7 +46,7 @@ from ..runners.inprocess import run_example_inprocess
 from ..runners.restricted import launch_restricted
 from ..runners.trusted import PY_EXAMPLES, TS_EXAMPLES, LaunchSpec, launch
 from .auth import new_agent_token, new_identity_token, token_hash
-from .db import BaseStore, open_store
+from .db import BaseStore, RunBusy, open_store
 from .suites import SuiteDef, default_suites_text, load_suites, suite_public
 
 TERMINAL = {str(RunState.ABORTED), str(RunState.COMPLETED), str(RunState.AGENT_FAILED), str(RunState.ENVIRONMENT_FAILED)}
@@ -53,6 +54,7 @@ FIXTURE_CONFIGS = {c.name: c for c in [dev_short_config(), *standard_suite_confi
 # Recorded weeks live in the repository, one pack directory each (see docs/how-a-real-week-is-built.md).
 WEEKS_DIR = Path(os.environ.get("MARKET_REPLAY_WEEKS_DIR") or (Path(__file__).resolve().parents[3] / "weeks"))
 VENUE_NAMES = {"uniswap_v2": "v2 pairs", "uniswap_v3": "v3 pools", "uniswap_v4": "v4 pools"}
+LOG = logging.getLogger("market_replay.sessions")
 
 
 def week_label(name: str, chain: str, protocol: str | None = None, start_utc: str | None = None, end_utc: str | None = None) -> str:
@@ -805,13 +807,17 @@ class RunManager:
         row = self.store.run(run_id)
         if row is None:
             raise ApiError(404, f"unknown run {run_id}", "NOT_FOUND")
+        started = time.monotonic()
+        LOG.info("session_rebuild phase=pack_load run_id=%s", run_id)
         try:
             _pack_row, pack = self.load_pack(row["pack_id"])
         except (ApiError, ValueError, OSError):
             raise ApiError(410, "session episode unavailable on this instance", "PACK_FILES_MISSING") from None
         trace = self.store.trace(run_id)
         manifest = self.store.get_doc(run_id, "run_manifest") or {}
+        LOG.info("session_rebuild phase=replay run_id=%s commands=%d elapsed_s=%.3f", run_id, len(trace), time.monotonic() - started)
         session = replay_trace(pack, trace, bankroll_raw=int(row["bankroll_raw"]), mask_seed=row["mask_seed"], engine_seed=row["engine_seed"], session_id="ses_" + run_id[4:], mode=row["mode"], resource_profile=manifest.get("resource_profile"))
+        LOG.info("session_rebuild phase=ready run_id=%s commands=%d clock_ms=%d elapsed_s=%.3f", run_id, len(trace), session.now, time.monotonic() - started)
         session.paused = row["state"] == str(RunState.PAUSED)
         ctx = RunContext(run_id=run_id, session=session, token_hash=row["token_hash"] or "", started_wall=time.time(), launch=json.loads(row["launch_json"]) if row["launch_json"] else None, trace_written=len(trace))
         with self._global:
@@ -821,6 +827,8 @@ class RunManager:
     def _catch_up(self, ctx: RunContext) -> None:
         """Apply commands another instance appended since this cache was last synced."""
         missing = self.store.trace(ctx.run_id, after=len(ctx.session.trace) - 1)
+        if missing:
+            LOG.info("session_catch_up run_id=%s commands=%d", ctx.run_id, len(missing))
         for r in missing:
             ctx.session.handle(r["request_id"], r["tool"], r.get("arguments") or {}, decision_elapsed_ms=r.get("decision_elapsed_ms", 0))
             if r.get("delivered"):
@@ -829,24 +837,35 @@ class RunManager:
                 ctx.session.trace[-1].delivered["evidence_basis"] = "reconstructed_under_current_engine"
         ctx.trace_written = len(ctx.session.trace)
 
-    def _ctx_for_token(self, token: str) -> RunContext:
+    def handle_command(self, token: str, request_id: str, tool: str, arguments: dict[str, Any] | None, session_id: str | None = None, *, measured_elapsed_ms: int | None = None) -> Envelope:
+        started = time.monotonic()
+        safe_tool = tool if tool in TOOLS else "unknown"
+        LOG.info("session_command phase=authenticate tool=%s", safe_tool)
         row = self.store.run_by_token_hash(token_hash(token))
         if row is None:
             raise ApiError(401, "invalid credential", "UNAUTHORIZED")
-        return self._ctx(row["run_id"])
-
-    def handle_command(self, token: str, request_id: str, tool: str, arguments: dict[str, Any] | None, session_id: str | None = None, *, measured_elapsed_ms: int | None = None) -> Envelope:
-        ctx = self._ctx_for_token(token)
-        if session_id is not None and session_id != ctx.session.session_id:
+        run_id = row["run_id"]
+        if session_id is not None and session_id != "ses_" + run_id[4:]:
             raise ApiError(403, "session_id does not match the credential", "FORBIDDEN")
-        with self.store.run_lock(ctx.run_id):
-            row = self.store.run(ctx.run_id)
+        LOG.info("session_command phase=lock_wait run_id=%s tool=%s", run_id, safe_tool)
+        try:
+            return self._locked_command(run_id, token, request_id, tool, arguments, measured_elapsed_ms, started)
+        except RunBusy:
+            LOG.warning("session_command phase=busy run_id=%s tool=%s elapsed_s=%.3f", run_id, safe_tool, time.monotonic() - started)
+            raise
+
+    def _locked_command(self, run_id: str, token: str, request_id: str, tool: str, arguments: dict[str, Any] | None, measured_elapsed_ms: int | None, started: float) -> Envelope:
+        # Acquire ownership before cold replay so concurrent retries cannot all rebuild the run.
+        with self.store.run_lock(run_id):
+            LOG.info("session_command phase=load run_id=%s elapsed_s=%.3f", run_id, time.monotonic() - started)
+            row = self.store.run(run_id)
             assert row is not None
             if row["token_hash"] != token_hash(token):
                 raise ApiError(401, "invalid credential", "UNAUTHORIZED")
             state = row["state"]
             if state in TERMINAL:
-                return Envelope.fail(request_id=request_id, session_id=ctx.session.session_id, clock_ms=ctx.session.now, code=ErrorCode.SESSION_FINISHED, message=f"run is {state}")
+                return Envelope.fail(request_id=request_id, session_id="ses_" + run_id[4:], clock_ms=row["clock_ms"], code=ErrorCode.SESSION_FINISHED, message=f"run is {state}")
+            ctx = self._ctx(run_id)
             self._catch_up(ctx)
             if ctx.session.resource_profile.timing == "runner_measured" and measured_elapsed_ms is None:
                 raise ApiError(403, "this run only accepts commands through its measured runner", "RUNNER_REQUIRED")
@@ -854,11 +873,13 @@ class RunManager:
             if state == str(RunState.QUEUED):
                 self.store.update_run(ctx.run_id, state=str(RunState.RUNNING), started_at=now_iso())
             try:
+                LOG.info("session_command phase=execute run_id=%s clock_ms=%d", run_id, ctx.session.now)
                 env = ctx.session.handle(request_id, tool, arguments, decision_elapsed_ms=measured_elapsed_ms or 0)
             except Exception as e:  # environment failure, never blamed on the agent
                 tb = traceback.format_exc(limit=5)
                 self._finalize(ctx, RunState.ENVIRONMENT_FAILED, error=f"{type(e).__name__}: {e}\n{tb}")
                 return Envelope.fail(request_id=request_id, session_id=ctx.session.session_id, clock_ms=ctx.session.now, code=ErrorCode.ENVIRONMENT_FIDELITY_LIMIT, message="environment failure; run marked environment_failed")
+            LOG.info("session_command phase=persist run_id=%s clock_ms=%d", run_id, ctx.session.now)
             self._persist_trace(ctx)
             updates: dict[str, Any] = {"clock_ms": ctx.session.now}
             if ctx.session.budget.exhausted and state != str(RunState.BUDGET_EXHAUSTED):
@@ -866,6 +887,7 @@ class RunManager:
             self.store.update_run(ctx.run_id, **updates)
             if tool == "session.finish" and env.status == "ok":
                 self._finalize(ctx, RunState.BUDGET_EXHAUSTED if ctx.session.budget.exhausted else RunState.COMPLETED)
+            LOG.info("session_command phase=complete run_id=%s status=%s clock_ms=%d elapsed_s=%.3f", run_id, env.status, ctx.session.now, time.monotonic() - started)
             return env
 
     def _persist_trace(self, ctx: RunContext) -> None:
@@ -1081,9 +1103,9 @@ class RunManager:
 
     def observed(self, run_id: str, pool_id: str | None = None, interval_ms: int = 60_000) -> dict[str, Any]:
         """Agent-visible view for the Run screen: only observations available at the current clock."""
-        ctx = self._ctx(run_id)
-        s = ctx.session
         with self.store.run_lock(run_id):
+            ctx = self._ctx(run_id)
+            s = ctx.session
             self._catch_up(ctx)
             discovered = s.sim.discovered_pools(s.now)
             pools = [{"pool_id": s.alias.pool(k)} for k in discovered]

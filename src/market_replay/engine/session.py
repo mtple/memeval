@@ -33,7 +33,7 @@ from .simulation import INF, Simulation, SubmitRejected, cl_supported, cpmm_supp
 
 TOOLS: dict[str, str] = {
     "session.describe": "Capabilities, limits, relative horizon, numeraire, assumptions and virtual clock.",
-    "session.snapshot": "Compact visible market activity, freshness, coverage, modeled depth, portfolio and orders. Optional pool_ids select a client-owned watchlist; discoveries remain separate. Accepts since_ms, window_ms, stale_after_ms, limit and market/discovery/order cursors.",
+    "session.snapshot": "Visible market activity, freshness, coverage, modeled depth, portfolio and orders. Use format=compact for columnar market/discovery rows suited to LLMs; format=full preserves nested detail (legacy default). Prefer limit=25 and pool_ids for a watchlist. Accepts since_ms, window_ms, stale_after_ms, limit and market/discovery/order cursors. Each compact items row follows its columns list; quantities remain exact strings.",
     "markets.list": "Paginated currently discoverable pools with point-in-time filters; sort by newest, most_traded or recently_traded to find launches worth a look.",
     "markets.get": "Time-qualified metadata and available current observations for one pool.",
     "market.trades": "Bounded visible trade history ending at or before virtual now.",
@@ -544,6 +544,9 @@ class Session:
         return Fraction(n * 10**self._decimals(base), d * 10**self._decimals(quote)) if d else None
 
     def snapshot(self, args: dict[str, Any]) -> tuple[dict[str, Any], Quality]:
+        output_format = args.get("format", "full")
+        if output_format not in ("full", "compact"):
+            raise SessionError(ErrorCode.INVALID_REQUEST, "format must be compact or full")
         since = self._int_arg(args, "since_ms")
         if since is not None and since > self.now:
             raise SessionError(ErrorCode.INVALID_REQUEST, "since_ms must not be in the future")
@@ -634,7 +637,43 @@ class Session:
             warnings.append("NO_VISIBLE_TRADES")
         quality = self._quality(Completeness.PARTIAL if warnings else Completeness.COMPLETE, warnings)
         quality.stale = any(r["freshness"]["stale"] is True for r in rows)
+        if output_format == "compact":
+            self._compact_snapshot(data, window, stale_after)
         return data, quality
+
+    @staticmethod
+    def _compact_snapshot(data: dict[str, Any], window_ms: int, stale_after_ms: int) -> None:
+        """Keep exact values and explicit unknowns, with column names sent once per page."""
+        data.update(format="compact", window_ms=window_ms, stale_after_ms=stale_after_ms)
+        markets = data["markets"]
+        markets["columns"] = [
+            "pool_id", "base_asset", "quote_asset", "base_decimals", "quote_decimals",
+            "venue_model", "execution_supported", "unsupported_reason", "newly_discovered", "listed_ms",
+            "price_quote_per_base", "price_change_fraction", "observed_trade_count",
+            "observed_volume_base_raw", "observed_volume_quote_raw", "newly_available_trade_count",
+            "last_event_ms", "last_available_ms", "stale", "coverage", "numeraire_depth_raw", "depth_kind",
+            "fee_fraction", "restriction_status", "restriction_basis",
+        ]
+        compact_rows = []
+        for r in markets["items"]:
+            decimals = {a["asset_id"]: a["decimals"] for a in r["assets"]}
+            activity, freshness, depth = r["activity"], r["freshness"], r["modeled_liquidity"]
+            compact_rows.append([
+                r["pool_id"], r["base_asset"], r["quote_asset"], decimals[r["base_asset"]], decimals[r["quote_asset"]],
+                r["venue_model"], r["execution_supported"], r["unsupported_reason"], r["newly_discovered"], r["listed_ms"],
+                r["last_trade"]["price_quote_per_base"] if r["last_trade"] else None,
+                activity["price_change_fraction"], activity["observed_trade_count"],
+                activity["observed_volume_base_raw"], activity["observed_volume_quote_raw"], activity["newly_available_trade_count"],
+                freshness["last_event_ms"], freshness["last_available_ms"], freshness["stale"], r["coverage"],
+                depth["numeraire_depth_raw"], depth["depth_kind"],
+                [depth["fee"]["numerator"], depth["fee"]["denominator"]] if depth["fee"] else None,
+                r["restrictions"]["status"], r["restrictions"]["basis"],
+            ])
+        markets["items"] = compact_rows
+        discoveries = data["discoveries"]
+        discoveries["columns"] = ["pool_id", "base_asset", "quote_asset", "listed_ms", "venue_model", "execution_supported"]
+        discoveries["items"] = [[r[c] for c in discoveries["columns"]] for r in discoveries["items"]]
+        data["note"] += " Compact rows follow columns. Price is quote units per base unit; fee_fraction is [numerator, denominator]. All times are relative ms. Depth is modeled state at as_of_ms. Use markets.get or format=full for full descriptors and trade detail."
 
     def _watch_conditions(self, args: dict[str, Any]) -> list[dict[str, Any]]:
         raw = args.get("conditions", [])

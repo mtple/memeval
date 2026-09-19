@@ -1,5 +1,6 @@
 """Terminal behavior: information timing, delayed watches, accounting and replay."""
 
+import json
 from dataclasses import replace
 
 import pytest
@@ -304,3 +305,27 @@ def test_terminal_replays_and_sessions_do_not_share_watches(fresh_pack):
         session_id="terminal",
     )
     assert again.result_hash() == s.result_hash() and again.now == s.now
+
+
+def test_compact_snapshot_preserves_values_pagination_quality_and_time(fresh_pack):
+    full, compact = make(fresh_pack), make(fresh_pack)
+    a = full.handle("s", "session.snapshot", {"limit": 2})
+    b = compact.handle("s", "session.snapshot", {"limit": 2, "format": "compact"})
+    assert a.status == b.status == "ok"
+    assert a.clock_ms == b.clock_ms and a.quality == b.quality
+    assert full.budget == compact.budget
+    for name in ("markets", "discoveries"):
+        assert a.data[name]["total"] == b.data[name]["total"]
+        assert a.data[name]["next_cursor"] == b.data[name]["next_cursor"]
+    rows = [dict(zip(b.data["markets"]["columns"], r, strict=True)) for r in b.data["markets"]["items"]]
+    for expanded, row in zip(a.data["markets"]["items"], rows, strict=True):
+        assert row["pool_id"] == expanded["pool_id"]
+        assert row["observed_volume_quote_raw"] == expanded["activity"]["observed_volume_quote_raw"]
+        assert row["last_available_ms"] == expanded["freshness"]["last_available_ms"]
+        assert row["stale"] == expanded["freshness"]["stale"]
+        assert row["numeraire_depth_raw"] == expanded["modeled_liquidity"]["numeraire_depth_raw"]
+        assert row["restriction_basis"] == expanded["restrictions"]["basis"]
+    assert a.data["portfolio"] == b.data["portfolio"] and a.data["orders"] == b.data["orders"]
+    assert len(json.dumps(b.data)) < len(json.dumps(a.data))
+    assert not compact.scanner.scan(b.model_dump(mode="json"))
+    assert compact.handle("invalid", "session.snapshot", {"format": "unknown"}).error.code == "INVALID_REQUEST"

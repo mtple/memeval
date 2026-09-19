@@ -30,6 +30,8 @@ from .runs import RunManager
 
 
 def build_hosted_app() -> tuple[FastAPI, RunManager]:
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger("market_replay").setLevel(logging.INFO)
     # httpx logs every request URL at INFO; an RPC URL carries the provider key in its path. Never log it.
     for name in ("httpx", "httpcore"):
         logging.getLogger(name).setLevel(logging.WARNING)

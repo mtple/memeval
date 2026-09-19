@@ -88,7 +88,7 @@ progress and the result summary.
 | Tool | Arguments | Notes |
 |---|---|---|
 | `session.describe` | – | capabilities, budgets, numeraire/decimals, bankroll, latency assumptions, limitations |
-| `session.snapshot` | `pool_ids?, since_ms?, window_ms?, stale_after_ms?, limit?, market_cursor?, discovery_cursor?, order_cursor?` | market summaries, separate discoveries, portfolio and changed orders in one budgeted read |
+| `session.snapshot` | `format?, pool_ids?, since_ms?, window_ms?, stale_after_ms?, limit?, market_cursor?, discovery_cursor?, order_cursor?` | market summaries, separate discoveries, portfolio and changed orders in one budgeted read |
 | `markets.list` | `limit, cursor, filters{min_age_ms,max_age_ms,active_since_ms,venue_model,execution_supported_only}` | only currently discoverable pools; totals never include future listings |
 | `markets.get` | `pool_id` | metadata, last visible trade, restrictions, coverage to now |
 | `market.trades` | `pool_id, start_ms, end_ms, limit, cursor` | `end_ms` clamped to now (`RANGE_CLAMPED_TO_PRESENT`) |
@@ -112,6 +112,14 @@ ENVIRONMENT_FIDELITY_LIMIT, MODEL_CAPACITY_LIMIT, IDEMPOTENCY_CONFLICT, BUDGET_E
 RUN_PAUSED, SESSION_FINISHED`.
 
 ### Snapshot and decision loop
+
+For direct LLM use, request `session.snapshot` with `{"format":"compact","limit":25}`.
+Market and discovery pages send a `columns` list once and arrays in `items`; each array follows
+that column order. Quantities and prices remain exact strings, and unknowns remain `null`.
+Execution support, coverage, restriction evidence and freshness stay explicit.
+Use `dict(zip(page["columns"], row))` in Python to expand one row. `format:"full"` retains
+the original nested response and remains the API default for existing clients. Use a watchlist
+and pagination instead of collecting every pool into a single LLM prompt.
 
 Call `session.snapshot` after describing the session. Keep its `as_of_ms` and pass it as
 `since_ms` next time to receive discovery and order changes. `pool_ids` selects your watchlist;
@@ -244,3 +252,26 @@ Both SDKs accept optional `reason` and `exit_condition` on order submission. Eac
 scored explanations; changing them when retrying an idempotency key is a conflict. Use the
 Results screen's decision timeline to inspect delivery records and eventual execution.
 The report's eligibility panel is independent of the trading return.
+
+## Starter recovery
+
+The starter saves its identity token and every run credential before sending session commands.
+Files are written atomically with owner-only permissions under `$XDG_STATE_HOME/market-replay`
+or `~/.local/state/market-replay`, separately for each server, agent name and version. Override
+with `--state-file /private/path/credentials.json`. Keep this file private and out of Git.
+Re-running uses the saved identity without enrolling again. Matching unfinished runs resume.
+
+```bash
+python3 market_replay_agent.py --agent YOUR-AGENT-NAME --version 1 --resume
+python3 market_replay_agent.py --agent YOUR-AGENT-NAME --version 1 --resume run_ID
+```
+
+`--resume` creates no new runs. It obtains fresh state using the existing session token.
+Custom policy memory is not persisted; rebuild it from current orders/positions or add your
+own durable policy state. After an uncertain submit response, inspect orders and reuse that
+order's idempotency key if you retry. Interrupted runs retain their credentials and the process
+exits nonzero.
+
+HTTP returns `503` with code `RUN_BUSY` and `Retry-After: 1` when lock acquisition exceeds five
+seconds. MCP returns the same error code. This does not consume a request or advance simulated
+time. Retry after the active request finishes; do not re-enroll or replace the run.

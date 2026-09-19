@@ -68,6 +68,28 @@ def test_scanner_catches_injected_leaks(dev_pack: Pack):
     assert not scanner.scan({"pool_id": "pool_abcdefgh", "time_ms": 123456})
 
 
+def test_indexed_scanner_matches_all_substrings_and_preserves_each_path():
+    # Include overlapping prefixes, repeated terms, Unicode and regex metacharacters.
+    terms = {"secret", "secrets", "cret", "a.b[", "🐢pool", "abc"}
+    terms.update(f"canonical_pool_{i:04d}" for i in range(2000))
+    scanner = LeakScanner(private_terms=terms)
+    values = ["secrets secret", "xa.b[y", "🐢pool and canonical_pool_1009", "clean", "secrets secret"]
+    findings = scanner.scan(values)
+    actual = {(f.path, f.value) for f in findings if f.kind == "private_term"}
+    expected = {(f"$[{i}]", term) for i, value in enumerate(values) for term in terms if len(term) >= 4 and term in value}
+    assert actual == expected
+    scanner.private_terms.add("clean")
+    assert any(f.value == "clean" for f in scanner.scan(values))
+    assert scanner.scan({"secrets": "ok"})[0].path == "$.secrets"
+
+
+def test_columnar_scanning_distinguishes_relative_times_from_raw_quantities():
+    scanner = LeakScanner()
+    payload = {"columns": ["last_event_ms", "quantity_raw"], "items": [[1789739082056, "1789739082056"], [250, "1789739082056"]]}
+    findings = scanner.scan(payload)
+    assert [(f.kind, f.path) for f in findings] == [("absolute_epoch_ms", "$.items[0][0]")]
+
+
 def test_participant_report_and_export_redacted(dev_pack: Pack, tmp_path: Path):
     from market_replay.evaluation.report import build_report
     from market_replay.observations.masking import redact_for_role

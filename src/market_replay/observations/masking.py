@@ -33,6 +33,8 @@ class LeakFinding:
 class LeakScanner:
     private_terms: set[str] = field(default_factory=set)
     allow_dates: bool = False
+    _indexed_terms: frozenset[str] = field(default_factory=frozenset, init=False, repr=False)
+    _prefixes: dict[str, tuple[str, ...]] = field(default_factory=dict, init=False, repr=False)
 
     @classmethod
     def for_pack(cls, pack: Pack, allow_dates: bool = False) -> LeakScanner:
@@ -59,20 +61,40 @@ class LeakScanner:
         return cls(private_terms=terms, allow_dates=allow_dates)
 
     def scan(self, payload: Any) -> list[LeakFinding]:
+        # Match only terms whose first four characters occur in the value. Large packs have
+        # thousands of private identifiers; checking every identifier at every JSON key/value
+        # made a single snapshot take seconds and cold trace replay take minutes.
+        if self.private_terms != self._indexed_terms:
+            indexed_terms = frozenset(self.private_terms)
+            prefixes: dict[str, list[str]] = {}
+            for term in sorted(indexed_terms):
+                if len(term) >= 4:
+                    prefixes.setdefault(term[:4], []).append(term)
+            self._prefixes = {prefix: tuple(terms) for prefix, terms in prefixes.items()}
+            self._indexed_terms = indexed_terms
         findings: list[LeakFinding] = []
-        self._walk(payload, "$", findings)
+        self._walk(payload, "$", findings, cache={})
         return findings
 
-    def _walk(self, node: Any, path: str, out: list[LeakFinding], key: str = "") -> None:
+    def _walk(self, node: Any, path: str, out: list[LeakFinding], key: str = "", *, cache: dict) -> None:
         if isinstance(node, dict):
             for k, v in node.items():
-                self._check_str(str(k), f"{path}.{k}", out)
-                self._walk(v, f"{path}.{k}", out, key=str(k))
+                self._check_str(str(k), f"{path}.{k}", out, cache)
+                columns = node.get("columns")
+                if k == "items" and isinstance(v, list) and isinstance(columns, list) and all(isinstance(c, str) for c in columns):
+                    for i, row in enumerate(v):
+                        if isinstance(row, list) and len(row) == len(columns):
+                            for j, cell in enumerate(row):
+                                self._walk(cell, f"{path}.{k}[{i}][{j}]", out, key=columns[j], cache=cache)
+                        else:
+                            self._walk(row, f"{path}.{k}[{i}]", out, key=str(k), cache=cache)
+                    continue
+                self._walk(v, f"{path}.{k}", out, key=str(k), cache=cache)
         elif isinstance(node, list | tuple):
             for i, v in enumerate(node):
-                self._walk(v, f"{path}[{i}]", out, key=key)
+                self._walk(v, f"{path}[{i}]", out, key=key, cache=cache)
         elif isinstance(node, str):
-            self._check_str(node, path, out)
+            self._check_str(node, path, out, cache)
             if self._time_key(key) and _EPOCH_MS_RE.fullmatch(node) and not self.allow_dates:
                 out.append(LeakFinding("absolute_epoch_ms", node, path))
         elif isinstance(node, int) and not isinstance(node, bool):
@@ -85,18 +107,24 @@ class LeakScanner:
         k = key.lower()
         return any(s in k for s in ("utc", "date", "timestamp", "time_ms", "_at", "_ms"))
 
-    def _check_str(self, s: str, path: str, out: list[LeakFinding]) -> None:
-        for term in self.private_terms:
-            if len(term) >= 4 and term in s:
-                out.append(LeakFinding("private_term", term, path))
-        if _ADDR_RE.search(s):
-            out.append(LeakFinding("address", _ADDR_RE.search(s).group(0), path))  # type: ignore[union-attr]
-        if _HASH_RE.search(s):
-            out.append(LeakFinding("tx_hash", _HASH_RE.search(s).group(0), path))  # type: ignore[union-attr]
-        if _PATH_RE.search(s):
-            out.append(LeakFinding("filesystem_path", _PATH_RE.search(s).group(0), path))  # type: ignore[union-attr]
-        if not self.allow_dates and _DATE_RE.search(s):
-            out.append(LeakFinding("calendar_date", _DATE_RE.search(s).group(0), path))  # type: ignore[union-attr]
+    def _check_str(self, s: str, path: str, out: list[LeakFinding], cache: dict) -> None:
+        matches = cache.get(s)
+        if matches is None:
+            terms = set()
+            for i in range(len(s) - 3):
+                for term in self._prefixes.get(s[i:i + 4], ()):
+                    if s.startswith(term, i):
+                        terms.add(term)
+            matches = [("private_term", term) for term in sorted(terms)]
+            for kind, pattern in (("address", _ADDR_RE), ("tx_hash", _HASH_RE), ("filesystem_path", _PATH_RE)):
+                if match := pattern.search(s):
+                    matches.append((kind, match.group(0)))
+            if not self.allow_dates and (match := _DATE_RE.search(s)):
+                matches.append(("calendar_date", match.group(0)))
+            # Share repeated keys/values within this scan, without retaining payloads across calls.
+            if len(cache) < 4096:
+                cache[s] = matches
+        out.extend(LeakFinding(kind, value, path) for kind, value in matches)
 
     def assert_clean(self, payload: Any) -> None:
         f = self.scan(payload)

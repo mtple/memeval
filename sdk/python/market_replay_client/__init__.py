@@ -62,7 +62,7 @@ class MarketReplayClient:
         return self.ok("session.describe")
 
     def snapshot(self, **arguments: Any) -> dict[str, Any]:
-        """Observe markets, discoveries, portfolio and orders in one budgeted read."""
+        """Observe in one budgeted read; format="compact" returns columns plus row arrays."""
         return self.ok("session.snapshot", arguments)
 
     def wait(self, until_ms: int, conditions: list[dict[str, Any]] | None = None) -> dict[str, Any]:

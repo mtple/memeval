@@ -17,6 +17,7 @@ from ..domain.envelope import Envelope
 from ..domain.profiles import PROFILES
 from ..engine.session import TOOLS, UNSUPPORTED_CAPABILITIES
 from .auth import constant_time_equal, resolve_admin_token
+from .db import RunBusy
 from .mcp_server import build_remote_mcp
 from .runs import ApiError, RunManager
 
@@ -232,6 +233,10 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     @app.exception_handler(ApiError)
     async def _api_error(_: Request, exc: ApiError) -> JSONResponse:
         return JSONResponse(status_code=exc.status, content={"code": exc.code, "message": exc.message})
+
+    @app.exception_handler(RunBusy)
+    async def _run_busy(_: Request, exc: RunBusy) -> JSONResponse:
+        return JSONResponse(status_code=exc.status, content={"code": exc.code, "message": exc.message}, headers={"Retry-After": "1"})
 
     # ------------------------------------------------------------------ health / meta
     @app.get("/api/v1/health")

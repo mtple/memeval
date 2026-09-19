@@ -88,7 +88,7 @@
     "portfolio.history": "Own immutable ledger history, paginated.",
     "session.describe": "Capabilities, limits, relative horizon, numeraire, assumptions and virtual clock.",
     "session.finish": "Stop agent decisions and apply the fixed terminal reporting procedure.",
-    "session.snapshot": "Compact visible market activity, freshness, coverage, modeled depth, portfolio and orders. Optional pool_ids select a client-owned watchlist; discoveries remain separate. Accepts since_ms, window_ms, stale_after_ms, limit and market/discovery/order cursors."
+    "session.snapshot": "Visible market activity, freshness, coverage, modeled depth, portfolio and orders. Use format=compact for columnar market/discovery rows suited to LLMs; format=full preserves nested detail (legacy default). Prefer limit=25 and pool_ids for a watchlist. Accepts since_ms, window_ms, stale_after_ms, limit and market/discovery/order cursors. Each compact items row follows its columns list; quantities remain exact strings."
   },
   "unsupported_capabilities": [
     "holder_graph",

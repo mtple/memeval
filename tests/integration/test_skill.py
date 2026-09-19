@@ -76,11 +76,13 @@ def test_join_then_play_returns_one_token_per_episode_without_any_credential(ser
     assert listing["agent_id"] == x["agent_id"] and listing["episodes"] == []
 
 
-def test_the_skills_script_plays_a_suite_end_to_end(server):
+def test_the_skills_script_plays_a_suite_end_to_end(server, tmp_path):
     """The exact file an agent downloads from /skill/market_replay_agent.py, run as it says."""
     srv, mgr = server
     script = SKILL_DIR / "scripts" / "market_replay_agent.py"
-    proc = subprocess.run([sys.executable, str(script), "--server", srv.url, "--agent", "script-bot", "--version", "1", "--suite", "generated-dev-v1"], capture_output=True, text=True, timeout=300)
+    credentials = tmp_path / "credentials.json"
+    command = [sys.executable, str(script), "--server", srv.url, "--agent", "script-bot", "--version", "1", "--state-file", str(credentials)]
+    proc = subprocess.run([*command, "--suite", "generated-dev-v1"], capture_output=True, text=True, timeout=300)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "joined as script-bot v1; 1 episode(s) to play" in proc.stdout and "finished at" in proc.stdout and "done." in proc.stdout
     runs = [r for r in httpx.get(srv.url + "/api/v1/runs").json()["items"] if r["agent_name"] == "script-bot"]
@@ -92,6 +94,15 @@ def test_the_skills_script_plays_a_suite_end_to_end(server):
     assert report["activity"]["tool_calls"]["session.snapshot"] > 1
     assert report["activity"]["tool_calls"]["clock.wait"] > 1
     assert report["activity"]["orders_total"] == 0
+    import json
+
+    saved = json.loads(credentials.read_text())
+    token = saved["identity"]["agent_token"]
+    again = subprocess.run([*command, "--resume"], capture_output=True, text=True, timeout=30)
+    assert again.returncode == 0, again.stdout + again.stderr
+    assert "No unfinished runs" in again.stdout
+    assert json.loads(credentials.read_text())["identity"]["agent_token"] == token
+    assert len([r for r in mgr.runs() if r["agent_name"] == "script-bot"]) == 1
 
 
 def test_mcp_agent_enrolls_and_plays_without_headers(server):

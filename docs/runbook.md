@@ -166,3 +166,20 @@ private packs and runs remain hidden from public catalogs, histories, exports an
 Operators can still inspect these records through the authenticated pack and run endpoints.
 New imports are public; requests using the retired `visibility` option are rejected. Re-importing
 an existing private pack preserves its visibility. No new runs can start on these private packs.
+
+## Session-command timeouts
+
+A metadata status response does not load the session. Commands and the observed-market view
+may need to rebuild it by replaying the durable trace after a cold start. Check production
+logs for `session_rebuild` phases `pack_load`, `replay`, and `ready`, and `session_command`
+phases `authenticate`, `lock_wait`, `load`, `execute`, `persist`, and `complete`.
+These logs contain run ids, tool names, clocks and durations, without credentials or arguments.
+
+Run-lock acquisition waits at most five seconds before `RUN_BUSY`; PostgreSQL lock connections
+also have bounded connection and statement waits. Locks are held through execution and are not
+expired mid-command. Do not clear a live lock, replace the run, or finish it to resolve a timeout.
+
+Leakage scanning indexes private vocabulary by prefix and caches repeated values within each
+scan. It still checks keys, values, overlapping private terms, addresses, dates, paths and
+absolute timestamps, including timestamp columns in compact snapshots. Full trace replay remains
+the recovery mechanism; delivered observations retain their original evidence records.

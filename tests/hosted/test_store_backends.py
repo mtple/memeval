@@ -72,6 +72,25 @@ def test_run_lock_serializes_across_connections(store_url):
     s2.close()
 
 
+def test_run_lock_times_out_without_taking_ownership(store_url):
+    from market_replay.service.db import RunBusy
+
+    owner, other = open_store(store_url), open_store(store_url)
+    try:
+        with owner.run_lock("busy"):
+            with pytest.raises(RunBusy):
+                with other.run_lock("busy", timeout=0.03):
+                    pytest.fail("A second owner entered the critical section")
+            # A timed-out waiter must not release the owner's lock.
+            with other.try_run_lock("busy") as acquired:
+                assert not acquired
+        with other.run_lock("busy", timeout=0.03):
+            pass
+    finally:
+        owner.close()
+        other.close()
+
+
 def test_usage_accounting(store_url):
     s = open_store(store_url)
     assert s.usage_today() == {"runs": 0, "cpu_seconds": 0.0}

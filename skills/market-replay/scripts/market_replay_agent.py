@@ -12,10 +12,15 @@ relative to the episode start.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import sys
+import tempfile
 import urllib.error
 import urllib.request
+import uuid
+from pathlib import Path
 
 DEFAULT_SERVER = "https://memeval-web.vercel.app"
 REVIEW_AFTER_MS = 300_000  # example attention schedule, chosen by the client and replaceable in decide()
@@ -31,7 +36,58 @@ def http(method: str, url: str, body: dict | None = None, token: str | None = No
         with urllib.request.urlopen(req, timeout=300) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
-        raise SystemExit(f"{method} {url} -> HTTP {e.code}: {e.read()[:400].decode(errors='replace')}") from None
+        raise RuntimeError(f"{method} {url} -> HTTP {e.code}: {e.read()[:400].decode(errors='replace')}") from None
+
+
+class Credentials:
+    """An atomic, owner-only credential file. Never print its contents or commit it."""
+
+    def __init__(self, path: Path, server: str, agent: str, version: str) -> None:
+        self.path = path.expanduser()
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.scope = {"server": server, "agent": agent, "version": version}
+        self.data = {"schema": 1, **self.scope, "identity": None, "runs": {}}
+
+    def __enter__(self):
+        import fcntl
+
+        self.lock_fd = os.open(str(self.path) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if self.path.exists():
+                self.data = json.loads(self.path.read_text())
+                if self.data.get("schema") != 1 or any(self.data.get(k) != v for k, v in self.scope.items()):
+                    raise ValueError("Credential file belongs to a different server, agent or version.")
+                if not isinstance(self.data.get("runs"), dict):
+                    raise ValueError("Credential file has invalid run records.")
+            self.save()  # Check persistence before creating any credentials on the server.
+        except BaseException:
+            os.close(self.lock_fd)
+            raise
+        return self
+
+    def __exit__(self, *_):
+        os.close(self.lock_fd)
+
+    def save(self) -> None:
+        fd, name = tempfile.mkstemp(prefix=self.path.name + ".", dir=self.path.parent)
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(self.data, f, indent=2)
+                f.write("\n")
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(name, self.path)
+        finally:
+            if os.path.exists(name):
+                os.unlink(name)
+
+
+def default_state_path(server: str, agent: str, version: str) -> Path:
+    scope = json.dumps([server, agent, version], separators=(",", ":"))
+    key = hashlib.sha256(scope.encode()).hexdigest()[:24]
+    root = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
+    return root / "market-replay" / f"{key}.json"
 
 
 class Session:
@@ -39,10 +95,11 @@ class Session:
 
     def __init__(self, commands_url: str, token: str) -> None:
         self.url, self.token, self.session_id, self.clock_ms, self.n = commands_url, token, None, 0, 0
+        self.request_prefix = uuid.uuid4().hex
 
     def call(self, tool: str, **arguments) -> dict:
         self.n += 1
-        body = {"request_id": f"req_{self.n}", "tool": tool, "arguments": arguments}
+        body = {"request_id": f"{self.request_prefix}_{self.n}", "tool": tool, "arguments": arguments}
         if self.session_id:
             body["session_id"] = self.session_id
         env = http("POST", self.url, body, self.token)
@@ -85,7 +142,9 @@ def play(s: Session) -> dict:
     memory: dict = {}
     since_ms, watchlist, notifications = None, None, []
     while s.clock_ms < duration:
-        arguments = {} if since_ms is None else {"since_ms": since_ms}
+        arguments = {"format": "compact", "limit": 25}
+        if since_ms is not None:
+            arguments["since_ms"] = since_ms
         if watchlist is not None:
             arguments["pool_ids"] = watchlist
         snapshot = s.ok("session.snapshot", **arguments)
@@ -112,42 +171,107 @@ def play(s: Session) -> dict:
             "valuation_complete": valuation.get("complete")}
 
 
+TERMINAL = {"completed", "aborted", "agent_failed", "environment_failed"}
+
+
+def run_saved(a, credentials: Credentials) -> int:
+    server = a.server.rstrip("/")
+    saved = credentials.data
+    joined = saved["identity"]
+    if not joined:
+        if a.resume:
+            raise ValueError("No saved identity or runs. Use the credential file from the original invocation.")
+        joined = http("POST", f"{server}/api/v1/enroll", {"agent": {"name": a.agent, "version": a.version, "runtime": "external"}})
+        saved["identity"] = joined
+        credentials.save()
+
+    if not (a.pack or a.suite or a.all or a.resume):
+        listing = http("GET", f"{server}/api/v1/play", token=joined["agent_token"])
+        print(f"joined as {joined['agent_name']} v{joined['agent_version']}. Recorded days:")
+        for e in listing.get("episodes") or []:
+            print(f"- {e['pack_id']}  {e['label']}: {e.get('pools_tradable')} tradable pools, {e.get('tape_events')} events; you: {e.get('your_status')}")
+        print("pick with --pack <pack_id> (repeatable), or --all. Use --resume to continue saved unfinished runs.")
+        return 0
+
+    runs = []
+    for r in saved["runs"].values():
+        if a.resume and a.resume not in ("all", r["run_id"]):
+            continue
+        if not a.resume and not a.all:
+            if a.suite and r.get("suite_id") != a.suite:
+                continue
+            if a.pack and not any(ref in (r["pack_id"], r["pack_name"]) for ref in a.pack):
+                continue
+        if r.get("state") in TERMINAL:
+            continue
+        status = http("GET", f"{server}/api/v1/runs/{r['run_id']}")
+        r["state"] = status["state"]
+        credentials.save()
+        if r["state"] not in TERMINAL:
+            runs.append(r)
+    if a.resume and not runs:
+        print("No unfinished runs match the saved credentials. No new run was created.")
+        return 0
+
+    # Resume saved sessions first. An explicit pack selection can also contain new episodes.
+    body = None
+    if a.pack:
+        remaining = [ref for ref in a.pack if not any(ref in (r["pack_id"], r["pack_name"]) for r in runs)]
+        if remaining:
+            body = {"pack_ids": remaining}
+    elif not runs and not a.resume:
+        body = {"suite_id": a.suite} if a.suite else {}
+    if body is not None:
+        enrolled = http("POST", f"{server}/api/v1/play", body, joined["agent_token"])
+        for r in enrolled["runs"]:
+            r["suite_id"] = enrolled.get("suite_id")
+            r["state"] = "running"
+            saved["runs"][r["run_id"]] = r
+        credentials.save()  # Persist every run token before issuing the first session command.
+        runs.extend(enrolled["runs"])
+
+    results_url = joined.get("results_url", server)
+    print(f"joined as {joined['agent_name']} v{joined['agent_version']}; {len(runs)} episode(s) to play; results: {results_url}")
+    failed = False
+    for r in runs:
+        cred = r["session_credential"]
+        if cred["commands_url"] != f"{server}/agent/v1/commands":
+            raise ValueError("Saved command URL does not match the selected server.")
+        print(f"- {r['pack_name']} ({r['run_id']}) ...", end=" ", flush=True)
+        try:
+            out = play(Session(cred["commands_url"], cred["token"]))
+            r["state"] = "completed"
+            credentials.save()
+            print(f"finished at {out['clock_ms']} ms; settled cash {out['final_cash_raw']} raw; model equity {out['model_equity_raw']} (valuation complete: {out['valuation_complete']})")
+        except Exception as e:
+            failed = True
+            print(f"interrupted: {e}. Credentials retained; continue with --resume {r['run_id']}.")
+    print(f"{'interrupted' if failed else 'done'}. read the reports at {results_url}")
+    return 1 if failed else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--server", default=DEFAULT_SERVER)
     ap.add_argument("--agent", required=True, help="your agent's name (same name + version = same agent)")
     ap.add_argument("--version", default="1")
-    ap.add_argument("--suite", default=None, help="an operator test suite id (default: every real recorded episode you have not finished)")
-    ap.add_argument("--pack", action="append", default=None, help="play this episode (its pack id from the list); repeatable")
-    ap.add_argument("--all", action="store_true", help="play every recorded day you have not finished")
+    selection = ap.add_mutually_exclusive_group()
+    selection.add_argument("--suite", help="an operator test suite id")
+    selection.add_argument("--pack", action="append", help="play this episode; repeatable; saved unfinished runs resume")
+    selection.add_argument("--all", action="store_true", help="resume saved runs first, otherwise play unfinished recorded days")
+    selection.add_argument("--resume", nargs="?", const="all", help="resume saved unfinished runs, or one run id; creates no runs")
+    ap.add_argument("--state-file", type=Path, help="private credential file; default is scoped by server, agent and version under XDG_STATE_HOME/market-replay")
     a = ap.parse_args()
     server = a.server.rstrip("/")
-
-    joined = http("POST", f"{server}/api/v1/enroll", {"agent": {"name": a.agent, "version": a.version, "runtime": "external"}})
-    body: dict = {}
-    if a.pack:
-        body["pack_ids"] = a.pack
-    elif a.suite:
-        body["suite_id"] = a.suite
-    elif not a.all:
-        # The choice of what to play is the user's: show the days and stop.
-        print(f"joined as {joined['agent_name']} v{joined['agent_version']}. Recorded days:")
-        for e in joined.get("episodes") or []:
-            print(f"- {e['pack_id']}  {e['label']}: {e.get('pools_tradable')} tradable pools ({e.get('launches')} launched that day), {e.get('tape_events')} events, gas {e.get('gas_per_fill')} per fill, {e.get('agents_ranked')} agent(s) ranked, top {e.get('top_return')}; you: {e.get('your_status')}")
-        print("pick with --pack <pack_id> (repeatable), or --all for every day you have not finished.")
-        return 0
-    enrolled = http("POST", f"{server}/api/v1/play", body, joined["agent_token"])
-    print(f"joined as {enrolled['agent_name']} v{enrolled['agent_version']}; {len(enrolled['runs'])} episode(s) to play, {len(enrolled.get('skipped') or [])} already finished; results: {enrolled['results_url']}")
-    for r in enrolled["runs"]:
-        cred = r["session_credential"]
-        print(f"- {r['pack_name']} ({r['run_id']}) ...", end=" ", flush=True)
-        try:
-            out = play(Session(cred["commands_url"], cred["token"]))
-            print(f"finished at {out['clock_ms']} ms; settled cash {out['final_cash_raw']} raw; model equity {out['model_equity_raw']} (valuation complete: {out['valuation_complete']})")
-        except Exception as e:  # keep going: one failed episode is still a result
-            print(f"failed: {e}")
-    print(f"done. read the reports at {enrolled['results_url']}")
-    return 0
+    try:
+        with Credentials(a.state_file or default_state_path(server, a.agent, a.version), server, a.agent, a.version) as credentials:
+            return run_saved(a, credentials)
+    except BlockingIOError:
+        print("Another starter invocation is using this credential file.", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"stopped: {e}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

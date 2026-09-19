@@ -11,11 +11,24 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+
+class RunBusy(RuntimeError):
+    """No command ran because another request still owns the run lock."""
+
+    status = 503
+    code = "RUN_BUSY"
+    message = "Another request is using this run. Wait briefly and retry the same command; do not reset the run."
+
+    def __init__(self) -> None:
+        super().__init__(self.message)
+
 
 # Columns added after a table first shipped; each statement must be safe to re-run (SQLite raises on
 # a duplicate column and the error is swallowed; Postgres gets IF NOT EXISTS).
@@ -155,7 +168,7 @@ class BaseStore:
         raise NotImplementedError
 
     @contextmanager
-    def run_lock(self, run_id: str) -> Iterator[None]:
+    def run_lock(self, run_id: str, timeout: float = 5.0) -> Iterator[None]:
         raise NotImplementedError
 
     def try_run_lock(self, run_id: str) -> Iterator[bool]:
@@ -383,7 +396,7 @@ class SqliteStore(BaseStore):
             return [dict(r) for r in cur.fetchall()]
 
     @contextmanager
-    def run_lock(self, run_id: str) -> Iterator[None]:
+    def run_lock(self, run_id: str, timeout: float = 5.0) -> Iterator[None]:
         """Serialize commands of one run across threads and store instances sharing the same file (flock)."""
         import fcntl
         import hashlib
@@ -393,14 +406,27 @@ class SqliteStore(BaseStore):
         lock_dir = self._path.parent / "locks"
         lock_dir.mkdir(parents=True, exist_ok=True)
         lock_file = lock_dir / (hashlib.sha256(run_id.encode()).hexdigest()[:24] + ".lock")
-        with lk:
+        deadline = time.monotonic() + timeout
+        if not lk.acquire(timeout=max(0.0, timeout)):
+            raise RunBusy()
+        try:
             fd = open(lock_file, "a+")
             try:
-                fcntl.flock(fd.fileno(), fcntl.LOCK_EX)
+                while True:
+                    try:
+                        fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise RunBusy() from None
+                        time.sleep(min(0.01, remaining))
                 yield
             finally:
                 fcntl.flock(fd.fileno(), fcntl.LOCK_UN)
                 fd.close()
+        finally:
+            lk.release()
 
     @contextmanager
     def try_run_lock(self, run_id: str) -> Iterator[bool]:
@@ -500,21 +526,29 @@ class PgStore(BaseStore):
         return self._with_retry(go)
 
     @contextmanager
-    def run_lock(self, run_id: str) -> Iterator[None]:
-        """Cluster-wide serialization: a transaction-scoped advisory lock on a dedicated connection."""
-        conn = self._psycopg.connect(self.url, autocommit=False, prepare_threshold=None)
+    def run_lock(self, run_id: str, timeout: float = 5.0) -> Iterator[None]:
+        """Bound the wait for ownership; never expire a lock while its owner is executing."""
+        conn = self._lock_connection()
         try:
-            conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (run_id,))
+            conn.execute("SELECT set_config('lock_timeout', %s, true)", (f"{max(1, int(timeout * 1000))}ms",))
+            try:
+                conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (run_id,))
+            except (self._psycopg.errors.LockNotAvailable, self._psycopg.errors.QueryCanceled):
+                raise RunBusy() from None
             yield
         finally:
             try:
-                conn.commit()
+                conn.rollback()
             finally:
                 conn.close()
 
+    def _lock_connection(self):
+        return self._psycopg.connect(self.url, autocommit=False, prepare_threshold=None,
+                                     connect_timeout=5, options="-c statement_timeout=10000")
+
     @contextmanager
     def try_run_lock(self, run_id: str) -> Iterator[bool]:
-        conn = self._psycopg.connect(self.url, autocommit=False, prepare_threshold=None)
+        conn = self._lock_connection()
         try:
             got = conn.execute("SELECT pg_try_advisory_xact_lock(hashtext(%s))", (run_id,)).fetchone()[0]
             yield bool(got)
