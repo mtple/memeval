@@ -134,8 +134,10 @@ class FakeBase:
 class FakeGecko:
     def __init__(self, missing: str | None = None) -> None:
         self.missing = missing
+        self.keys: set[str] = set()
 
     def handle(self, req: httpx.Request) -> httpx.Response:
+        self.keys.add(req.headers.get("x-cg-demo-api-key", ""))
         cid = req.url.path.split("/")[-3]
         if cid == self.missing:
             return httpx.Response(200, json={"prices": [], "market_caps": [], "total_volumes": []})
@@ -197,10 +199,12 @@ def test_base_index_counts_every_native_token_with_an_eth_pool(tmp_path: Path):
 
 def test_crypto_market_sums_the_ten_largest_coins(tmp_path: Path):
     d = _day_pack(tmp_path)
-    c = collect_crypto_market(d, transport=httpx.MockTransport(FakeGecko(missing="cardano").handle), sleep=lambda s: None)
+    gecko = FakeGecko(missing="cardano")
+    paused: list[float] = []
+    c = collect_crypto_market(d, transport=httpx.MockTransport(gecko.handle), sleep=paused.append, api_key="demo-key")
     assert c["basis"] == CRYPTO_BASIS and len(c["coins"]) == 9 and c["coins_expected"] == list(TOP10)
     assert abs(float(c["return"]) - 0.02) < 1e-6 and any("cardano" in n for n in c["notes"])
-    assert c["budget"]["requests"] == 10
+    assert c["budget"]["requests"] == 10 and gecko.keys == {"demo-key"} and len(paused) == 9  # paced between calls
 
 
 def test_lines_merge_into_the_baseline_and_survive_regeneration(tmp_path: Path):

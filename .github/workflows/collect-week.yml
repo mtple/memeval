@@ -9,7 +9,8 @@ name: collect-week
 # `survey`, `stats`, `cancel <run id>`, `baseline` (reads the Base ecosystem basket for every committed day that lacks it, about 120 requests each, and commits). E.g. `git commit --allow-empty -m "day 2026-09-08"` then
 # `git push -f origin HEAD:record-week` (Vercel never deploys that branch, see vercel.json).
 #
-# Secret: BASE_RPC_URL or RPC_URL (your read-only Base RPC endpoint). Nothing else; the finished week is committed
+# Secrets: BASE_RPC_URL or RPC_URL (your read-only Base RPC endpoint) and COINGECKO_API_KEY (a free demo key, for the
+# crypto market line; anonymous calls from a runner are rate-limited). Nothing else; the finished week is committed
 # to the default branch and the site registers it on its next deploy.
 
 on:
@@ -93,6 +94,7 @@ jobs:
         if: startsWith(github.event.head_commit.message, 'baseline')
         env:
           BASE_RPC_URL: ${{ secrets.BASE_RPC_URL || secrets.RPC_URL }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
         run: |
           set -eu
           uv run market-replay packs ecosystem weeks || echo "some days were not read; committing the ones that were"

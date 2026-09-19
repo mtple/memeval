@@ -132,7 +132,8 @@ or v3 that traded in both the first and the last twenty minutes of the day, agai
 dollars, weighted by the ETH its pools hold; stablecoins and wrapped majors excluded, nothing
 chosen by hand), ETH in dollars from the deepest WETH/USDC pool, and the crypto market as the
 combined market value of the ten largest coins from CoinGecko's public API, the one off-chain
-source in the project. The chain part costs about 100 read-only requests from Swap and Sync logs
+source in the project (a free demo key in `COINGECKO_API_KEY`; anonymous calls from a shared
+address are refused). The chain part costs about 100 read-only requests from Swap and Sync logs
 (public endpoints prune old state but keep logs) plus Multicall3 for the pools' token pairs; the
 day build reads it when the endpoint is set, and `market-replay packs ecosystem weeks` (or a
 `baseline` commit on the `record-week` branch) fills it in for every committed day whose lines
