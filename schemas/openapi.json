@@ -2679,6 +2679,63 @@
         "summary": "Run Report"
       }
     },
+    "/api/v1/runs/{run_id}/report/repair": {
+      "post": {
+        "operationId": "repair_run_report_api_v1_runs__run_id__report_repair_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Repair Run Report Api V1 Runs  Run Id  Report Repair Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Repair Run Report"
+      }
+    },
     "/api/v1/runs/{run_id}/resume": {
       "post": {
         "operationId": "resume_run_api_v1_runs__run_id__resume_post",

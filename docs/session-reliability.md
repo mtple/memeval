@@ -46,3 +46,28 @@ The test suite covers scanner equivalence, columnar timestamp scanning, snapshot
 pagination, lock contention and subsequent recovery, PostgreSQL timeout/cleanup calls, and
 starter interruption, token retention, file permissions and resumption. Live PostgreSQL tests
 remain opt-in through `TEST_DATABASE_URL`; they never probe a user's local database.
+
+## Terminal report recovery
+
+FreeTurtle subsequently reached the full Sept 12 episode with 22 confirmed orders and
+997,603,386,230,650,741 raw NATIVE remaining, with no pending orders or token inventory.
+Its successful `session.finish` receipt was persisted, but report generation failed.
+The supplied order receipts reproduce `decimal.InvalidOperation` in FIFO attribution at
+Decimal precision 28: a raw-unit contribution formatted with 18 decimal places exceeds
+that worker context. Import-time precision settings do not configure every worker thread.
+Fraction formatting now uses integer division and exact digit placement, preserving
+truncation toward zero without ambient precision or intermediate rounding.
+
+An error-only report now has no result summary instead of zero fills and an invented
+legacy metric. The report endpoint returns `REPORT_GENERATION_FAILED` with HTTP 503 so
+clients display a report error rather than treating the error document as a report.
+
+`POST /api/v1/runs/{run_id}/report/repair` repairs only a report-generation failure after
+an otherwise successful `session.finish`. It follows the existing public-run write
+policy, privacy checks and rate limits; private deployments require the admin token.
+It acquires the run lock, restores the original recorded state if necessary, verifies
+that it matches the stored terminal receipt, and builds the report before publishing it.
+It issues no new session commands, creates no attempt, and preserves the original clock,
+trace and finish timestamp. Repeated repair requests are idempotent. Other failures and
+missing or mismatched terminal receipts are refused. Recovery provenance is recorded in
+`report_recovery`; execution eligibility still evaluates every existing fidelity flag.

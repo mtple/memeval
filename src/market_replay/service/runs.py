@@ -935,8 +935,10 @@ class RunManager:
             row["error"] = error
         try:
             report = build_report(ctx.session, run_meta=self._run_meta(ctx, row), role="admin")
-        except Exception as e:  # pragma: no cover - defensive
-            report = {"error": f"report generation failed: {e}"}
+        except Exception as e:
+            LOG.exception("report_generation_failed run_id=%s", ctx.run_id)
+            report = {"error": f"report generation failed: {e}",
+                      "report_failure": {"intended_state": str(state), "original_error": error}}
             state = RunState.ENVIRONMENT_FAILED
             error = (error or "") + f" report failure: {e}"
         self.store.update_run(ctx.run_id, state=str(state), error=error, finished_at=now_iso(), clock_ms=ctx.session.now, report_json=json.dumps(report, sort_keys=True))
@@ -1006,7 +1008,8 @@ class RunManager:
         # own command path's job (once per instance), never a listing's: a run list on a cold
         # instance would otherwise replay every unfinished run before answering.
         ctx = self._contexts.get(run_id)
-        if ctx is not None:
+        if (ctx is not None and ctx.session.now == row["clock_ms"]
+                and (row["state"] not in TERMINAL or ctx.session.finished)):
             s = ctx.session
             v = s.sim.value_portfolio()
             view["live"] = {
@@ -1041,6 +1044,8 @@ class RunManager:
             rep = json.loads(report_json)
         except (TypeError, ValueError):
             return None
+        if not isinstance(rep, dict) or rep.get("error"):
+            return None
         outcome = rep.get("outcome", {}) or {}
         risk = rep.get("risk", {}) or {}
         activity = rep.get("activity", {}) or {}
@@ -1059,13 +1064,60 @@ class RunManager:
             "initial_equity_raw": outcome.get("initial_equity_raw"),
             "terminal_model_equity_raw": outcome.get("terminal_model_equity_raw"),
             "max_drawdown": risk.get("max_drawdown"),
-            "confirmed_fills": activity.get("confirmed_fills", 0),
-            "orders_total": activity.get("orders_total", 0),
+            "confirmed_fills": activity.get("confirmed_fills"),
+            "orders_total": activity.get("orders_total"),
             "gas_total_raw": costs.get("gas_total_raw"),
             "unpriced_inventory": len(unresolved.get("unpriced_inventory", []) or []) + len(unresolved.get("no_route_inventory", []) or []),
             "unresolved_orders": len(unresolved.get("orders", []) or []),
             "status_dimensions": rep.get("status_dimensions", {}),
         }
+
+    def repair_report(self, run_id: str) -> None:
+        """Repair only a report failure after a successful finish; never issue new commands."""
+        with self.store.run_lock(run_id):
+            row = self.store.run(run_id)
+            if row is None:
+                raise ApiError(404, "unknown run", "NOT_FOUND")
+            old = json.loads(row["report_json"] or "{}")
+            if row["state"] == str(RunState.COMPLETED) and old.get("report_recovery"):
+                return  # A retry after a lost response is harmless.
+            prefix = "report generation failed: "
+            message = old.get("error", "")
+            failure = old.get("report_failure")
+            report_only = (
+                failure.get("intended_state") == str(RunState.COMPLETED)
+                and failure.get("original_error") is None
+            ) if isinstance(failure, dict) else (
+                message.startswith(prefix) and row["error"] == " report failure: " + message[len(prefix):]
+            )
+            if (row["state"] != str(RunState.ENVIRONMENT_FAILED) or not message.startswith(prefix)
+                    or not report_only or row["error"] != " report failure: " + message[len(prefix):]):
+                raise ApiError(409, "Only a report-only failure after session.finish can be repaired.", "REPORT_NOT_REPAIRABLE")
+            trace = self.store.trace(run_id)
+            last = trace[-1] if trace else {}
+            if last.get("tool") != "session.finish" or last.get("status") != "ok" or last.get("clock_after_ms") != row["clock_ms"]:
+                raise ApiError(409, "No matching successful terminal command was recorded.", "REPORT_NOT_REPAIRABLE")
+            ctx = self._ctx(run_id)
+            self._catch_up(ctx)
+            saved_terminal = (last.get("delivered", {}).get("payload") or {}).get("data")
+            if (ctx.session.terminal is None or ctx.session.now != row["clock_ms"]
+                    or ctx.session.budget.exhausted or saved_terminal != ctx.session.terminal):
+                raise ApiError(409, "Stored terminal receipt does not match the reconstructed state.", "REPORT_NOT_REPAIRABLE")
+            repaired_row = dict(row) | {"state": str(RunState.COMPLETED), "error": None}
+            meta = self._run_meta(ctx, repaired_row)
+            if row["started_at"] and row["finished_at"]:
+                meta["wall_clock"]["elapsed_s"] = round((datetime.fromisoformat(row["finished_at"]) - datetime.fromisoformat(row["started_at"])).total_seconds(), 3)
+            report = build_report(ctx.session, run_meta=meta, role="admin")
+            report["report_recovery"] = {
+                "previous_state": row["state"], "previous_error": row["error"],
+                "original_finished_at": row["finished_at"], "repaired_at": now_iso(),
+                "basis": "unchanged_stored_trace_and_matching_terminal_receipt",
+            }
+            # Publish only after the complete report exists. Preserve finish time, clock and trace.
+            self.store.update_run(run_id, state=str(RunState.COMPLETED), error=None,
+                                  report_json=json.dumps(report, sort_keys=True))
+            LOG.info("report_repaired run_id=%s clock_ms=%d fills=%d", run_id, ctx.session.now,
+                     report["activity"]["confirmed_fills"])
 
     def report(self, run_id: str, role: str = "admin") -> dict[str, Any]:
         row = self.store.run(run_id)

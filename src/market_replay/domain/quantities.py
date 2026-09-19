@@ -81,9 +81,19 @@ def ratio(numerator: Raw, denominator: Raw) -> Fraction:
 
 
 def fraction_to_decimal_str(fr: Fraction, places: int = 12) -> str:
-    """Render a Fraction as a decimal string with a fixed number of places (rounded down)."""
-    d = Decimal(fr.numerator) / Decimal(fr.denominator)
-    return format(d.quantize(Decimal(1).scaleb(-places), rounding=ROUND_DOWN), "f")
+    """Render exact digits, truncating toward zero independently of decimal context.
+
+    Worker threads need not inherit the importing thread's Decimal precision. Integer
+    division also avoids rounding the ratio before truncating its displayed digits.
+    """
+    if places < 0:
+        raise QuantityError("decimal places must be nonnegative")
+    scaled = abs(fr.numerator) * 10**places // fr.denominator
+    digits = str(scaled).zfill(places + 1)
+    sign = "-" if fr < 0 else ""
+    if places:
+        return sign + digits[:-places] + "." + digits[-places:]
+    return sign + digits
 
 
 def bps_of(value: Raw, bps: int) -> Raw:

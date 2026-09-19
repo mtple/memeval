@@ -440,10 +440,18 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     def abort_run(run_id: str) -> dict[str, Any]:
         return manager.abort(run_id)
 
+    @app.post("/api/v1/runs/{run_id}/report/repair")
+    def repair_run_report(run_id: str, caller: str = Depends(public_write("runs"))) -> dict[str, Any]:
+        manager.repair_report(run_id)
+        return manager.report(run_id, "admin" if caller == "admin" else "participant")
+
     @app.get("/api/v1/runs/{run_id}/report")
     def run_report(run_id: str, role: str = Query(default="admin", pattern="^(admin|participant)$"), caller: str = Depends(public_read)) -> dict[str, Any]:
         # Results are public, but only the operator sees the unredacted (de-aliased) report.
-        return manager.report(run_id, role if caller == "admin" else "participant")
+        report = manager.report(run_id, role if caller == "admin" else "participant")
+        if report.get("error"):
+            raise ApiError(503, "Report generation failed. The recorded run is preserved.", "REPORT_GENERATION_FAILED")
+        return report
 
     @app.get("/api/v1/runs/{run_id}/trade-review", dependencies=[Depends(public_read)])
     def trade_review(run_id: str) -> dict[str, Any]:

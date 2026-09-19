@@ -288,8 +288,8 @@ export type ResultSummary = {
   initial_equity_raw: string | null;
   terminal_model_equity_raw: string | null;
   max_drawdown: string | number | null;
-  confirmed_fills: number;
-  orders_total: number;
+  confirmed_fills: number | null;
+  orders_total: number | null;
   gas_total_raw: string | null;
   unpriced_inventory: number;
   unresolved_orders: number;
