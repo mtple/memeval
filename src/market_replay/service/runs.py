@@ -942,6 +942,20 @@ class RunManager:
             state = RunState.ENVIRONMENT_FAILED
             error = (error or "") + f" report failure: {e}"
         self.store.update_run(ctx.run_id, state=str(state), error=error, finished_at=now_iso(), clock_ms=ctx.session.now, report_json=json.dumps(report, sort_keys=True))
+        self._store_trade_review(ctx)
+
+    def _store_trade_review(self, ctx: RunContext) -> dict[str, Any] | None:
+        """Keep the trade review next to the report while the session is live: rebuilding a session of a
+        real day later means replaying the whole day, which a serverless function cannot afford."""
+        from ..evaluation.trade_review import build_trade_review
+
+        try:
+            review = build_trade_review(ctx.session)
+        except Exception:
+            LOG.exception("trade_review_failed run_id=%s", ctx.run_id)
+            return None
+        self.store.put_doc(ctx.run_id, "trade_review", review)
+        return review
 
     def pause(self, run_id: str) -> dict[str, Any]:
         ctx = self._ctx(run_id)
@@ -1140,18 +1154,23 @@ class RunManager:
         return report
 
     def trade_review(self, run_id: str) -> dict[str, Any]:
-        """Opt-in review of a terminal run. Rebuild the cache if needed; never change its trace."""
-        from ..evaluation.trade_review import build_trade_review
-
+        """The review stored when the run ended. A run finished before reviews were stored is rebuilt from
+        its trace once, then kept; never change its trace."""
+        row = self.store.run(run_id)
+        if row is None:
+            raise ApiError(404, "unknown run", "NOT_FOUND")
+        if row["state"] not in TERMINAL:
+            raise ApiError(409, "Trade review is available after the run ends.", "RUN_ACTIVE")
+        stored = self.store.get_doc(run_id, "trade_review")
+        if isinstance(stored, dict):
+            return stored
         with self.store.run_lock(run_id):
-            row = self.store.run(run_id)
-            if row is None:
-                raise ApiError(404, "unknown run", "NOT_FOUND")
-            if row["state"] not in TERMINAL:
-                raise ApiError(409, "Trade review is available after the run ends.", "RUN_ACTIVE")
             ctx = self._ctx(run_id)
             self._catch_up(ctx)
-            return build_trade_review(ctx.session)
+            review = self._store_trade_review(ctx)
+            if review is None:
+                raise ApiError(500, "trade review could not be built", "INTERNAL")
+            return review
 
     def observed(self, run_id: str, pool_id: str | None = None, interval_ms: int = 60_000) -> dict[str, Any]:
         """Agent-visible view for the Run screen: only observations available at the current clock."""

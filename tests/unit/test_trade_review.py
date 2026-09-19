@@ -62,11 +62,17 @@ def test_endpoint_is_opt_in_terminal_only_and_supports_stored_runs(tmp_path, dev
         token = run["session_credential"]["token"]
         mgr.handle_command(token, "done", "session.finish", {})
         before = dict(mgr.store.run(rid))
-        mgr._contexts.clear()  # historical runs load through the same trace restoration path
+        stored = mgr.store.get_doc(rid, "trade_review")
+        assert isinstance(stored, dict) and stored["events"] == []  # kept at the end of the run, while the session was live
+        mgr._contexts.clear()
         response = client.get(f"/api/v1/runs/{rid}/trade-review")
         assert response.status_code == 200, response.text
-        assert response.json()["events"] == []
+        assert response.json() == stored and rid not in mgr._contexts  # served from the store: no session rebuild
         assert dict(mgr.store.run(rid)) == before
+        # a run finished before reviews were stored is rebuilt from its trace once, then kept
+        mgr.store.put_doc(rid, "trade_review", None)
+        response = client.get(f"/api/v1/runs/{rid}/trade-review")
+        assert response.status_code == 200 and response.json()["events"] == [] and isinstance(mgr.store.get_doc(rid, "trade_review"), dict)
         assert client.get(f"/api/v1/runs/{rid}/trade-review", headers={"Authorization": f"Bearer {token}"}).status_code == 403
     finally:
         mgr.close()
