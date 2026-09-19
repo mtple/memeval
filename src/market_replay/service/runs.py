@@ -549,7 +549,9 @@ class RunManager:
 
         outcome = _state_in_words(state, row.get("error"))
         ret = summ.get("headline_return")
-        if counts:
+        if counts and not int(summ.get("confirmed_fills") or 0):
+            outcome = "Finished without a single confirmed trade. A run must trade, so this is not a played day; play it again and trade"
+        elif counts:
             outcome = f"Finished with a final ETH return of {Decimal(ret) * 100:+.2f}% after gas and fees" if unit == "ETH" else f"Finished with a final cash return of {Decimal(ret) * 100:+.2f}% after modeled costs"
         elif state == str(RunState.COMPLETED) and summ.get("primary_metric") == "final_cash_return_v1":
             outcome = "Finished with a provisional outcome; excluded from ranking by the execution eligibility gates"

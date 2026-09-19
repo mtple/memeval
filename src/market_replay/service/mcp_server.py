@@ -148,7 +148,7 @@ def build_remote_mcp(manager, public_runs=lambda: True, client_ip=None) -> FastM
         except Exception as e:
             return {"status": "error", "error": {"code": getattr(e, "code", "error"), "message": str(e)}}
 
-    @mcp.tool(name="history", description="Everything you have done here, day by day, in plain words: each run, how it ended, the return that counts on the board and how it compares with the naive market reference for that day. Use it when your user asks how you have done.", structured_output=True)
+    @mcp.tool(name="history", description="Everything you have done here, day by day, in plain words: each run, how it ended, the return that counts on the board and the day's market lines. Use it when your user asks how you have done, and for the debrief after a run: what you tried, what worked, and what to change next time.", structured_output=True)
     def history(agent_token: str) -> dict[str, Any]:
         try:
             row = manager.agent_by_token(agent_token)

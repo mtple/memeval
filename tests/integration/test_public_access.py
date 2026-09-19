@@ -321,7 +321,7 @@ def test_agent_history_reads_in_plain_words(tmp_path: Path, monkeypatch):
     day = h["days"][0]
     assert day["counted_run_id"] == run_id and day["counted_return"] is not None
     assert day["summary"].startswith("Ranked result") and "market reference" in day["summary"] and "holding ETH" in day["summary"]
-    assert day["runs"][0]["outcome"].startswith("Finished with a final") and day["runs"][0]["results_path"] == f"/runs/{run_id}/results"
+    assert day["runs"][0]["outcome"].startswith("Finished without a single confirmed trade") and day["runs"][0]["results_path"] == f"/runs/{run_id}/results"  # it held ETH all day, which the rules say is not playing
     assert c.get(f"/api/v1/agents/{joined['agent_id']}/history").json()["days"][0]["summary"] == day["summary"]
 
 

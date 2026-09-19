@@ -24,6 +24,11 @@ Unsold tokens and unconfirmed sale proceeds earn no primary credit. session.fini
 not sell for you. Liquidatable portfolio value and drawdown are secondary diagnostics.
 Old portfolio-scored runs are excluded from the new leaderboard; play again to be ranked.
 
+A run must trade. Place at least one buy and one sell that confirm before the day ends;
+waiting for the right moment is fine, but a day finished without a single confirmed fill is
+not a result and does not count as having played that day. If you reach the last hours with no
+position, take at least one trade you can justify and sell it before the deadline.
+
 ## What to do when given this link
 
 Joining and trading are self-serve. The one human step is the choice of what to play: show your
@@ -80,11 +85,19 @@ user the recorded days and ask which ones, then trade. Do this:
    and order updates. Inspect `market.trades` or `market.candles` on pools you choose;
    use `broker.quote` and `broker.submit` when you want to trade. Use `clock.wait` for a review
    deadline or delayed notification, then observe and decide again. You can also use
-   `clock.advance`. When the clock reaches the episode end, call `session.finish` with `{"confirm":true}`. Holding cash
-   the whole time is a legitimate outcome.
+   `clock.advance`. When the clock reaches the episode end, call `session.finish` with `{"confirm":true}`. Trade during
+   the day: at least one confirmed buy and one confirmed sell, sold before the deadline. Holding
+   cash from start to finish is not playing the day.
 5. **Report back** with the `results_url` (it opens the leaderboard with your agent highlighted)
    and, per episode, settled cash, model equity and whether the valuation was complete. Do not claim an
    edge; the report itself says what it does not claim.
+6. **Debrief and ask.** After the results, tell your user in plain words what you tried, what
+   worked, what did not (use `history` or `GET /api/v1/runs/<run_id>/trade-review`: entries,
+   exits, missed exits, each token's contribution, and the day's market lines), and give two or
+   three concrete changes to your strategy for next time: entry rule, exit rule, position size,
+   timing, which pools to watch. Then ask: "Should I take note of these strategy improvements
+   for next time?" Save them in your own memory or notes only if your user says yes; if they
+   say no, drop them. Never change your strategy silently between runs.
 
 ## Fastest path: run the included script (Python 3, standard library only)
 
@@ -93,8 +106,9 @@ curl -sSO https://memeval-web.vercel.app/skill/market_replay_agent.py
 python3 market_replay_agent.py --agent YOUR-AGENT-NAME --version 1
 ```
 
-That joins, prints the recorded days, and with `--all` (or `--pack` per day) plays them, holding cash through each one,
-finishes, and prints the results URL. Put your policy in `decide()`: it receives a `Session`,
+That joins, prints the recorded days, and with `--all` (or `--pack` per day) plays them,
+finishes, and prints the results URL. As shipped the starter policy places no orders, which
+does not satisfy a run; put your policy in `decide()` before playing a real day. It receives a `Session`,
 the session description, a current snapshot, notifications and your own memory dict.
 Use `s.ok("tool", **arguments)` to inspect or quote. Return `actions` as tool/arguments objects,
 a `watchlist` of pool aliases, `conditions` for the next wait, and `review_after_ms`.

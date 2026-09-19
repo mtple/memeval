@@ -477,7 +477,7 @@ class Session:
         p = self.params
         return {
             "session_id": self.session_id,
-            "objective": "Maximize final settled ETH (shown as NATIVE inside a session: the chain's wrapped native coin), or CASH in generated episodes. Submit your own sells before the episode ends and allow time for confirmation. Unsold tokens and unconfirmed sale proceeds do not count toward final cash return; liquidatable portfolio value is secondary. session.finish does not sell holdings for you.",
+            "objective": "Maximize final settled ETH (shown as NATIVE inside a session: the chain's wrapped native coin), or CASH in generated episodes. A run must trade: at least one confirmed buy and one confirmed sell before the episode ends; holding cash throughout is not playing. Submit your own sells before the episode ends and allow time for confirmation. Unsold tokens and unconfirmed sale proceeds do not count toward final cash return; liquidatable portfolio value is secondary. session.finish does not sell holdings for you.",
             "mode": self.mode,
             "resource_profile": self.resource_profile.public(),
             "clock_ms": self.now,
