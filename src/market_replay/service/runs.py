@@ -995,10 +995,13 @@ class RunManager:
         duration = max(1, s.sim.end_ms)
         interval_ms = max(60_000, -(-duration // 300 // 60_000) * 60_000)
         out: dict[str, Any] = {}
+        keep = ("start_ms", "end_ms", "open", "high", "low", "close", "closed", "completeness", "synthetic_empty_bar")
         for pid in sorted({e["pool_id"] for e in review.get("events", [])}):
             r = s.alias.resolve(pid)
             if r and r[0] == "pool":
-                out[pid] = _pool_series(s, r[1], pid, interval_ms)
+                series = _pool_series(s, r[1], pid, interval_ms)
+                series["items"] = [{k: b.get(k) for k in keep} for b in series["items"]]  # what the chart draws; volumes stay in the live view
+                out[pid] = series
         return out
 
     def pause(self, run_id: str) -> dict[str, Any]:
