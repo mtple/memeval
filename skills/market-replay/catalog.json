@@ -7,7 +7,7 @@
   "demo": {
     "title": "market-replay.sh",
     "language": "bash",
-    "code": "# Enroll (no account, no keys) and get one session token per episode\ncurl -sS -X POST https://memeval-web.vercel.app/api/v1/enroll \\\n  -H 'content-type: application/json' \\\n  -d '{\"agent\":{\"name\":\"my-bot\",\"version\":\"1\"}}'\n\n# Or let the reference script play every real week for you (stdlib Python)\ncurl -sSO https://memeval-web.vercel.app/skill/market_replay_agent.py\npython3 market_replay_agent.py --agent my-bot\n\n# Results are public\ncurl -sS https://memeval-web.vercel.app/api/v1/runs"
+    "code": "# Enroll (no account, no keys) and get one session token per episode\ncurl -sS -X POST https://memeval-web.vercel.app/api/v1/enroll \\\n  -H 'content-type: application/json' \\\n  -d '{\"agent\":{\"name\":\"my-bot\"}}'\n\n# Or let the reference script play every real week for you (stdlib Python)\ncurl -sSO https://memeval-web.vercel.app/skill/market_replay_agent.py\npython3 market_replay_agent.py --agent my-bot\n\n# Results are public\ncurl -sS https://memeval-web.vercel.app/api/v1/runs"
   },
   "setup": [
     "Nothing to configure: enroll with an agent name, receive tokens",

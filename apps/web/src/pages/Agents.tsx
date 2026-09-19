@@ -53,7 +53,7 @@ export default function Agents() {
       <h1>Agents</h1>
       <SkillCard base={meta.data?.gateway_url ?? window.location.origin} />
       <p className="muted">
-        Every agent that has run here, by name and version. Nothing is registered by hand: an agent that follows the skill enrolls itself.
+        Every agent that has run here, by name. The name is the agent: all of its runs list under it. Nothing is registered by hand — an agent that follows the skill enrolls itself.
       </p>
       <Card title="Registered agents" actions={<button type="button" className="btn btn-small" onClick={agents.reload}>Refresh</button>}>
         {agents.error && <ErrorState error={agents.error} retry={agents.reload} />}
@@ -69,7 +69,6 @@ export default function Agents() {
               <thead>
                 <tr>
                   <th>Name</th>
-                  <th>Version</th>
                   <th>Runtime</th>
                   <th>Fingerprint</th>
                   <th>Capabilities</th>
@@ -84,7 +83,6 @@ export default function Agents() {
                       {a.name}
                       <div className="muted small mono">{a.agent_id}</div>
                     </td>
-                    <td>{a.version}</td>
                     <td>{a.runtime}</td>
                     <td className="mono" title={a.fingerprint}>
                       {shortHash(a.fingerprint, 16)}
@@ -177,7 +175,7 @@ function SkillCard({ base }: { base: string }) {
 }
 
 function RegisterForm({ onDone, unsupported }: { onDone: () => void; unsupported: string[] }) {
-  const [f, setF] = useState({ name: "", version: "1", runtime: "python", capabilities: "", config: "{}" });
+  const [f, setF] = useState({ name: "", runtime: "python", capabilities: "", config: "{}" });
   const [err, setErr] = useState<unknown>(null);
   const [ok, setOk] = useState<Agent | null>(null);
   const [busy, setBusy] = useState(false);
@@ -200,7 +198,7 @@ function RegisterForm({ onDone, unsupported }: { onDone: () => void; unsupported
           }
           setBusy(true);
           try {
-            setOk(await post<Agent>("/agents", { name: f.name, version: f.version, runtime: f.runtime, capabilities: caps, config }));
+            setOk(await post<Agent>("/agents", { name: f.name, version: "1", runtime: f.runtime, capabilities: caps, config }));
             onDone();
           } catch (x) {
             setErr(x);
@@ -212,10 +210,6 @@ function RegisterForm({ onDone, unsupported }: { onDone: () => void; unsupported
         <label className="field">
           Name
           <input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
-        </label>
-        <label className="field">
-          Version
-          <input required value={f.version} onChange={(e) => setF({ ...f, version: e.target.value })} />
         </label>
         <label className="field">
           Runtime
@@ -241,7 +235,7 @@ function RegisterForm({ onDone, unsupported }: { onDone: () => void; unsupported
           </button>
           {ok && (
             <span>
-              Registered <strong>{ok.name}</strong> v{ok.version} <span className="mono small">{shortHash(ok.fingerprint)}</span>
+              Registered <strong>{ok.name}</strong> <span className="mono small">{shortHash(ok.fingerprint)}</span>
             </span>
           )}
         </div>
@@ -298,8 +292,8 @@ function ReferenceAgents({ onDone }: { onDone: () => void }) {
         ))}
       </ul>
       {err !== null && <ErrorState error={err} />}
-      <p className="muted small">Registering twice with the same name and version returns 409.</p>
-      <JsonView value={{ name: "<example>_<runtime>", version: "1", runtime, capabilities: [], config: { example: "<example>" } }} />
+      <p className="muted small">Registering a name that already exists returns 409.</p>
+      <JsonView value={{ name: "<example>_<runtime>", runtime, capabilities: [], config: { example: "<example>" } }} />
     </Card>
   );
 }

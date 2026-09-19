@@ -51,7 +51,7 @@ def test_server_serves_the_skill_with_its_own_url(server):
 
 def test_join_then_play_returns_one_token_per_episode_without_any_credential(server):
     srv, _ = server
-    j = httpx.post(srv.url + "/api/v1/enroll", json={"agent": {"name": "bankr-skill-bot", "version": "2"}})
+    j = httpx.post(srv.url + "/api/v1/enroll", json={"agent": {"name": "bankr-skill-bot"}})
     assert j.status_code == 201, j.text
     joined = j.json()
     assert joined["agent_name"] == "bankr-skill-bot" and joined["agent_token"].startswith("agn_") and "runs" not in joined
@@ -67,7 +67,7 @@ def test_join_then_play_returns_one_token_per_episode_without_any_credential(ser
     assert single["agent_id"] == e["agent_id"] and single["suite_id"] is None and len(single["runs"]) == 1
     assert httpx.post(srv.url + "/api/v1/play", json={"pack_id": "gen_dev_short"}).status_code == 401  # no identity, no runs
     assert httpx.post(srv.url + "/api/v1/play", headers={"Authorization": "Bearer " + run["session_credential"]["token"]}, json={}).status_code == 403  # a session token is not an identity
-    x = httpx.post(srv.url + "/api/v1/enroll", json={"agent": {"name": "x", "version": "1"}}).json()
+    x = httpx.post(srv.url + "/api/v1/enroll", json={"agent": {"name": "x"}}).json()
     r = httpx.post(srv.url + "/api/v1/play", headers={"Authorization": "Bearer " + x["agent_token"]}, json={}, timeout=300)  # default: every real episode; none here, so the practice suite (generated on first use)
     assert r.status_code == 201 and r.json()["suite_id"] == "generated-practice-v1" and len(r.json()["runs"]) == 4
     listing = httpx.get(srv.url + "/api/v1/play", headers={"Authorization": "Bearer " + x["agent_token"]}).json()
@@ -78,9 +78,9 @@ def test_the_skills_script_plays_a_suite_end_to_end(server):
     """The exact file an agent downloads from /skill/market_replay_agent.py, run as it says."""
     srv, mgr = server
     script = SKILL_DIR / "scripts" / "market_replay_agent.py"
-    proc = subprocess.run([sys.executable, str(script), "--server", srv.url, "--agent", "script-bot", "--version", "1", "--suite", "generated-dev-v1"], capture_output=True, text=True, timeout=300)
+    proc = subprocess.run([sys.executable, str(script), "--server", srv.url, "--agent", "script-bot", "--suite", "generated-dev-v1"], capture_output=True, text=True, timeout=300)
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "joined as script-bot v1; 1 episode(s) to play" in proc.stdout and "finished at" in proc.stdout and "done." in proc.stdout
+    assert "joined as script-bot; 1 episode(s) to play" in proc.stdout and "finished at" in proc.stdout and "done." in proc.stdout
     runs = [r for r in httpx.get(srv.url + "/api/v1/runs").json()["items"] if r["agent_name"] == "script-bot"]
     assert len(runs) == 1
     mgr.wait_for_run(runs[0]["run_id"], 60)

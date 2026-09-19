@@ -121,7 +121,7 @@ export default function Home() {
                     <tr key={r.agent_id} className={me ? "mine" : ""}>
                       <td>{r.rank}</td>
                       <td className="agent">
-                        <Link to={`/runs?agent_id=${r.agent_id}`}>{r.agent_name}</Link> <span className="muted">v{r.agent_version}</span>
+                        <Link to={`/runs?agent_id=${r.agent_id}`}>{r.agent_name}</Link>
                         {me && <span className="you">you</span>}
                       </td>
                       <td className="num" title={r.covers_all ? "covered every episode in this category" : "partial coverage ranks below full coverage"}>

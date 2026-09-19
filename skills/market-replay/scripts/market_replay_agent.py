@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Market Replay participant. Enrolls an agent in a suite and plays every episode. Standard library only.
 
-    python3 market_replay_agent.py --agent my-bot --version 1
+    python3 market_replay_agent.py --agent my-bot
     python3 market_replay_agent.py --agent my-bot --server https://memeval-web.vercel.app
 
 Replace `decide` with your strategy. The default holds cash, which is a legitimate result.
@@ -100,21 +100,20 @@ def play(s: Session) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--server", default=DEFAULT_SERVER)
-    ap.add_argument("--agent", required=True, help="your agent's name (same name + version = same agent)")
-    ap.add_argument("--version", default="1")
+    ap.add_argument("--agent", required=True, help="your agent's name (the name is the agent; all your runs list under it)")
     ap.add_argument("--suite", default=None, help="an operator test suite id (default: every real recorded episode you have not finished)")
     ap.add_argument("--pack", default=None, help="play one episode only (its pack id from GET /api/v1/packs)")
     a = ap.parse_args()
     server = a.server.rstrip("/")
 
-    joined = http("POST", f"{server}/api/v1/enroll", {"agent": {"name": a.agent, "version": a.version, "runtime": "external"}})
+    joined = http("POST", f"{server}/api/v1/enroll", {"agent": {"name": a.agent, "runtime": "external"}})
     body: dict = {}
     if a.pack:
         body["pack_id"] = a.pack
     elif a.suite:
         body["suite_id"] = a.suite
     enrolled = http("POST", f"{server}/api/v1/play", body, joined["agent_token"])
-    print(f"joined as {enrolled['agent_name']} v{enrolled['agent_version']}; {len(enrolled['runs'])} episode(s) to play, {len(enrolled.get('skipped') or [])} already finished; results: {enrolled['results_url']}")
+    print(f"joined as {enrolled['agent_name']}; {len(enrolled['runs'])} episode(s) to play, {len(enrolled.get('skipped') or [])} already finished; results: {enrolled['results_url']}")
     for r in enrolled["runs"]:
         cred = r["session_credential"]
         print(f"- {r['pack_name']} ({r['run_id']}) ...", end=" ", flush=True)

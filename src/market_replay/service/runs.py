@@ -44,6 +44,10 @@ from .auth import new_agent_token, new_identity_token, token_hash
 from .db import BaseStore, open_store
 from .suites import SuiteDef, default_suites_text, load_suites, suite_public
 
+# The name is the agent. The stored `version` column is kept at this constant so historical rows
+# stay readable and the (name, version) uniqueness constraint still holds one row per name.
+AGENT_VERSION = "1"
+
 TERMINAL = {str(RunState.ABORTED), str(RunState.COMPLETED), str(RunState.AGENT_FAILED), str(RunState.ENVIRONMENT_FAILED)}
 FIXTURE_CONFIGS = {c.name: c for c in [dev_short_config(), *standard_suite_configs()]}
 # Recorded weeks live in the repository, one pack directory each (see docs/how-a-real-week-is-built.md).
@@ -421,8 +425,9 @@ class RunManager:
         self.store.insert_agent(row)
         return self.agent_view(agent_id)
 
-    def register_or_reuse_agent(self, *, name: str, version: str, runtime: str = "external", capabilities: list[str] | None = None, config: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Self-serve registration: the same name and version means the same agent."""
+    def register_or_reuse_agent(self, *, name: str, version: str = AGENT_VERSION, runtime: str = "external", capabilities: list[str] | None = None, config: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Self-serve registration: the name is the agent. Self-serve callers leave `version` at its
+        default, so every run an agent makes accumulates under its one name."""
         name = name.strip()
         version = version.strip() or "1"
         if not name or len(name) > 64 or len(version) > 32 or not name.isprintable():
@@ -1066,20 +1071,20 @@ class RunManager:
         """Join: register (or reuse) the agent and hand it its identity token. Creates no runs; that is
         ``play``, which an agent calls whenever it wants to trade what it has not finished yet.
 
-        One name per agent: an address that enrolled under one name recently may not enroll a second
-        name (a new version of the same name is fine), so a name stays one agent's reputation instead
-        of one per strategy. Joining again with the same name and version issues a fresh identity
-        token and retires the previous one.
+        The name is the agent: every run it ever makes is listed under that one name, whatever changed
+        in the strategy between them. An address that enrolled under one name recently may not enroll a
+        second name, so a name stays one agent's reputation. Joining again with the same name issues a
+        fresh identity token and retires the previous one.
         """
         name = str(agent.get("name", "")).strip()
         if client_key:
             now = time.time()
             recent = [k.split(":", 1)[1] for k in self.store.rate_event_kinds("enroll_name:", client_key, now - self.ONE_NAME_WINDOW_S)]
             if recent and name.lower() not in recent:
-                raise ApiError(409, f"one name per agent: this address already enrolled as {recent[0]!r}. Keep that name; to try another strategy, enroll the same name with a new version.", "ONE_NAME")
+                raise ApiError(409, f"one name per agent: this address already enrolled as {recent[0]!r}. Keep that name; a changed strategy plays on under it.", "ONE_NAME")
             if name.lower() not in recent:
                 self.store.add_rate_event("enroll_name:" + name.lower(), client_key, now)
-        view = self.register_or_reuse_agent(name=name, version=str(agent.get("version", "1")), runtime=str(agent.get("runtime", "external")), capabilities=list(agent.get("capabilities") or []), config=dict(agent.get("config") or {}))
+        view = self.register_or_reuse_agent(name=name, runtime=str(agent.get("runtime", "external")), capabilities=list(agent.get("capabilities") or []), config=dict(agent.get("config") or {}))
         agent_id = view["agent_id"]
         token = new_identity_token()
         self.store.set_agent_token_hash(agent_id, token_hash(token))
@@ -1092,7 +1097,7 @@ class RunManager:
             "play_url": self.gateway_url + "/api/v1/play",
             "results_url": f"{self.gateway_url}/?agent={agent_id}",
             "skill_url": self.gateway_url + "/skill.md",
-            "note": "Joined. Keep agent_token: POST play_url with it (Authorization: Bearer) whenever you want to trade; it creates one run per episode you have not finished and returns their session credentials. Joining again with the same name and version replaces the token.",
+            "note": "Joined. Keep agent_token: POST play_url with it (Authorization: Bearer) whenever you want to trade; it creates one run per episode you have not finished and returns their session credentials. Joining again with the same name replaces the token; every run stays under the one name.",
         }
 
     def agent_by_token(self, token: str) -> dict[str, Any]:
@@ -1161,7 +1166,7 @@ class RunManager:
             "runs": [{"run_id": r["run_id"], "pack_id": r["pack_id"], "pack_name": r["pack_name"], "episode_id": r["episode_id"], "mode": r["mode"], "bankroll_raw": r["bankroll_raw"], "session_credential": r["session_credential"]} for r in runs],
             "skipped": skipped,
             "results_url": f"{self.gateway_url}/?agent={agent_id}",
-            "note": "Each session_credential is shown once and works only for its run. Call session.finish when done; the report appears at results_url." + (" Episodes you already finished are under skipped; play a new version of your name to trade them again." if skipped else "") + ("" if runs else " Nothing new to play right now."),
+            "note": "Each session_credential is shown once and works only for its run. Call session.finish when done; the report appears at results_url." + (" Episodes you already finished are under skipped; pass that pack_id to trade one again." if skipped else "") + ("" if runs else " Nothing new to play right now."),
         }
 
     # ------------------------------------------------------------------ leaderboard

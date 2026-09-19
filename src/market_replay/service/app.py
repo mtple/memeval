@@ -17,7 +17,7 @@ from ..domain.envelope import Envelope
 from ..engine.session import TOOLS, UNSUPPORTED_CAPABILITIES
 from .auth import constant_time_equal, resolve_admin_token
 from .mcp_server import build_remote_mcp
-from .runs import ApiError, RunManager
+from .runs import AGENT_VERSION, ApiError, RunManager
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WEB_DIST = REPO_ROOT / "apps" / "web" / "dist"
@@ -53,10 +53,11 @@ class LaunchBody(BaseModel):
 
 
 class InlineAgentBody(BaseModel):
-    """Self-serve agent identity: the same name and version is the same agent."""
+    """Self-serve agent identity: the name is the agent. A `version` sent by an older client is
+    accepted and ignored so those clients keep working; every run lands under the one name."""
 
     name: str = Field(min_length=1, max_length=64)
-    version: str = Field(default="1", max_length=32)
+    version: str = Field(default="1", max_length=32)  # legacy: accepted, ignored
     runtime: str = "external"
     capabilities: list[str] = Field(default_factory=list)
     config: dict[str, Any] = Field(default_factory=dict)
@@ -348,11 +349,11 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     @app.post("/api/v1/runs", dependencies=[Depends(public_write("runs"))], status_code=201)
     def create_run(body: RunBody) -> dict[str, Any]:
         if body.agent is not None:
-            agent_id = manager.register_or_reuse_agent(name=body.agent.name, version=body.agent.version, runtime=body.agent.runtime, capabilities=body.agent.capabilities, config=body.agent.config)["agent_id"]
+            agent_id = manager.register_or_reuse_agent(name=body.agent.name, version=AGENT_VERSION, runtime=body.agent.runtime, capabilities=body.agent.capabilities, config=body.agent.config)["agent_id"]
         elif body.agent_id:
             agent_id = body.agent_id
         else:
-            raise ApiError(400, "agent_id or agent {name, version} is required", "INVALID")
+            raise ApiError(400, "agent_id or agent {name} is required", "INVALID")
         return manager.create_run(
             agent_id=agent_id,
             pack_ref=body.pack_id,
