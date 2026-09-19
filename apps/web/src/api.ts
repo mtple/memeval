@@ -353,12 +353,12 @@ export type Bar = {
   high: string | null;
   low: string | null;
   close: string | null;
-  volume_base_raw: string;
-  volume_quote_raw: string;
-  trade_count: number;
-  closed: boolean;
-  synthetic_empty_bar: boolean;
-  completeness: string;
+  volume_base_raw?: string;
+  volume_quote_raw?: string;
+  trade_count?: number;
+  closed?: boolean;
+  synthetic_empty_bar?: boolean;
+  completeness?: string;
 };
 
 export type Observed = {

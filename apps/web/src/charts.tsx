@@ -103,7 +103,7 @@ export function CandleChart({ bars, gaps, clockMs, markers = [], width = 720, he
         const l = num(b.low) ?? Math.min(o, c);
         const x = xs((b.start_ms + Math.min(b.end_ms, clockMs)) / 2);
         const up = c >= o;
-        const partial = b.completeness !== "complete" || !b.closed;
+        const partial = (b.completeness !== undefined && b.completeness !== "complete") || b.closed === false;  // stored series omit the defaults
         return (
           <g key={b.start_ms} className={`candle ${up ? "up" : "down"} ${partial ? "partial" : ""}`}>
             <line x1={x} x2={x} y1={ys(h)} y2={ys(l)} />
