@@ -340,3 +340,24 @@ def test_agent_can_drop_a_suffix_from_its_name(tmp_path: Path):
     assert c.get(f"/api/v1/agents/{joined['agent_id']}").json()["name"] == "FreeTurtle"
     assert c.get("/api/v1/play", headers=hdr).status_code == 200  # the token still works
     assert other["agent_id"] != joined["agent_id"]
+
+
+def test_smoke_agents_are_hidden_from_the_public_and_never_rank(tmp_path: Path, dev_pack_dir: Path):
+    """The deploy check's own agents run on every release; visitors and boards never see them, the operator does."""
+    mgr = RunManager(data_dir=tmp_path / "a", store_url=str(tmp_path / "store.sqlite"), hosted=True)
+    mgr.import_pack(dev_pack_dir, "gen_dev_short")
+    c = TestClient(create_app(mgr, "adm_public_test"))
+    admin = {"Authorization": "Bearer adm_public_test"}
+    for name in ("smoke_random_actions", "smoke-skill-bot", "FreeTurtle"):
+        run = c.post("/api/v1/runs", headers=admin, json={"agent": {"name": name, "version": "1"}, "pack_id": "gen_dev_short"}).json()
+        token = run["session_credential"]["token"]
+        duration = mgr.handle_command(token, "r1", "session.describe", {}).data["episode"]["duration_ms"]
+        mgr.handle_command(token, "r2", "clock.advance", {"to_ms": duration})
+        assert mgr.handle_command(token, "r3", "session.finish", {}).status == "ok"
+    assert [r["agent_name"] for r in c.get("/api/v1/runs").json()["items"]] == ["FreeTurtle"]
+    assert [a["name"] for a in c.get("/api/v1/agents").json()["items"]] == ["FreeTurtle"]
+    assert sorted(r["agent_name"] for r in c.get("/api/v1/runs", headers=admin).json()["items"]) == ["FreeTurtle", "smoke-skill-bot", "smoke_random_actions"]
+    assert len(c.get("/api/v1/agents", headers=admin).json()["items"]) == 3
+    board = c.get("/api/v1/leaderboard?pack_id=gen_dev_short").json()
+    assert [r["agent_name"] for r in board["rows"]] == ["FreeTurtle"]
+    mgr.close()

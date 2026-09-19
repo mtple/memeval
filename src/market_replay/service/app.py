@@ -356,9 +356,9 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
     def create_agent(body: AgentBody) -> dict[str, Any]:
         return manager.register_agent(name=body.name, version=body.version, runtime=body.runtime, capabilities=body.capabilities, config=body.config)
 
-    @app.get("/api/v1/agents", dependencies=[Depends(public_read)])
-    def list_agents() -> dict[str, Any]:
-        return {"items": manager.agents()}
+    @app.get("/api/v1/agents")
+    def list_agents(role: str = Depends(public_read)) -> dict[str, Any]:
+        return {"items": manager.agents(include_internal=role == "admin")}
 
     @app.get("/api/v1/agents/{agent_id}", dependencies=[Depends(public_read)])
     def get_agent(agent_id: str) -> dict[str, Any]:
@@ -405,10 +405,10 @@ def create_app(manager: RunManager, admin_token: str | None = None, cors_origins
             execute=body.execute,
         )
 
-    @app.get("/api/v1/runs", dependencies=[Depends(public_read)])
-    def list_runs(agent_id: str | None = None, pack_id: str | None = None, suite_id: str | None = None) -> dict[str, Any]:
+    @app.get("/api/v1/runs")
+    def list_runs(agent_id: str | None = None, pack_id: str | None = None, suite_id: str | None = None, role: str = Depends(public_read)) -> dict[str, Any]:
         where = {k: v for k, v in {"agent_id": agent_id, "pack_id": pack_id, "suite_id": suite_id}.items() if v}
-        return {"items": manager.runs(**where)}
+        return {"items": manager.runs(include_internal=role == "admin", **where)}
 
     @app.get("/api/v1/runs/{run_id}")
     def get_run(run_id: str, caller: str = Depends(public_read)) -> dict[str, Any]:

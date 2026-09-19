@@ -481,8 +481,8 @@ class RunManager:
             "compatibility": {"compatible": not incompatible, "unsupported_requested": incompatible},
         }
 
-    def agents(self) -> list[dict[str, Any]]:
-        return [self.agent_view(r["agent_id"]) for r in self.store.agents()]
+    def agents(self, include_internal: bool = False) -> list[dict[str, Any]]:
+        return [self.agent_view(r["agent_id"]) for r in self.store.agents() if include_internal or not is_internal_agent(r["name"])]
 
     def agent_history(self, agent_id: str) -> dict[str, Any]:
         """Everything one agent has done here, day by day, in plain words: each run with what it was,
@@ -1050,7 +1050,7 @@ class RunManager:
             }
         return view
 
-    def runs(self, **where: Any) -> list[dict[str, Any]]:
+    def runs(self, include_internal: bool = False, **where: Any) -> list[dict[str, Any]]:
         rows = self.store.runs(**where)
         if not rows:
             return []
@@ -1060,9 +1060,12 @@ class RunManager:
         out = []
         for row in rows:
             pack_row = packs.get(row["pack_id"])
+            agent_row = agents.get(row["agent_id"])
             if row["run_id"] in private_ids or (pack_row and pack_row["visibility"] == "holdout"):
                 continue
-            out.append(self._run_view_from_row(row, pack_row, agents.get(row["agent_id"])))
+            if not include_internal and is_internal_agent(agent_row["name"] if agent_row else None):
+                continue
+            out.append(self._run_view_from_row(row, pack_row, agent_row))
         return out
 
     @staticmethod
@@ -1599,6 +1602,8 @@ class RunManager:
             group = groups[gid]
             episode_count = sum(1 for pid in wanted_packs if (p := self.store.pack(pid)) and p["origin"] == group["origin"] and p["execution_model"] == group["execution_model"])
             a = self.store.agent(aid)
+            if a and is_internal_agent(a["name"]):
+                continue  # the deploy check's own agents never rank
             rets = sorted(Decimal(v["headline_return"]) for v in vals)
             mid = len(rets) // 2
             median = rets[mid] if len(rets) % 2 else (rets[mid - 1] + rets[mid]) / 2
@@ -1728,6 +1733,13 @@ FIXTURE_SCENARIO_NAMES = {
     "gen_week_liquidity_shift": "liquidity moves between pools",
     "gen_dev_short": "short warm-up",
 }
+
+
+def is_internal_agent(name: str | None) -> bool:
+    """The deploy check's own agents (smoke_random_actions, smoke-skill-bot, ...) exercise the site on every
+    release. Their runs prove the deployment works; they are not participants, so public listings, the
+    boards and the agents page leave them out. Operators see them."""
+    return bool(name) and str(name).lower().startswith("smoke")
 
 
 def _state_in_words(state: str, error: str | None) -> str:
