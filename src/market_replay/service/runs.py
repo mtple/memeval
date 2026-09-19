@@ -989,8 +989,12 @@ class RunManager:
         row = self.store.run(run_id)
         if row is None:
             raise ApiError(404, f"unknown run {run_id}", "NOT_FOUND")
-        pack_row = self.store.pack(row["pack_id"])
-        agent_row = self.store.agent(row["agent_id"])
+        return self._run_view_from_row(row, self.store.pack(row["pack_id"]), self.store.agent(row["agent_id"]))
+
+    def _run_view_from_row(self, row: dict[str, Any], pack_row: dict[str, Any] | None, agent_row: dict[str, Any] | None) -> dict[str, Any]:
+        """The listing view of one run from rows already in hand: a list of ninety runs must not make
+        nine round trips to the database for each of them."""
+        run_id = row["run_id"]
         view = {
             "run_id": row["run_id"],
             "agent_id": row["agent_id"],
@@ -1047,7 +1051,19 @@ class RunManager:
         return view
 
     def runs(self, **where: Any) -> list[dict[str, Any]]:
-        return [self.run_view(r["run_id"]) for r in self.store.runs(**where) if not self.is_private_run(r["run_id"])]
+        rows = self.store.runs(**where)
+        if not rows:
+            return []
+        packs = {r["pack_id"]: r for r in self.store.packs()}
+        agents = {r["agent_id"]: r for r in self.store.agents()}
+        private_ids = {r["run_id"] for r in self.store.query("SELECT run_id FROM assessment_episodes")}
+        out = []
+        for row in rows:
+            pack_row = packs.get(row["pack_id"])
+            if row["run_id"] in private_ids or (pack_row and pack_row["visibility"] == "holdout"):
+                continue
+            out.append(self._run_view_from_row(row, pack_row, agents.get(row["agent_id"])))
+        return out
 
     @staticmethod
     def _result_summary(report_json: str | None) -> dict[str, Any] | None:

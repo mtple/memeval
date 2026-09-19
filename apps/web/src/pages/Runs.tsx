@@ -12,7 +12,7 @@ export default function Runs() {
   const q = new URLSearchParams();
   if (packFilter) q.set("pack_id", packFilter);
   if (agentFilter) q.set("agent_id", agentFilter);
-  const runs = useLoad(() => list<Run>(`/runs${q.toString() ? `?${q}` : ""}`), [packFilter, agentFilter], 5000);
+  const runs = useLoad(() => list<Run>(`/runs${q.toString() ? `?${q}` : ""}`), [packFilter, agentFilter], 15000);
   const agents = useLoad(() => list<Agent>("/agents"), []);
   const packs = useLoad(() => list<Pack>("/packs"), []);
   const suites = useLoad(() => list<Suite>("/suites"), []);

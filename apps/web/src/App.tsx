@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { ApiError, get, getServerUrl, setMyAgent, setServerUrl, setToken } from "./api";
 import { RoleProvider, useRole } from "./role";
 import { Badge } from "./ui";
 import Home from "./pages/Home";
-import ResultsFeed from "./pages/ResultsFeed";
 import Episodes from "./pages/Episodes";
 import AgentHistory from "./pages/AgentHistory";
 import Agents from "./pages/Agents";
@@ -202,7 +201,7 @@ function Shell({ conn, recheck }: { conn: Conn; recheck: () => void }) {
           <Route path="/runs" element={<Runs />} />
           <Route path="/runs/:id" element={<RunDetail />} />
           <Route path="/runs/:id/results" element={<Results />} />
-          <Route path="/results" element={<ResultsFeed />} />
+          <Route path="/results" element={<Navigate to="/runs" replace />} />
           <Route path="/compare" element={<Compare />} />
           <Route path="/compare/:id" element={<Compare />} />
           <Route path="/data-health" element={<DataHealth />} />
