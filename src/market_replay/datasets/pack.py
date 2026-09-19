@@ -113,6 +113,10 @@ class Pack:
     coverage: dict[str, Any] = field(default_factory=dict)
     validation: dict[str, Any] = field(default_factory=dict)
     inventory: dict[str, Any] = field(default_factory=dict)
+    # Service-prepared, indexed local chunks. The engine never fetches remote data.
+    event_source: Any = None
+    cl_init_ms: dict[str, int] | None = None
+    storage_descriptor: dict[str, Any] | None = None
 
     @property
     def pack_id(self) -> str:
@@ -128,6 +132,8 @@ class Pack:
 
     @property
     def tape_count(self) -> int:
+        if self.event_source is not None:
+            return len(self.event_source)
         return len(self.tape) if self.tape or not self.tape_lazy else self.tape_rows
 
     @property
