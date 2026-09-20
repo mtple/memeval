@@ -12,12 +12,12 @@ export default function Runs() {
   const q = new URLSearchParams();
   if (packFilter) q.set("pack_id", packFilter);
   if (agentFilter) q.set("agent_id", agentFilter);
-  const runs = useLoad(() => list<Run>(`/runs${q.toString() ? `?${q}` : ""}`), [packFilter, agentFilter], 60000);
+  const runs = useLoad(() => list<Run>(`/runs${q.toString() ? `?${q}` : ""}`), [packFilter, agentFilter]);
   const agents = useLoad(() => list<Agent>("/agents"), []);
   const packs = useLoad(() => list<Pack>("/packs"), []);
   const suites = useLoad(() => list<Suite>("/suites"), []);
   const meta = useLoad(() => get<Meta>("/meta"), []);
-  const usage = useLoad(() => get<Usage>("/usage"), [], 60000);
+  const usage = useLoad(() => get<Usage>("/usage"), []);
   const packById = new Map((packs.data ?? []).map((p) => [p.pack_id, p]));
   const runtimes = (meta.data?.runtimes_available ?? [...RUNTIMES]) as string[];
   const hosted = Boolean(meta.data?.hosted);

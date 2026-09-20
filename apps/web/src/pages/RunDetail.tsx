@@ -11,7 +11,7 @@ const ACTIVE = new Set(["queued", "running", "paused"]);
 export default function RunDetail() {
   const { id = "" } = useParams();
   const [active, setActive] = useState(true);
-  const run = useLoad(() => get<Run>(`/runs/${id}`), [id], active ? 1500 : null);
+  const run = useLoad(() => get<Run>(`/runs/${id}`), [id]);
   const pack = useLoad(() => (run.data?.pack_id ? get<Pack>(`/packs/${run.data.pack_id}`) : Promise.resolve(null)), [run.data?.pack_id]);
   useEffect(() => {
     if (run.data) setActive(ACTIVE.has(run.data.state));
@@ -45,9 +45,14 @@ export default function RunDetail() {
     <main className="stack">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <h1 style={{ margin: 0 }}>{r ? `${r.agent_name ?? "Agent"} on ${r.pack_label ?? r.pack_name ?? "a day"}` : "Run"}</h1>
-        <Link to="/runs" className="btn btn-small">
-          All runs
-        </Link>
+        <span className="row">
+          <button type="button" className="btn btn-small" onClick={run.reload} title="The page does not refresh on its own">
+            Refresh
+          </button>
+          <Link to="/runs" className="btn btn-small">
+            All runs
+          </Link>
+        </span>
       </div>
       {run.error && <ErrorState error={run.error} retry={run.reload} />}
       {run.loading && !r && <Loading what="run" />}
@@ -83,7 +88,7 @@ export default function RunDetail() {
             {actErr !== null && <ErrorState error={actErr} />}
             <div className="row">
               <RunStateBadge state={r.state} />
-              {active && <span className="muted small">polling every 1.5s</span>}
+              {active && <span className="muted small">still going; press Refresh for the latest</span>}
               {r.exposed && <Badge tone="warn">exposed</Badge>}
             </div>
             {r.error && <p className={`notice ${r.state === "agent_failed" ? "bad" : ""}`}>{r.state === "agent_failed" ? "Agent error: " : r.state === "environment_failed" ? "Environment/data error: " : ""}{r.error}</p>}
@@ -254,7 +259,6 @@ function ObservedPanel({ runId, clock, dec, active }: { runId: string; clock: nu
   const obs = useLoad(
     () => get<Observed>(`/runs/${runId}/observed?interval_ms=${interval}${pool ? `&pool_id=${encodeURIComponent(pool)}` : ""}`),
     [runId, pool, interval],
-    active ? 3000 : null,
   );
   const gone = obs.error instanceof ApiError && obs.error.status === 404;
   const d = obs.data;

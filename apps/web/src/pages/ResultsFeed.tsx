@@ -7,9 +7,9 @@ import { Badge, ErrorState, Loading, RunStateBadge, useLoad } from "../ui";
 
 /** Results first: every run as a sentence with one number, newest at the top. */
 export default function ResultsFeed() {
-  const runs = useLoad(() => list<Run>("/runs"), [], 5000);
+  const runs = useLoad(() => list<Run>("/runs"), []);
   const comps = useLoad(() => list<Comparison>("/comparisons"), []);
-  const usage = useLoad(() => get<Usage>("/usage"), [], 30000);
+  const usage = useLoad(() => get<Usage>("/usage"), []);
   const { meta } = useRole();
   const items = [...(runs.data ?? [])].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 

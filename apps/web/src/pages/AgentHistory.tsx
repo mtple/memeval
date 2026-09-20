@@ -47,13 +47,16 @@ type History = {
 /** One agent's runs, day by day, in plain words. Public: an owner should be able to read it without a login. */
 export default function AgentHistory() {
   const { id = "" } = useParams();
-  const h = useLoad(() => get<History>(`/agents/${encodeURIComponent(id)}/history`), [id], 30000);
+  const h = useLoad(() => get<History>(`/agents/${encodeURIComponent(id)}/history`), [id]);
   const H = h.data;
   return (
     <main className="stack">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <h1 style={{ margin: 0 }}>{H ? H.agent.name : "Agent"}</h1>
         <span className="row">
+          <button type="button" className="btn btn-small" onClick={h.reload}>
+            Refresh
+          </button>
           <Link to={`/runs?agent_id=${encodeURIComponent(id)}`} className="btn btn-small">
             Run table
           </Link>

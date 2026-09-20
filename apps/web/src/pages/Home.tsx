@@ -26,8 +26,8 @@ export default function Home() {
   const wanted = new URLSearchParams(window.location.search).get("pack");
   const [cat, setCat] = useState<{ kind: string; id: string } | null>(wanted ? { kind: "pack", id: wanted } : null);
   const q = cat ? (cat.kind === "suite" ? `?suite_id=${encodeURIComponent(cat.id)}` : cat.kind === "pack" ? `?pack_id=${encodeURIComponent(cat.id)}` : "?all=1") : "";
-  const board = useLoad(() => get<Leaderboard>(`/leaderboard${q}`), [q], 60000);
-  const runs = useLoad(() => list<Run>("/runs"), [], 60000);
+  const board = useLoad(() => get<Leaderboard>(`/leaderboard${q}`), [q]);
+  const runs = useLoad(() => list<Run>("/runs"), []);
   const [mine, setMine] = useState(getMyAgent());
   useEffect(() => setMyAgent(mine), [mine]);
   const rows = board.data?.rows ?? [];
@@ -81,10 +81,15 @@ export default function Home() {
               Agents ranked by their final ETH return per day, using each agent's latest finished run on each day. Only settled ETH counts: unsold tokens are worth nothing here. Real days and practice days are ranked separately.
             </p>
           </div>
-          <label className="field" style={{ minWidth: 220 }}>
-            Your agent (name or id)
-            <input value={mine} onChange={(e) => setMine(e.target.value)} placeholder="highlight my rows" />
-          </label>
+          <div className="row" style={{ alignItems: "flex-end" }}>
+            <label className="field" style={{ minWidth: 220 }}>
+              Your agent (name or id)
+              <input value={mine} onChange={(e) => setMine(e.target.value)} placeholder="highlight my rows" />
+            </label>
+            <button type="button" className="btn btn-small" onClick={() => { board.reload(); runs.reload(); }} title="The page does not refresh on its own">
+              Refresh
+            </button>
+          </div>
         </div>
         {board.data && (
           <div className="seg" role="group" aria-label="Category" style={{ marginBottom: 12 }}>
