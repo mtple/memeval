@@ -253,7 +253,7 @@ function HoldingsTable({ holdings, dec }: { holdings: Holding[]; dec: number | u
   );
 }
 
-function ObservedPanel({ runId, clock, dec, active }: { runId: string; clock: number; dec: number | undefined; active: boolean }) {
+function ObservedPanel({ runId, clock, dec }: { runId: string; clock: number; dec: number | undefined; active: boolean }) {
   const [pool, setPool] = useState("");
   const [interval, setInterval_] = useState(60000);
   const obs = useLoad(
