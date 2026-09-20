@@ -37,6 +37,8 @@ describe("readable trade results", () => {
     expect(data.points.map(p => p.time)).toEqual([960_000]);
     const clockBound = tradeChartData([bar(60_000),{...bar(60_000),closed:false}], [], markers, 90_000, true);
     expect(clockBound.points.map(p => p.time)).toEqual([90_000]);
+    const stored = {...bar(60_000), closed:undefined} as unknown as Bar;
+    expect(tradeChartData([stored], [], markers, 90_000, true).points).toHaveLength(0);
   });
   it("shows usable labels for tiny or flat prices and never calls the chart account return", () => {
     const html = renderToStaticMarkup(<TradePriceChart bars={[bar(0),bar(60_000)]} gaps={[]} markers={markers} clockMs={300_000} token="Token 1"/>);

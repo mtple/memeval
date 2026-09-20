@@ -10,7 +10,7 @@ export const signedPercent = (n: number) => `${n > 0 ? "+" : ""}${n.toFixed(2)}%
 /** Numeric conversion is only for chart coordinates and relative price display, never cash math. */
 export function tradeChartData(bars: Bar[], gaps: Gap[], markers: TradeMarker[], clock: number, full: boolean) {
   const fills = markers.filter(m => m.time_ms <= clock && price(m.price) !== null).sort((a, b) => a.time_ms - b.time_ms);
-  const visible = bars.filter(b => b.start_ms < clock && (!b.closed || b.end_ms <= clock) && !b.synthetic_empty_bar && price(b.close) !== null).sort((a, b) => a.start_ms - b.start_ms);
+  const visible = bars.filter(b => b.start_ms < clock && (b.closed === false || b.end_ms <= clock) && !b.synthetic_empty_bar && price(b.close) !== null).sort((a, b) => a.start_ms - b.start_ms);
   const firstBuy = fills.find(m => m.side === "buy");
   const reference = price(firstBuy?.price ?? visible[0]?.close ?? fills[0]?.price ?? null);
   const first = fills[0]?.time_ms ?? visible[0]?.start_ms ?? 0;
@@ -91,7 +91,7 @@ export function TradePriceChart({ bars, gaps, markers, clockMs, token }: { bars:
     </div>
     <div className="chart-axis-caption">Time elapsed since replay start (hours:minutes)</div>
     <div className="trade-chart-readout" aria-live="polite">
-      {point ? <><strong>Observed price · {fmtClock(point.time)}</strong><span>{signedPercent(point.value)} vs {referenceLabel}</span><span className="small muted">{point.bar.closed ? "End of" : "Partial"} observation interval · {point.bar.trade_count} observed trades</span></> : selected ? <><strong>{selected.label} · {fmtClock(selected.time_ms)}</strong><span>{signedPercent(relative(selected.price))} vs {referenceLabel}</span><span className="small">{selected.detail}</span></> : <span>Hover over the line to inspect a price observation.</span>}
+      {point ? <><strong>Observed price · {fmtClock(point.time)}</strong><span>{signedPercent(point.value)} vs {referenceLabel}</span><span className="small muted">{point.bar.closed === false ? "Partial" : "End of"} observation interval{point.bar.trade_count != null && ` · ${point.bar.trade_count} observed trades`}</span></> : selected ? <><strong>{selected.label} · {fmtClock(selected.time_ms)}</strong><span>{signedPercent(relative(selected.price))} vs {referenceLabel}</span><span className="small">{selected.detail}</span></> : <span>Hover over the line to inspect a price observation.</span>}
     </div>
     <p className="small muted chart-help">Select a labeled trade or hover over the line. Keyboard: Tab to a trade, then Enter. {d.points.length ? "The line joins observed interval closes; blank stretches have no observed prices. Fill prices can differ from the line." : "No observed market history is available. Only recorded fills are shown."}</p>
   </section>;
