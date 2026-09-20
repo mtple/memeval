@@ -47,7 +47,7 @@ type History = {
 /** One agent's runs, day by day, in plain words. Public: an owner should be able to read it without a login. */
 export default function AgentHistory() {
   const { id = "" } = useParams();
-  const h = useLoad(() => get<History>(`/agents/${encodeURIComponent(id)}/history`), [id], 10000);
+  const h = useLoad(() => get<History>(`/agents/${encodeURIComponent(id)}/history`), [id], 30000);
   const H = h.data;
   return (
     <main className="stack">

@@ -63,7 +63,9 @@ jobs:
 
       # Self-serve stage: start one complete reference-participant run on the 2-hour fixture the way
       # any visitor can (no credential), then read its report keys and the usage counters.
+      # Only on demand while the database is on a metered tier: a run reads and writes the store on every command.
       - name: Full self-serve run
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           set -eu
           hdr=(-H 'content-type: application/json')
@@ -80,6 +82,7 @@ jobs:
 
       # The skill, followed literally: download the served script and let it join and play an episode.
       - name: Agent follows the skill
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           set -eu
           curl -sSfO "$BASE/skill/market_replay_agent.py"

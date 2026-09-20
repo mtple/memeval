@@ -538,7 +538,7 @@ class RunManager:
         }
 
     def _history_item(self, row: dict[str, Any]) -> dict[str, Any]:
-        summ = self._result_summary(row.get("report_json")) or {}
+        summ = self._summary_of(row) or {}
         state = str(row["state"])
         counts = state == str(RunState.COMPLETED) and summ.get("primary_metric") == "final_cash_return_v1" and summ.get("headline_return") is not None and summ.get("ranking_eligible", False)
         dec = int(summ.get("numeraire_decimals") or 18)
@@ -580,7 +580,7 @@ class RunManager:
             "max_drawdown": summ.get("max_drawdown"),
             "unsold_holdings": summ.get("unpriced_inventory"),
             "activity": _activity_in_words(summ) if summ else None,
-            "results_path": f"/runs/{row['run_id']}/results" if row.get("report_json") else None,
+            "results_path": f"/runs/{row['run_id']}/results" if (row.get("has_report") or row.get("report_json")) else None,
         }
 
     # ------------------------------------------------------------------ usage caps
@@ -970,7 +970,8 @@ class RunManager:
                       "report_failure": {"intended_state": str(state), "original_error": error}}
             state = RunState.ENVIRONMENT_FAILED
             error = (error or "") + f" report failure: {e}"
-        self.store.update_run(ctx.run_id, state=str(state), error=error, finished_at=now_iso(), clock_ms=ctx.session.now, report_json=json.dumps(report, sort_keys=True))
+        report_text = json.dumps(report, sort_keys=True)
+        self.store.update_run(ctx.run_id, state=str(state), error=error, finished_at=now_iso(), clock_ms=ctx.session.now, report_json=report_text, summary_json=json.dumps(self._result_summary(report_text), sort_keys=True))
         self._store_trade_review(ctx)
         self._store_inspection(ctx)
 
@@ -1065,8 +1066,8 @@ class RunManager:
             "error": row["error"],
             "clock_ms": row["clock_ms"],
             "exposed": bool(row["exposed"]),
-            "has_report": row["report_json"] is not None,
-            "result_summary": self._result_summary(row["report_json"]),
+            "has_report": bool(row.get("has_report")) or row.get("report_json") is not None,
+            "result_summary": self._summary_of(row),
         }
         # Live detail comes only from a session this instance already holds. Rebuilding one means
         # replaying every command the agent ever sent through the week's data, which is the agent's
@@ -1115,6 +1116,25 @@ class RunManager:
             out.append(self._run_view_from_row(row, pack_row, agent_row))
         return out
 
+    def _summary_of(self, row: dict[str, Any]) -> dict[str, Any] | None:
+        """The stored result summary of a run row. A run finished before summaries were stored gets one
+        computed from its report once and written back, so no list ever reads reports again."""
+        if row.get("report_json"):  # a full row: the report is the truth
+            return self._result_summary(row["report_json"])
+        if row.get("summary_json"):
+            try:
+                return json.loads(row["summary_json"])
+            except (TypeError, ValueError):
+                pass
+        if not row.get("has_report"):
+            return None
+        full = self.store.run(row["run_id"])
+        if not full or not full.get("report_json"):
+            return None
+        summ = self._result_summary(full["report_json"])
+        self.store.update_run(row["run_id"], summary_json=json.dumps(summ, sort_keys=True))
+        return summ
+
     @staticmethod
     def _result_summary(report_json: str | None) -> dict[str, Any] | None:
         """The few numbers a result list needs, taken from the stored report (null until one exists)."""
@@ -1148,6 +1168,15 @@ class RunManager:
             "orders_total": activity.get("orders_total"),
             "gas_total_raw": costs.get("gas_total_raw"),
             "unpriced_inventory": len(unresolved.get("unpriced_inventory", []) or []) + len(unresolved.get("no_route_inventory", []) or []),
+            "group": {
+                "resource_profile": (rep.get("resource_profile") or PROFILES["pack_defaults_v1"].public())["profile_id"],
+                "resource_fingerprint": (rep.get("resource_profile") or PROFILES["pack_defaults_v1"].public())["fingerprint"],
+                "origin": (rep.get("status_dimensions") or {}).get("data_origin"),
+                "execution_model": (rep.get("status_dimensions") or {}).get("execution_model"),
+                "numeraire": outcome.get("numeraire"),
+                "decimals": outcome.get("numeraire_decimals"),
+                "engine": (rep.get("versions") or {}).get("engine"),
+            },
             "unresolved_orders": len(unresolved.get("orders", []) or []),
             "status_dimensions": rep.get("status_dimensions", {}),
         }
@@ -1194,8 +1223,9 @@ class RunManager:
                 "basis": "unchanged_stored_trace_and_matching_terminal_receipt",
             }
             # Publish only after the complete report exists. Preserve finish time, clock and trace.
+            report_text = json.dumps(report, sort_keys=True)
             self.store.update_run(run_id, state=str(RunState.COMPLETED), error=None,
-                                  report_json=json.dumps(report, sort_keys=True))
+                                  report_json=report_text, summary_json=json.dumps(self._result_summary(report_text), sort_keys=True))
             LOG.info("report_repaired run_id=%s clock_ms=%d fills=%d", run_id, ctx.session.now,
                      report["activity"]["confirmed_fills"])
 
@@ -1537,7 +1567,7 @@ class RunManager:
         out = []
         for r in self.real_weeks():
             mine = self.store.runs(agent_id=agent_id, pack_id=r["pack_id"])
-            done = [x for x in mine if x["state"] == str(RunState.COMPLETED) and (self._result_summary(x.get("report_json")) or {}).get("primary_metric") == "final_cash_return_v1"]
+            done = [x for x in mine if x["state"] == str(RunState.COMPLETED) and (self._summary_of(x) or {}).get("primary_metric") == "final_cash_return_v1"]
             open_ = [x for x in mine if x["state"] not in TERMINAL]
             status = "finished" if done else "running" if open_ else "new"
             board = self.leaderboard(pack_id=r["pack_id"])["rows"]
@@ -1554,7 +1584,7 @@ class RunManager:
                 "top_return": board[0].get("median_return") if board else None,
                 "your_status": status,
                 "your_run_id": (done or open_ or [{}])[-1].get("run_id"),
-                "your_return": (self._result_summary(done[-1].get("report_json")) or {}).get("headline_return") if done else None,
+                "your_return": (self._summary_of(done[-1]) or {}).get("headline_return") if done else None,
                 "status": status,  # kept for older clients
                 "run_id": (done or open_ or [{}])[-1].get("run_id"),
             })
@@ -1598,7 +1628,7 @@ class RunManager:
                     return self.play(agent_token=agent_token, suite_id="generated-practice-v1", client_key=client_key)
                 raise ApiError(409, "no episode is available on this server yet; pass suite_id or pack_id", "NO_WEEKS")
             for r in weeks:
-                done = [x for x in self.store.runs(agent_id=agent_id, pack_id=r["pack_id"]) if x["state"] == str(RunState.COMPLETED) and (self._result_summary(x.get("report_json")) or {}).get("primary_metric") == "final_cash_return_v1"]
+                done = [x for x in self.store.runs(agent_id=agent_id, pack_id=r["pack_id"]) if x["state"] == str(RunState.COMPLETED) and (self._summary_of(x) or {}).get("primary_metric") == "final_cash_return_v1"]
                 if done:
                     skipped.append({"pack_id": r["pack_id"], "pack_name": r["name"], "reason": "already finished by this agent", "run_id": done[-1]["run_id"]})
                     continue
@@ -1668,24 +1698,26 @@ class RunManager:
         best: dict[tuple[str, str, str], dict[str, Any]] = {}
         groups: dict[str, dict[str, Any]] = {}
         attempts: dict[str, int] = {}
+        private_ids = {r["run_id"] for r in self.store.query("SELECT run_id FROM assessment_episodes")}
+        holdout_packs = {r["pack_id"] for r in self.store.packs() if r.get("visibility") == "holdout"}
         for row in self.store.runs():
-            if row["pack_id"] not in wanted_packs or self.is_private_run(row["run_id"]):
+            if row["pack_id"] not in wanted_packs or row["run_id"] in private_ids or row["pack_id"] in holdout_packs:
                 continue
             attempts[row["agent_id"]] = attempts.get(row["agent_id"], 0) + 1
-            if row["state"] != str(RunState.COMPLETED) or not row["report_json"]:
+            if row["state"] != str(RunState.COMPLETED) or not (row.get("has_report") or row.get("report_json")):
                 continue
-            summ = self._result_summary(row["report_json"])
+            summ = self._summary_of(row)
             if not summ or summ["primary_metric"] != "final_cash_return_v1" or summ["headline_return"] is None or not summ["ranking_eligible"]:
                 continue
-            report = json.loads(row["report_json"])
-            group = {"resource_profile": report.get("resource_profile", PROFILES["pack_defaults_v1"].public())["profile_id"],
-                     "resource_fingerprint": report.get("resource_profile", PROFILES["pack_defaults_v1"].public())["fingerprint"],
-                     "origin": report.get("status_dimensions", {}).get("data_origin"),
-                     "execution_model": report.get("status_dimensions", {}).get("execution_model"),
+            g = summ.get("group") or {}
+            group = {"resource_profile": g.get("resource_profile") or PROFILES["pack_defaults_v1"].public()["profile_id"],
+                     "resource_fingerprint": g.get("resource_fingerprint") or PROFILES["pack_defaults_v1"].public()["fingerprint"],
+                     "origin": g.get("origin"),
+                     "execution_model": g.get("execution_model"),
                      "isolation": row["isolation"], "bankroll_raw": row["bankroll_raw"],
-                     "numeraire": report.get("outcome", {}).get("numeraire"),
-                     "decimals": report.get("outcome", {}).get("numeraire_decimals"),
-                     "engine": report.get("versions", {}).get("engine")}
+                     "numeraire": g.get("numeraire"),
+                     "decimals": g.get("decimals"),
+                     "engine": g.get("engine")}
             gid = hashlib.sha256(json.dumps(group, sort_keys=True).encode()).hexdigest()[:16]
             groups[gid] = group
             key = (row["agent_id"], row["pack_id"], gid)
@@ -1762,7 +1794,7 @@ class RunManager:
                         "chain": pack_row["chain"] if pack_row else None,
                         "state": r["state"],
                         "agent_version": f"{agent['name']}@{agent['version']}",
-                        "report": json.loads(r["report_json"]) if r["report_json"] else None,
+                        "report": json.loads(r["report_json"]) if r.get("report_json") else (json.loads((self.store.run(r["run_id"]) or {}).get("report_json") or "null") if r.get("has_report") else None),
                         "profile_hash": r["profile_hash"],
                         "mask_seed": r["mask_seed"],
                         "capabilities": agent["capabilities"],

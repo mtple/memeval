@@ -26,8 +26,8 @@ export default function Home() {
   const wanted = new URLSearchParams(window.location.search).get("pack");
   const [cat, setCat] = useState<{ kind: string; id: string } | null>(wanted ? { kind: "pack", id: wanted } : null);
   const q = cat ? (cat.kind === "suite" ? `?suite_id=${encodeURIComponent(cat.id)}` : cat.kind === "pack" ? `?pack_id=${encodeURIComponent(cat.id)}` : "?all=1") : "";
-  const board = useLoad(() => get<Leaderboard>(`/leaderboard${q}`), [q], 15000);
-  const runs = useLoad(() => list<Run>("/runs"), [], 15000);
+  const board = useLoad(() => get<Leaderboard>(`/leaderboard${q}`), [q], 60000);
+  const runs = useLoad(() => list<Run>("/runs"), [], 60000);
   const [mine, setMine] = useState(getMyAgent());
   useEffect(() => setMyAgent(mine), [mine]);
   const rows = board.data?.rows ?? [];

@@ -35,7 +35,10 @@ class RunBusy(RuntimeError):
 
 # Columns added after a table first shipped; each statement must be safe to re-run (SQLite raises on
 # a duplicate column and the error is swallowed; Postgres gets IF NOT EXISTS).
-MIGRATIONS = ["ALTER TABLE agents ADD COLUMN token_hash TEXT", "ALTER TABLE packs ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'"]
+MIGRATIONS = ["ALTER TABLE agents ADD COLUMN token_hash TEXT", "ALTER TABLE packs ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'", "ALTER TABLE runs ADD COLUMN summary_json TEXT"]
+# A run list never carries the report itself (about 17 KB per run): the stored summary is enough for every
+# list, board and history, and the hosted database bills every byte read.
+RUN_LIST_COLUMNS = "run_id, agent_id, pack_id, suite_id, suite_run_id, mode, isolation, state, bankroll_raw, mask_seed, engine_seed, profile_hash, token_hash, launch_json, created_at, started_at, finished_at, error, clock_ms, exposed, summary_json, (report_json IS NOT NULL) AS has_report"
 MIGRATIONS += ["ALTER TABLE traces ADD COLUMN request_id TEXT", "ALTER TABLE traces ADD COLUMN request_hash TEXT",
                "ALTER TABLE traces ADD COLUMN response_gzip TEXT",
                "CREATE UNIQUE INDEX IF NOT EXISTS trace_requests ON traces(run_id, request_id)"]
@@ -261,10 +264,11 @@ class BaseStore:
         return self.one("SELECT * FROM runs WHERE run_id=?", (run_id,))
 
     def runs(self, **where: Any) -> list[dict[str, Any]]:
+        """Run rows without the report column; ``has_report`` says whether one exists."""
         if not where:
-            return self.query("SELECT * FROM runs ORDER BY created_at")
+            return self.query(f"SELECT {RUN_LIST_COLUMNS} FROM runs ORDER BY created_at")
         cond = " AND ".join(f"{k}=:{k}" for k in where)
-        return self.query(f"SELECT * FROM runs WHERE {cond} ORDER BY created_at", where)
+        return self.query(f"SELECT {RUN_LIST_COLUMNS} FROM runs WHERE {cond} ORDER BY created_at", where)
 
     def run_by_token_hash(self, token_hash: str) -> dict[str, Any] | None:
         return self.one("SELECT * FROM runs WHERE token_hash=?", (token_hash,))
